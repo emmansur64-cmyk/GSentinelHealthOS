@@ -1,0 +1,18 @@
+[Unit]
+Description=GSentinel HealthOS Outbox Scheduler
+After=network.target
+
+[Service]
+Type=simple
+User=gsentinel
+Group=gsentinel
+WorkingDirectory=/opt/GSentinelHealthOS
+EnvironmentFile=/opt/GSentinelHealthOS/.env
+ExecStart=/opt/GSentinelHealthOS/.venv/bin/python scripts/run_outbox_scheduler.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/gsentinel/outbox-scheduler.log
+StandardError=append:/var/log/gsentinel/outbox-scheduler.err.log
+
+[Install]
+WantedBy=multi-user.target

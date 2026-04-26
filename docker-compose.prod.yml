@@ -1,0 +1,303 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: gs_db
+    environment:
+      POSTGRES_DB: gsentinel
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    command: ["postgres", "-c", "max_connections=50", "-c", "shared_buffers=128MB"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d gsentinel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-master:
+    image: redis:7-alpine
+    container_name: gs_redis_master
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_master_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis-replica:
+    image: redis:7-alpine
+    container_name: gs_redis_replica
+    command: ["redis-server", "--appendonly", "yes", "--replicaof", "redis-master", "6379"]
+    volumes:
+      - redis_replica_data:/data
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis-sentinel-1:
+    image: redis:7-alpine
+    container_name: gs_redis_sentinel_1
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        cat >/tmp/sentinel.conf <<'EOF'
+        port 26379
+        bind 0.0.0.0
+        protected-mode no
+        daemonize no
+        logfile ""
+        dir /tmp
+        sentinel monitor mymaster redis-master 6379 2
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 10000
+        sentinel parallel-syncs mymaster 1
+        EOF
+        redis-server /tmp/sentinel.conf --sentinel
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "26379", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis-sentinel-2:
+    image: redis:7-alpine
+    container_name: gs_redis_sentinel_2
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        cat >/tmp/sentinel.conf <<'EOF'
+        port 26379
+        bind 0.0.0.0
+        protected-mode no
+        daemonize no
+        logfile ""
+        dir /tmp
+        sentinel monitor mymaster redis-master 6379 2
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 10000
+        sentinel parallel-syncs mymaster 1
+        EOF
+        redis-server /tmp/sentinel.conf --sentinel
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "26379", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis-sentinel-3:
+    image: redis:7-alpine
+    container_name: gs_redis_sentinel_3
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        cat >/tmp/sentinel.conf <<'EOF'
+        port 26379
+        bind 0.0.0.0
+        protected-mode no
+        daemonize no
+        logfile ""
+        dir /tmp
+        sentinel monitor mymaster redis-master 6379 2
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 10000
+        sentinel parallel-syncs mymaster 1
+        EOF
+        redis-server /tmp/sentinel.conf --sentinel
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "26379", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_api
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel
+      REDIS_URL: redis://redis-master:6379
+      REDIS_SENTINEL_MASTER: mymaster
+      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+      REDIS_QUEUE_PREFIX: "queue:"
+      REDIS_STATE_PREFIX: "state:"
+      REDIS_CACHE_PREFIX: "cache:"
+      BRAIN_API_KEY: ${BRAIN_API_KEY:-brain-secret-key-change-production}
+      ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "8000:8000"
+    restart: always
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health/readiness').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  brain:
+    build:
+      context: .
+      dockerfile: docker/brain.Dockerfile
+    container_name: gs_brain
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis-master:6379
+      REDIS_SENTINEL_MASTER: mymaster
+      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+      REDIS_QUEUE_PREFIX: "queue:"
+      REDIS_STATE_PREFIX: "state:"
+      REDIS_CACHE_PREFIX: "cache:"
+      API_BASE_URL: http://api:8000
+      BRAIN_API_KEY: ${BRAIN_API_KEY:-brain-secret-key-change-production}
+      ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    restart: always
+
+  booking_worker_0:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_booking_worker_0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel
+      REDIS_URL: redis://redis-master:6379
+      REDIS_SENTINEL_MASTER: mymaster
+      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+      REDIS_QUEUE_PREFIX: "queue:"
+      REDIS_STATE_PREFIX: "state:"
+      REDIS_CACHE_PREFIX: "cache:"
+      BOOKING_QUEUE_SHARDS: ${BOOKING_QUEUE_SHARDS:-2}
+      BOOKING_WORKER_SHARD: 0
+      BOOKING_QUEUE_RESULT_TTL_SECONDS: ${BOOKING_QUEUE_RESULT_TTL_SECONDS:-86400}
+      BOOKING_QUEUE_LOCK_TTL_MS: ${BOOKING_QUEUE_LOCK_TTL_MS:-15000}
+      ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: python -m api.app.booking_queue_worker_main
+    restart: always
+
+  booking_worker_1:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_booking_worker_1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel
+      REDIS_URL: redis://redis-master:6379
+      REDIS_SENTINEL_MASTER: mymaster
+      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+      REDIS_QUEUE_PREFIX: "queue:"
+      REDIS_STATE_PREFIX: "state:"
+      REDIS_CACHE_PREFIX: "cache:"
+      BOOKING_QUEUE_SHARDS: ${BOOKING_QUEUE_SHARDS:-2}
+      BOOKING_WORKER_SHARD: 1
+      BOOKING_QUEUE_RESULT_TTL_SECONDS: ${BOOKING_QUEUE_RESULT_TTL_SECONDS:-86400}
+      BOOKING_QUEUE_LOCK_TTL_MS: ${BOOKING_QUEUE_LOCK_TTL_MS:-15000}
+      ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: python -m api.app.booking_queue_worker_main
+    restart: always
+
+  outbox_scheduler:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_outbox_scheduler
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel
+      REDIS_URL: redis://redis-master:6379
+      REDIS_SENTINEL_MASTER: mymaster
+      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+      REDIS_QUEUE_PREFIX: "queue:"
+      REDIS_STATE_PREFIX: "state:"
+      REDIS_CACHE_PREFIX: "cache:"
+      OUTBOX_PROCESS_LIMIT: ${OUTBOX_PROCESS_LIMIT:-200}
+      OUTBOX_SCHEDULER_INTERVAL_SECONDS: ${OUTBOX_SCHEDULER_INTERVAL_SECONDS:-15}
+      GOOGLE_CALENDAR_ENABLED: ${GOOGLE_CALENDAR_ENABLED:-false}
+      GOOGLE_CALENDAR_AUTH_MODE: ${GOOGLE_CALENDAR_AUTH_MODE:-service_account}
+      GOOGLE_CALENDAR_ID: ${GOOGLE_CALENDAR_ID:-primary}
+      GOOGLE_CALENDAR_TIMEZONE: ${GOOGLE_CALENDAR_TIMEZONE:-UTC}
+      GOOGLE_SERVICE_ACCOUNT_FILE: ${GOOGLE_SERVICE_ACCOUNT_FILE:-}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+      GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${GOOGLE_SERVICE_ACCOUNT_JSON_BASE64:-}
+      GOOGLE_OAUTH_CLIENT_SECRET_FILE: ${GOOGLE_OAUTH_CLIENT_SECRET_FILE:-}
+      GOOGLE_OAUTH_TOKEN_FILE: ${GOOGLE_OAUTH_TOKEN_FILE:-}
+      GOOGLE_CALENDAR_WEBHOOK_TOKEN: ${GOOGLE_CALENDAR_WEBHOOK_TOKEN:-}
+      GOOGLE_CALENDAR_WEBHOOK_CALLBACK_URL: ${GOOGLE_CALENDAR_WEBHOOK_CALLBACK_URL:-}
+      GOOGLE_CALENDAR_WATCH_TTL_SECONDS: ${GOOGLE_CALENDAR_WATCH_TTL_SECONDS:-86400}
+      ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: python scripts/run_outbox_scheduler.py
+    restart: always
+
+volumes:
+  postgres_data:
+  redis_master_data:
+  redis_replica_data:

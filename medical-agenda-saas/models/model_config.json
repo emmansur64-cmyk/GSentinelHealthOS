@@ -1,0 +1,84 @@
+{
+  "default_model": "general_resnet18_medical_v1",
+  "models": [
+    {
+      "key": "chexnet_xray_v1",
+      "enabled": true,
+      "study_type": "XRAY",
+      "path": "models/chexnet_xray_v1.onnx",
+      "input_name": "input",
+      "output_name": "output",
+      "input_size": 224,
+      "channels": 3,
+      "mean": [0.485, 0.456, 0.406],
+      "std": [0.229, 0.224, 0.225],
+      "output_mode": "multilabel_sigmoid",
+      "threshold": 0.35,
+      "labels": [
+        "sin hallazgos evidentes",
+        "posible neumonia",
+        "posible derrame pleural",
+        "posible cardiomegalia",
+        "posible neumotorax",
+        "posible consolidacion"
+      ]
+    },
+    {
+      "key": "rsna_ct_hemorrhage_v1",
+      "enabled": true,
+      "study_type": "CT",
+      "path": "models/rsna_ct_hemorrhage_v1.onnx",
+      "input_name": "input",
+      "output_name": "output",
+      "input_size": 224,
+      "channels": 3,
+      "mean": [0.485, 0.456, 0.406],
+      "std": [0.229, 0.224, 0.225],
+      "output_mode": "multilabel_sigmoid",
+      "threshold": 0.4,
+      "labels": [
+        "sin hallazgos evidentes",
+        "posible hemorragia intracraneal",
+        "posible edema cerebral",
+        "posible efecto de masa"
+      ]
+    },
+    {
+      "key": "medmnist_mri_v1",
+      "enabled": true,
+      "study_type": "MRI",
+      "path": "models/medmnist_mri_v1.onnx",
+      "input_name": "input",
+      "output_name": "output",
+      "input_size": 224,
+      "channels": 3,
+      "mean": [0.5, 0.5, 0.5],
+      "std": [0.25, 0.25, 0.25],
+      "output_mode": "multiclass_softmax",
+      "labels": [
+        "sin hallazgos evidentes",
+        "posible alteracion meniscal",
+        "posible edema oseo",
+        "posible lesion de tejidos blandos"
+      ]
+    },
+    {
+      "key": "general_resnet18_medical_v1",
+      "enabled": true,
+      "study_type": "UNKNOWN",
+      "path": "models/medical_model_v1.onnx",
+      "input_name": "input",
+      "output_name": "findings_logits",
+      "input_size": 224,
+      "channels": 3,
+      "mean": [0.485, 0.456, 0.406],
+      "std": [0.229, 0.224, 0.225],
+      "output_mode": "multiclass_softmax",
+      "labels": [
+        "sin hallazgos evidentes",
+        "posible derrame",
+        "posible fractura"
+      ]
+    }
+  ]
+}

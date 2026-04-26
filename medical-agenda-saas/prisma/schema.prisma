@@ -1,0 +1,374 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  recepcionista
+  medico
+  secretaria
+  doctor
+}
+
+enum TenantPlan {
+  basico
+  profesional
+  enterprise
+}
+
+enum TenantStatus {
+  active
+  suspended
+  trial
+}
+
+enum AppointmentStatus {
+  scheduled
+  confirmed
+  cancelled
+  completed
+  no_show
+}
+
+enum AppointmentSource {
+  manual
+  web
+  whatsapp
+  phone
+}
+
+model User {
+  id            String         @id @default(uuid())
+  tenant_id     String         @default("default")
+  name          String
+  role          Role
+  email         String
+  password_hash String
+  created_at    DateTime       @default(now())
+  updated_at    DateTime       @updatedAt
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+
+  doctorProfile DoctorProfile?
+  agendaSettings AgendaSettings?
+  sessions      Session[]
+  activityLogs  ActivityLog[]
+  auditLogs     AuditLog[]
+
+  @@unique([tenant_id, email])
+  @@index([tenant_id, role])
+  @@map("users")
+}
+
+model Tenant {
+  id                          String       @id @default(uuid())
+  nombre                      String
+  slug                        String       @unique
+  plan                        TenantPlan   @default(basico)
+  estado                      TenantStatus @default(active)
+  limite_medicos              Int          @default(5)
+  limite_turnos_mensuales     Int          @default(1500)
+  created_at                  DateTime     @default(now())
+  updated_at                  DateTime     @updatedAt
+
+  users              User[]
+  doctorProfiles     DoctorProfile[]
+  agendaSettings     AgendaSettings[]
+  patients           Patient[]
+  appointments       Appointment[]
+  availabilityRules  AvailabilityRule[]
+  sessions           Session[]
+  activityLogs       ActivityLog[]
+  auditLogs          AuditLog[]
+  incomingMessages   IncomingMessage[]
+  outgoingMessages   OutgoingMessage[]
+  conversationStates ConversationState[]
+  rateLimits         RateLimit[]
+  failedMessages     FailedMessage[]
+
+  @@map("tenants")
+}
+
+model AgendaSettings {
+  user_id              String   @id
+  tenant_id            String   @default("default")
+  appointment_duration Int
+  buffer_minutes       Int
+  start_time           String
+  end_time             String
+  working_days         Json
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+  @@map("agenda_settings")
+}
+
+model DoctorProfile {
+  user_id    String   @id
+  tenant_id  String   @default("default")
+  specialty  String
+  matricula  String
+  ai_tag     String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  user             User               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  appointments     Appointment[]
+  availabilityRule AvailabilityRule[]
+
+  @@unique([tenant_id, matricula])
+  @@unique([tenant_id, ai_tag])
+  @@index([tenant_id, specialty])
+  @@map("doctor_profiles")
+}
+
+model Patient {
+  id          String        @id @default(uuid())
+  tenant_id   String        @default("default")
+  name        String
+  document    String?
+  phone       String
+  notes       String?
+  created_at  DateTime      @default(now())
+  updated_at  DateTime      @updatedAt
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  appointments Appointment[]
+
+  @@unique([tenant_id, document])
+  @@index([tenant_id, created_at])
+  @@index([name])
+  @@map("patients")
+}
+
+model Appointment {
+  id         String            @id @default(uuid())
+  tenant_id  String            @default("default")
+  patient_id String
+  doctor_id  String
+  datetime   DateTime
+  duration   Int
+  status     AppointmentStatus @default(scheduled)
+  source     AppointmentSource @default(manual)
+  idempotency_key String?
+  notes      String?
+  deleted_at DateTime?
+  created_at DateTime          @default(now())
+  updated_at DateTime          @updatedAt
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  patient Patient       @relation(fields: [patient_id], references: [id], onDelete: Restrict)
+  doctor  DoctorProfile @relation(fields: [doctor_id], references: [user_id], onDelete: Restrict)
+
+  @@index([tenant_id, doctor_id, datetime])
+  @@index([tenant_id, doctor_id, status, datetime])
+  @@index([tenant_id, patient_id, datetime])
+  @@index([deleted_at])
+  @@unique([tenant_id, idempotency_key])
+  @@map("appointments")
+}
+
+model AvailabilityRule {
+  id            String   @id @default(uuid())
+  tenant_id     String   @default("default")
+  doctor_id     String
+  day_of_week   Int
+  specific_date DateTime?
+  start_time    String
+  end_time      String
+  slot_duration Int
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  doctor DoctorProfile @relation(fields: [doctor_id], references: [user_id], onDelete: Cascade)
+
+  @@index([tenant_id, doctor_id, day_of_week])
+  @@map("availability_rules")
+}
+
+model Session {
+  id         String    @id @default(uuid())
+  tenant_id  String    @default("default")
+  user_id    String
+  jwt_id     String    @unique
+  expires_at DateTime
+  revoked_at DateTime?
+  created_at DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, user_id])
+  @@index([expires_at])
+  @@index([revoked_at])
+  @@map("sessions")
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid())
+  tenant_id  String   @default("default")
+  user_id    String?
+  role       Role?
+  action     String
+  entity     String
+  entity_id  String?
+  details    Json?
+  ip_address String?
+  user_agent String?
+  created_at DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  user User? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([tenant_id, created_at])
+  @@index([created_at])
+  @@index([entity, entity_id])
+  @@index([action])
+  @@map("activity_logs")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  tenant_id      String   @default("default")
+  user_id        String?
+  action         String
+  entity_id      String?
+  entity_type    String
+  payload_before Json?
+  payload_after  Json?
+  created_at     DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  user User? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([tenant_id, created_at])
+  @@index([created_at])
+  @@index([entity_type, entity_id])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// ── WhatsApp Integration ────────────────────────────────────────────────────
+
+enum IncomingMessageStatus {
+  pending
+  processing
+  done
+  failed
+}
+
+enum OutgoingMessageStatus {
+  pending
+  sent
+  delivered
+  read
+  failed
+}
+
+model IncomingMessage {
+  id           String                @id @default(uuid())
+  tenant_id    String                @default("default")
+  message_id   String                @unique          // wamid de Meta
+  from_phone   String
+  payload_json Json
+  status       IncomingMessageStatus @default(pending)
+  error        String?
+  received_at  DateTime              @default(now())
+  processed_at DateTime?
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+
+  @@index([tenant_id, from_phone])
+  @@index([from_phone])
+  @@index([status])
+  @@index([received_at])
+  @@map("incoming_messages")
+}
+
+model OutgoingMessage {
+  id         String                @id @default(uuid())
+  tenant_id  String                @default("default")
+  phone      String
+  message    String
+  wa_id      String?               // wamid devuelto por Meta
+  status     OutgoingMessageStatus @default(pending)
+  error      String?
+  sent_at    DateTime?
+  created_at DateTime              @default(now())
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+
+  @@index([tenant_id, phone])
+  @@index([phone])
+  @@index([status])
+  @@map("outgoing_messages")
+}
+
+model ConversationState {
+  tenant_id    String   @default("default")
+  phone        String   @id
+  last_intent  String?
+  context_json Json     @default("{}")
+  updated_at   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+
+  @@index([tenant_id])
+  @@map("conversation_states")
+}
+
+model RateLimit {
+  tenant_id    String   @default("default")
+  phone        String   @id
+  message_count Int     @default(0)
+  window_start DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+
+  @@index([tenant_id])
+  @@map("rate_limits")
+}
+
+// ── Dead Letter Queue ─────────────────────────────────────────────────────────
+
+enum FailedMessageStatus {
+  pending       // Pendiente de revisión
+  retrying      // En proceso de reintento
+  resolved      // Resuelto exitosamente
+  discarded     // Descartado manualmente
+}
+
+model FailedMessage {
+  id             String              @id @default(uuid())
+  tenant_id      String              @default("default")
+  message_id     String              @unique  // wamid original
+  job_id         String?                      // BullMQ job id
+  from_phone     String
+  payload_json   Json
+  error_message  String
+  error_stack    String?
+  retry_count    Int                 @default(0)
+  max_retries    Int                 @default(5)
+  last_attempt   DateTime            @default(now())
+  status         FailedMessageStatus @default(pending)
+  resolved_at    DateTime?
+  resolved_by    String?             // user_id que resolvió
+  notes          String?             // Notas del admin
+  created_at     DateTime            @default(now())
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+
+  @@index([tenant_id, status])
+  @@index([status])
+  @@index([from_phone])
+  @@index([created_at])
+  @@map("failed_messages")
+}

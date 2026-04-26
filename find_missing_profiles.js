@@ -1,0 +1,33 @@
+const { PrismaClient } = require('@prisma/client')
+
+const prisma = new PrismaClient()
+
+async function main() {
+  try {
+    const users = await prisma.user.findMany({
+      where: {
+        role: {
+          in: ['doctor', 'medico']
+        },
+        doctorProfile: {
+          is: null
+        }
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        tenant_id: true
+      }
+    })
+
+    console.log('MISSING_PROFILE_JSON:' + JSON.stringify(users))
+  } catch (error) {
+    console.error(error)
+  } finally {
+    await prisma.\()
+  }
+}
+
+main()

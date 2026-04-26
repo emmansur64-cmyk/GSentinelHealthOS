@@ -1,0 +1,183 @@
+ESTRUCTURA PROPUESTA PARA GSENTINELHEALTHOS
+==========================================================
+
+ANTES (CONTAMINADO):
+E:\GSentinelHealthOS\
+├── .venv/                      ❌ Venv Python en raíz
+├── api/                        ↓ Backend Python mezclado
+├── brain/                      ↓
+├── dashboard-ui/               ↓ Frontend 1
+├── frontend/                   ↓ Frontend 2 (duplicado)
+├── whatsapp_gateway/
+├── broker/
+├── alembic/
+└── requirements.txt
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DESPUÉS (LIMPIO - MONOREPO HÍBRIDO):
+
+GSentinelHealthOS/
+│
+├─── backend/                   📦 Python (API, Brain, Gateway)
+│    ├── api/
+│    │   ├── app/
+│    │   │   ├── main.py
+│    │   │   ├── api/
+│    │   │   ├── core/
+│    │   │   ├── db/
+│    │   │   ├── dependencies/
+│    │   │   ├── exceptions/
+│    │   │   ├── models/
+│    │   │   ├── observability/
+│    │   │   ├── scheduler/
+│    │   │   ├── schemas/
+│    │   │   └── services/
+│    │   └── ...
+│    │
+│    ├── brain/
+│    │   ├── main.py
+│    │   ├── core/
+│    │   ├── decision_engine/
+│    │   ├── integration/
+│    │   ├── interpreters/
+│    │   ├── schemas/
+│    │   └── services/
+│    │
+│    ├── whatsapp_gateway/
+│    │   ├── app/
+│    │   ├── api/
+│    │   ├── clients/
+│    │   ├── core/
+│    │   ├── services/
+│    │   └── utils/
+│    │
+│    ├── shared/
+│    │   ├── __init__.py
+│    │   ├── config.py
+│    │   ├── logging_utils.py
+│    │   ├── models/
+│    │   ├── schemas/
+│    │   └── utils/
+│    │
+│    ├── tests/              (Todos los tests Python aquí)
+│    │   ├── api/
+│    │   ├── brain/
+│    │   ├── gateway/
+│    │   ├── integration/
+│    │   └── unit/
+│    │
+│    ├── alembic/            (Migraciones BD)
+│    ├── scripts/            (Scripts Python de administración)
+│    ├── requirements.txt
+│    ├── pytest.ini
+│    ├── tox.ini
+│    └── .venv/              ✓ Venv Python AQUÍ (aislado)
+│
+├─── frontend/               🎨 React + Vite (ÚNICO)
+│    ├── src/
+│    │   ├── app/
+│    │   │   ├── App.tsx
+│    │   │   └── index.css
+│    │   │
+│    │   ├── pages/          (Route Components - Lazy Load)
+│    │   │   ├── DashboardPage.tsx
+│    │   │   ├── LoginPage.tsx
+│    │   │   └── SettingsPage.tsx
+│    │   │
+│    │   ├── components/     (Reusable Components - Code Split)
+│    │   │   ├── Dashboard/
+│    │   │   │   ├── MetricsChart.tsx
+│    │   │   │   ├── StatsCard.tsx
+│    │   │   │   └── RecentAppointments.tsx
+│    │   │   │
+│    │   │   ├── Telemetry/
+│    │   │   │   ├── QueueMonitor.tsx
+│    │   │   │   └── HealthStatus.tsx
+│    │   │   │
+│    │   │   ├── Alerts/
+│    │   │   │   ├── AlertPanel.tsx
+│    │   │   │   └── AlertHistory.tsx
+│    │   │   │
+│    │   │   ├── Settings/
+│    │   │   │   ├── BotConfig.tsx
+│    │   │   │   └── UserPrefs.tsx
+│    │   │   │
+│    │   │   ├── Common/
+│    │   │   │   ├── Header.tsx
+│    │   │   │   ├── Footer.tsx
+│    │   │   │   └── Layout.tsx
+│    │   │   │
+│    │   │   └── Modals/
+│    │   │       ├── TeachBotModal.tsx
+│    │   │       └── ConfirmDialog.tsx
+│    │   │
+│    │   ├── hooks/
+│    │   │   ├── useDashboard.ts
+│    │   │   ├── useTelemetry.ts
+│    │   │   └── useAuth.ts
+│    │   │
+│    │   ├── api/
+│    │   │   ├── client.ts     (axios + interceptors)
+│    │   │   ├── auth.ts       (autenticación endpoints)
+│    │   │   ├── dashboard.ts  (dashboard endpoints)
+│    │   │   ├── telemetry.ts  (observabilidad)
+│    │   │   └── bot.ts        (endpoints del bot)
+│    │   │
+│    │   ├── types/
+│    │   │   ├── api.ts        (Tipos de respuestas HTTP)
+│    │   │   ├── domain.ts     (Tipos de negocio)
+│    │   │   └── ui.ts         (Tipos de UI state)
+│    │   │
+│    │   └── main.tsx
+│    │
+│    ├── public/              (Assets estáticos)
+│    │   ├── favicon.ico
+│    │   └── logo.svg
+│    │
+│    ├── vite.config.ts       ✓ OPTIMIZADO (código splitting)
+│    ├── tsconfig.json
+│    ├── tailwind.config.js
+│    ├── postcss.config.js
+│    ├── package.json
+│    ├── package-lock.json
+│    └── .env.example
+│
+├─── database/               📊 Schema + Seeds
+│    ├── init.sql
+│    └── migrations/
+│        └── 20260401_001_create_users_table.sql
+│
+├─── docker/                 🐳 Dockerfiles
+│    ├── api.Dockerfile
+│    ├── brain.Dockerfile
+│    ├── gateway.Dockerfile
+│    └── redis.Dockerfile
+│
+├─── n8n/                    🔄 Workflows externos
+│    ├── credentials/
+│    └── workflows/
+│
+├─── docs/                   📚 Documentación
+│
+├─── scripts/                🛠️ Utilidades root
+│    └── (helpers raros que no caben en backend/)
+│
+├─── docker-compose.yml      ✓ Compose local
+├─── docker-compose.prod.yml ✓ Compose production
+│
+├─── .gitignore              ✓ MEJORADO
+├─── .env.example
+├─── README.md
+└─── LICENSE
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+KEY POINTS:
+✓ Backend en carpeta aislada = no contamina imports
+✓ Frontend ÚNICO = no confusión de 2 versiones
+✓ .venv dentro de backend/ = Python aislado
+✓ Code splitting lógica: Pages, Telemetry, Alerts, Settings
+✓ Shared/ en backend para tipos db comunes
+✓ .gitignore claro en raíz
+

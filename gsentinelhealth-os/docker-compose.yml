@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gsentinelhealth-postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-gsentinelhealth}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-gsentinelhealth}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - gsentinelhealth-net
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: gsentinelhealth-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-gsentinelhealth}?schema=public
+      BACKEND_PORT: ${BACKEND_PORT:-4000}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      AUTH_USERNAME: ${AUTH_USERNAME:-admin}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:-change_me_now}
+    ports:
+      - "${BACKEND_PORT:-4000}:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - gsentinelhealth-net
+
+  # DESACTIVADO: frontend deprecado — usar medical-agenda-saas/ como frontend principal
+  # frontend:
+  #   build:
+  #     context: .
+  #     dockerfile: apps/frontend/Dockerfile
+  #   container_name: gsentinelhealth-frontend
+  #   depends_on:
+  #     backend:
+  #       condition: service_healthy
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     VITE_API_URL: ${VITE_API_URL:-http://localhost:4000/api}
+  #     VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:4000}
+  #   ports:
+  #     - "${FRONTEND_PORT:-5173}:5173"
+  #   networks:
+  #     - gsentinelhealth-net
+
+volumes:
+  postgres_data:
+
+networks:
+  gsentinelhealth-net:
+    driver: bridge

@@ -1,0 +1,165 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: medical-agenda-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      - medical-agenda-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: medical-agenda-postgres
+    environment:
+      POSTGRES_DB: medical_agenda
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - medical_agenda_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d medical_agenda"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - medical-agenda-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  bootstrap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: bootstrap
+    container_name: medical-agenda-bootstrap
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/medical_agenda
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-this-for-a-very-long-secret-key-at-least-32-characters}
+      SEED_SECRETARIA_NAME: ${SEED_SECRETARIA_NAME:-Secretaria Principal}
+      SEED_SECRETARIA_EMAIL: ${SEED_SECRETARIA_EMAIL:-secretaria@clinic.local}
+      SEED_SECRETARIA_PASSWORD: ${SEED_SECRETARIA_PASSWORD:-ChangeMe123!}
+      SEED_DOCTOR_NAME: ${SEED_DOCTOR_NAME:-Dr. Inicial}
+      SEED_DOCTOR_EMAIL: ${SEED_DOCTOR_EMAIL:-doctor@clinic.local}
+      SEED_DOCTOR_PASSWORD: ${SEED_DOCTOR_PASSWORD:-ChangeMe123!}
+      SEED_DOCTOR_SPECIALTY: ${SEED_DOCTOR_SPECIALTY:-Medicina General}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: sh -lc "npm run prisma:generate && npm run prisma:deploy && npm run prisma:seed"
+    restart: "no"
+    networks:
+      - medical-agenda-net
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: medical-agenda-web
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/medical_agenda
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-this-for-a-very-long-secret-key-at-least-32-characters}
+      JWT_EXPIRES_IN_HOURS: ${JWT_EXPIRES_IN_HOURS:-24}
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    networks:
+      - medical-agenda-net
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  appointment-lifecycle:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: medical-agenda-lifecycle
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/medical_agenda
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-this-for-a-very-long-secret-key-at-least-32-characters}
+      APPOINTMENT_REMINDER_LOOKAHEAD_HOURS: ${APPOINTMENT_REMINDER_LOOKAHEAD_HOURS:-24}
+      APPOINTMENT_CONFIRMATION_CANCEL_HOURS_BEFORE: ${APPOINTMENT_CONFIRMATION_CANCEL_HOURS_BEFORE:-12}
+      APPOINTMENT_LIFECYCLE_INTERVAL_MINUTES: ${APPOINTMENT_LIFECYCLE_INTERVAL_MINUTES:-60}
+    command: ["npm", "run", "job:appointment-lifecycle:watch"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - medical-agenda-net
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  medical-agenda-net:
+    driver: bridge
+
+volumes:
+  medical_agenda_postgres_data:

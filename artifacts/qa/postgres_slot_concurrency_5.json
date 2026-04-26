@@ -1,0 +1,148 @@
+{
+  "requests_total": 5,
+  "book_ok": 1,
+  "book_fail": 4,
+  "run_elapsed_ms": 334.8401000002923,
+  "avg_request_latency_ms": 256.5321399997629,
+  "p95_request_latency_ms": 255.38830000004964,
+  "error_histogram": {
+    "Slot not available or already booked": 4
+  },
+  "booked_slots": 1,
+  "scheduled_appointments": 1,
+  "blocked_slots": 2,
+  "slot_buffer_links": 2,
+  "blocked_without_links": 0,
+  "links_without_blocked": 0,
+  "available_with_active_buffer": 0,
+  "adjacent_booked_pairs": 0,
+  "overlapping_booked_in_same_buffer_window": 1,
+  "deadlock_detected_count": 0,
+  "db_error_count": 0,
+  "validations": {
+    "same_buffer_window_single_booking": true,
+    "no_available_with_active_buffer": true,
+    "slotbuffer_link_consistency": true,
+    "no_deadlocks_detected": true,
+    "invariants_passed": true
+  },
+  "invariant_checks": [
+    {
+      "name": "slot_booked_has_appointment",
+      "sql": "SELECT ts.id, ts.start_time, ts.end_time, ts.status\n                        FROM time_slots ts\n                        WHERE ts.id = ANY(:slot_ids)\n                            AND ts.status = 'booked'\n                            AND NOT EXISTS (\n                                SELECT 1\n                                FROM appointments a\n                                WHERE a.slot_id = ts.id\n                                    AND a.status = 'scheduled'\n                            )\n                        ORDER BY ts.start_time ASC, ts.id ASC",
+      "passed": true,
+      "failed_rows": []
+    },
+    {
+      "name": "slot_blocked_has_slotbufferblock",
+      "sql": "SELECT ts.id, ts.start_time, ts.end_time, ts.status\n                        FROM time_slots ts\n                        WHERE ts.id = ANY(:slot_ids)\n                            AND ts.status = 'blocked'\n                            AND NOT EXISTS (\n                                SELECT 1\n                                FROM slot_buffer_blocks sbb\n                                WHERE sbb.blocked_slot_id = ts.id\n                            )\n                        ORDER BY ts.start_time ASC, ts.id ASC",
+      "passed": true,
+      "failed_rows": []
+    },
+    {
+      "name": "slot_available_has_no_links",
+      "sql": "SELECT ts.id, ts.start_time, ts.end_time, ts.status\n                        FROM time_slots ts\n                        WHERE ts.id = ANY(:slot_ids)\n                            AND ts.status = 'available'\n                            AND EXISTS (\n                                SELECT 1\n                                FROM slot_buffer_blocks sbb\n                                WHERE sbb.blocked_slot_id = ts.id\n                            )\n                        ORDER BY ts.start_time ASC, ts.id ASC",
+      "passed": true,
+      "failed_rows": []
+    },
+    {
+      "name": "no_overlaps_within_buffer",
+      "sql": "WITH booked AS (\n                                SELECT ts.id, ts.start_time, ts.end_time\n                                FROM time_slots ts\n                                WHERE ts.id = ANY(:slot_ids)\n                                    AND ts.doctor_id = :doctor_id\n                                    AND ts.status = 'booked'\n                        )\n                        SELECT b1.id AS slot_a_id,\n                                     b2.id AS slot_b_id,\n                                     b1.start_time AS slot_a_start,\n                                     b2.start_time AS slot_b_start\n                        FROM booked b1\n                        JOIN booked b2 ON b1.id < b2.id\n                        WHERE b2.start_time < b1.end_time + INTERVAL '30 minutes'\n                            AND b1.start_time < b2.end_time + INTERVAL '30 minutes'\n                        ORDER BY b1.start_time ASC, b2.start_time ASC",
+      "passed": true,
+      "failed_rows": []
+    }
+  ],
+  "transaction_logs": [
+    {
+      "request_id": 1,
+      "slot_id": 135,
+      "patient_id": 38,
+      "backend_pid": 463,
+      "txid": 1101,
+      "target_start": "2026-04-05 14:15:00+00:00",
+      "target_end": "2026-04-05 14:30:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": true,
+      "message": "ok",
+      "latency_ms": 267.28739999816753
+    },
+    {
+      "request_id": 2,
+      "slot_id": 136,
+      "patient_id": 8,
+      "backend_pid": 465,
+      "txid": 1102,
+      "target_start": "2026-04-05 14:30:00+00:00",
+      "target_end": "2026-04-05 14:45:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked",
+      "latency_ms": 251.3875000004191
+    },
+    {
+      "request_id": 3,
+      "slot_id": 135,
+      "patient_id": 50,
+      "backend_pid": 464,
+      "txid": 1105,
+      "target_start": "2026-04-05 14:15:00+00:00",
+      "target_end": "2026-04-05 14:30:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked",
+      "latency_ms": 255.38830000004964
+    },
+    {
+      "request_id": 4,
+      "slot_id": 135,
+      "patient_id": 29,
+      "backend_pid": 466,
+      "txid": 1103,
+      "target_start": "2026-04-05 14:15:00+00:00",
+      "target_end": "2026-04-05 14:30:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked",
+      "latency_ms": 253.40409999989788
+    },
+    {
+      "request_id": 5,
+      "slot_id": 136,
+      "patient_id": 24,
+      "backend_pid": 467,
+      "txid": 1104,
+      "target_start": "2026-04-05 14:30:00+00:00",
+      "target_end": "2026-04-05 14:45:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked",
+      "latency_ms": 255.19340000028023
+    }
+  ],
+  "race_condition_evidence": {
+    "same_window_targets": [
+      135,
+      136
+    ],
+    "successful_bookings_same_window": 1,
+    "failed_due_to_buffer_or_availability": 4,
+    "artificial_delay_enabled": true,
+    "delay_range_ms": [
+      100,
+      300
+    ],
+    "deadlock_detected_count": 0,
+    "db_error_count": 0
+  },
+  "risks": [],
+  "differences_vs_sqlite": [
+    "PostgreSQL aplica bloqueo por fila real; SQLite no replica FOR UPDATE de forma estricta.",
+    "En PostgreSQL READ COMMITTED, cada transaccion ve commits recientes; SQLite suele serializar por lock de archivo.",
+    "En SQLite pueden aparecer falsos positivos/negativos de carrera; en PostgreSQL la contencion es mas representativa de produccion."
+  ]
+}

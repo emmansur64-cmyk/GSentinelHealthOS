@@ -1,0 +1,334 @@
+{
+  "requests_total": 20,
+  "book_ok": 1,
+  "book_fail": 19,
+  "error_histogram": {
+    "Slot not available or already booked": 19
+  },
+  "booked_slots": 1,
+  "scheduled_appointments": 1,
+  "blocked_slots": 2,
+  "slot_buffer_links": 2,
+  "blocked_without_links": 0,
+  "links_without_blocked": 0,
+  "available_with_active_buffer": 0,
+  "adjacent_booked_pairs": 0,
+  "overlapping_booked_in_same_buffer_window": 1,
+  "deadlock_detected_count": 0,
+  "validations": {
+    "same_buffer_window_single_booking": true,
+    "no_available_with_active_buffer": true,
+    "slotbuffer_link_consistency": true,
+    "no_deadlocks_detected": true,
+    "invariants_passed": true
+  },
+  "invariant_checks": [
+    {
+      "name": "slot_booked_has_appointment",
+      "sql": "SELECT ts.id, ts.start_time, ts.end_time, ts.status\n                        FROM time_slots ts\n                        WHERE ts.id = ANY(:slot_ids)\n                            AND ts.status = 'booked'\n                            AND NOT EXISTS (\n                                SELECT 1\n                                FROM appointments a\n                                WHERE a.slot_id = ts.id\n                                    AND a.status = 'scheduled'\n                            )\n                        ORDER BY ts.start_time ASC, ts.id ASC",
+      "passed": true,
+      "failed_rows": []
+    },
+    {
+      "name": "slot_blocked_has_slotbufferblock",
+      "sql": "SELECT ts.id, ts.start_time, ts.end_time, ts.status\n                        FROM time_slots ts\n                        WHERE ts.id = ANY(:slot_ids)\n                            AND ts.status = 'blocked'\n                            AND NOT EXISTS (\n                                SELECT 1\n                                FROM slot_buffer_blocks sbb\n                                WHERE sbb.blocked_slot_id = ts.id\n                            )\n                        ORDER BY ts.start_time ASC, ts.id ASC",
+      "passed": true,
+      "failed_rows": []
+    },
+    {
+      "name": "slot_available_has_no_links",
+      "sql": "SELECT ts.id, ts.start_time, ts.end_time, ts.status\n                        FROM time_slots ts\n                        WHERE ts.id = ANY(:slot_ids)\n                            AND ts.status = 'available'\n                            AND EXISTS (\n                                SELECT 1\n                                FROM slot_buffer_blocks sbb\n                                WHERE sbb.blocked_slot_id = ts.id\n                            )\n                        ORDER BY ts.start_time ASC, ts.id ASC",
+      "passed": true,
+      "failed_rows": []
+    },
+    {
+      "name": "no_overlaps_within_buffer",
+      "sql": "WITH booked AS (\n                                SELECT ts.id, ts.start_time, ts.end_time\n                                FROM time_slots ts\n                                WHERE ts.id = ANY(:slot_ids)\n                                    AND ts.doctor_id = :doctor_id\n                                    AND ts.status = 'booked'\n                        )\n                        SELECT b1.id AS slot_a_id,\n                                     b2.id AS slot_b_id,\n                                     b1.start_time AS slot_a_start,\n                                     b2.start_time AS slot_b_start\n                        FROM booked b1\n                        JOIN booked b2 ON b1.id < b2.id\n                        WHERE b2.start_time < b1.end_time + INTERVAL '30 minutes'\n                            AND b1.start_time < b2.end_time + INTERVAL '30 minutes'\n                        ORDER BY b1.start_time ASC, b2.start_time ASC",
+      "passed": true,
+      "failed_rows": []
+    }
+  ],
+  "transaction_logs": [
+    {
+      "request_id": 1,
+      "slot_id": 122,
+      "patient_id": 26,
+      "backend_pid": 379,
+      "txid": 1026,
+      "target_start": "2026-04-05 14:30:00+00:00",
+      "target_end": "2026-04-05 14:45:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": true,
+      "message": "ok"
+    },
+    {
+      "request_id": 2,
+      "slot_id": 121,
+      "patient_id": 14,
+      "backend_pid": 380,
+      "txid": 1028,
+      "target_start": "2026-04-05 14:15:00+00:00",
+      "target_end": "2026-04-05 14:30:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 3,
+      "slot_id": 122,
+      "patient_id": 41,
+      "backend_pid": 381,
+      "txid": 1039,
+      "target_start": "2026-04-05 14:30:00+00:00",
+      "target_end": "2026-04-05 14:45:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 4,
+      "slot_id": 122,
+      "patient_id": 40,
+      "backend_pid": 382,
+      "txid": 1038,
+      "target_start": "2026-04-05 14:30:00+00:00",
+      "target_end": "2026-04-05 14:45:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 5,
+      "slot_id": 121,
+      "patient_id": 48,
+      "backend_pid": 383,
+      "txid": 1027,
+      "target_start": "2026-04-05 14:15:00+00:00",
+      "target_end": "2026-04-05 14:30:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 6,
+      "slot_id": 121,
+      "patient_id": 13,
+      "backend_pid": 385,
+      "txid": 1030,
+      "target_start": "2026-04-05 14:15:00+00:00",
+      "target_end": "2026-04-05 14:30:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 7,
+      "slot_id": 121,
+      "patient_id": 48,
+      "backend_pid": 384,
+      "txid": 1035,
+      "target_start": "2026-04-05 14:15:00+00:00",
+      "target_end": "2026-04-05 14:30:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 8,
+      "slot_id": 122,
+      "patient_id": 21,
+      "backend_pid": 387,
+      "txid": 1041,
+      "target_start": "2026-04-05 14:30:00+00:00",
+      "target_end": "2026-04-05 14:45:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 9,
+      "slot_id": 120,
+      "patient_id": 39,
+      "backend_pid": 386,
+      "txid": 1040,
+      "target_start": "2026-04-05 14:00:00+00:00",
+      "target_end": "2026-04-05 14:15:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 10,
+      "slot_id": 121,
+      "patient_id": 16,
+      "backend_pid": 390,
+      "txid": 1033,
+      "target_start": "2026-04-05 14:15:00+00:00",
+      "target_end": "2026-04-05 14:30:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 11,
+      "slot_id": 120,
+      "patient_id": 38,
+      "backend_pid": 389,
+      "txid": 1032,
+      "target_start": "2026-04-05 14:00:00+00:00",
+      "target_end": "2026-04-05 14:15:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 12,
+      "slot_id": 122,
+      "patient_id": 21,
+      "backend_pid": 388,
+      "txid": 1031,
+      "target_start": "2026-04-05 14:30:00+00:00",
+      "target_end": "2026-04-05 14:45:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 13,
+      "slot_id": 120,
+      "patient_id": 48,
+      "backend_pid": 393,
+      "txid": 1043,
+      "target_start": "2026-04-05 14:00:00+00:00",
+      "target_end": "2026-04-05 14:15:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 14,
+      "slot_id": 122,
+      "patient_id": 43,
+      "backend_pid": 392,
+      "txid": 1042,
+      "target_start": "2026-04-05 14:30:00+00:00",
+      "target_end": "2026-04-05 14:45:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 15,
+      "slot_id": 122,
+      "patient_id": 25,
+      "backend_pid": 391,
+      "txid": 1034,
+      "target_start": "2026-04-05 14:30:00+00:00",
+      "target_end": "2026-04-05 14:45:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 16,
+      "slot_id": 121,
+      "patient_id": 36,
+      "backend_pid": 397,
+      "txid": 1037,
+      "target_start": "2026-04-05 14:15:00+00:00",
+      "target_end": "2026-04-05 14:30:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 17,
+      "slot_id": 121,
+      "patient_id": 5,
+      "backend_pid": 398,
+      "txid": 1029,
+      "target_start": "2026-04-05 14:15:00+00:00",
+      "target_end": "2026-04-05 14:30:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 18,
+      "slot_id": 122,
+      "patient_id": 23,
+      "backend_pid": 396,
+      "txid": 1036,
+      "target_start": "2026-04-05 14:30:00+00:00",
+      "target_end": "2026-04-05 14:45:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 19,
+      "slot_id": 120,
+      "patient_id": 38,
+      "backend_pid": 395,
+      "txid": 1045,
+      "target_start": "2026-04-05 14:00:00+00:00",
+      "target_end": "2026-04-05 14:15:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    },
+    {
+      "request_id": 20,
+      "slot_id": 121,
+      "patient_id": 27,
+      "backend_pid": 394,
+      "txid": 1044,
+      "target_start": "2026-04-05 14:15:00+00:00",
+      "target_end": "2026-04-05 14:30:00+00:00",
+      "delay_min_ms": 100,
+      "delay_max_ms": 300,
+      "ok": false,
+      "message": "Slot not available or already booked"
+    }
+  ],
+  "race_condition_evidence": {
+    "same_window_targets": [
+      120,
+      121,
+      122
+    ],
+    "successful_bookings_same_window": 1,
+    "failed_due_to_buffer_or_availability": 19,
+    "artificial_delay_enabled": true,
+    "delay_range_ms": [
+      100,
+      300
+    ],
+    "deadlock_detected_count": 0
+  },
+  "risks": [],
+  "differences_vs_sqlite": [
+    "PostgreSQL aplica bloqueo por fila real; SQLite no replica FOR UPDATE de forma estricta.",
+    "En PostgreSQL READ COMMITTED, cada transaccion ve commits recientes; SQLite suele serializar por lock de archivo.",
+    "En SQLite pueden aparecer falsos positivos/negativos de carrera; en PostgreSQL la contencion es mas representativa de produccion."
+  ]
+}

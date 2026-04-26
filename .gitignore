@@ -1,0 +1,149 @@
+# ============================================================================
+# .gitignore para GSentinelHealthOS - Monorepo Python Backend + React Frontend
+# ============================================================================
+
+# === PYTHON ===
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+Lib/                          # Windows venv
+Include/
+Scripts/                      # Windows venv scripts
+bin/                          # Linux/Mac venv
+.Python
+python.exe
+pip
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+*.cover
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ============================================================================
+
+# === NODEJS / FRONTEND ===
+
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs (keep one per frontend build)
+frontend/dist/
+frontend/build/
+
+# Vite cache
+.vite/
+vite-cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ============================================================================
+
+# === DATABASE ===
+
+*.db
+*.sqlite
+*.sqlite3
+sentinel_health.db
+
+# ============================================================================
+
+# === DOCKER & COMPOSITION ===
+
+.docker/
+docker-volumes/
+postgres_data/
+redis_data/
+
+# ============================================================================
+
+# === BUILD & ARTIFACTS ===
+
+dist/
+build/
+out/
+.next/
+.nuxt/
+site/
+.cache/
+
+# ============================================================================
+
+# === SECRETS & CREDENTIALS ===
+
+.env.local
+.env.*.local
+secrets/
+credentials/
+*.pem
+*.key
+*.crt
+
+# ============================================================================
+
+# === OS ===
+
+.DS_Store
+Thumbs.db
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# ============================================================================
+
+# === TEMPORARY / WORK-IN-PROGRESS ===
+
+tmp/
+temp/
+.tmp/
+*.tmp
+*.bak
+*.backup
+
+# ============================================================================
+
+# EXCEPTIONS (tracked files):
+!.env.example
+!.gitkeep
+!.gitignore
+

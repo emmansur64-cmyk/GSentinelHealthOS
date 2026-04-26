@@ -1,0 +1,23 @@
+{
+  "name": "gsentinelhealth-os",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w @gsentinelhealth/frontend\" \"npm run dev -w @gsentinelhealth/backend\"",
+    "dev:frontend": "npm run dev -w @gsentinelhealth/frontend",
+    "dev:backend": "npm run dev -w @gsentinelhealth/backend",
+    "build": "npm run build -w @gsentinelhealth/ui && npm run build -w @gsentinelhealth/frontend && npm run build -w @gsentinelhealth/backend",
+    "lint": "npm run lint -ws",
+    "db:generate": "npm run prisma:generate -w @gsentinelhealth/backend",
+    "db:migrate": "npm run prisma:migrate -w @gsentinelhealth/backend",
+    "db:seed": "npm run prisma:seed -w @gsentinelhealth/backend",
+    "db:studio": "npm run prisma:studio -w @gsentinelhealth/backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
