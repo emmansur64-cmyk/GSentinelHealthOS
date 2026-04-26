@@ -1,0 +1,37 @@
+{
+  "active_model": "3.0.0",
+  "models": [
+    {
+      "version": "3.0.0",
+      "created_at": "2026-04-21T17:27:11.267000+00:00",
+      "model_family": "sklearn-logistic-regression",
+      "labels": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "artifacts": {
+        "text": {
+          "path": "E:\\MetaBrain\\cerebro_ai_med\\models\\artifacts\\text\\3.0.0\\text_risk_pipeline.joblib",
+          "sha256": "c013204048ccbd95d9f49a0ed5dcbaff58c3d48ba0c1ce354349021d13218390"
+        },
+        "image": {
+          "path": "E:\\MetaBrain\\cerebro_ai_med\\models\\artifacts\\image\\3.0.0\\image_risk_pipeline.joblib",
+          "sha256": "25a20bd6775ed9b3288960088a632717f77929e9e8a80c5d073eb04248bfa0d4"
+        }
+      },
+      "metrics": {
+        "text": {
+          "accuracy": 1.0,
+          "macro_f1": 1.0,
+          "weighted_f1": 1.0
+        },
+        "image": {
+          "accuracy": 0.902564,
+          "macro_f1": 0.902193,
+          "weighted_f1": 0.902193
+        }
+      }
+    }
+  ]
+}

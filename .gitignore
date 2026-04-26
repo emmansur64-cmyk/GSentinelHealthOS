@@ -147,3 +147,5 @@ temp/
 !.gitkeep
 !.gitignore
 
+
+MetaBrain/.env

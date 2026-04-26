@@ -1,0 +1,23 @@
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY cerebro_ai_med/requirements.txt /tmp/requirements.txt
+RUN grep -v '^torch==' /tmp/requirements.txt > /tmp/requirements.no-torch.txt \
+    && pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.4.1+cpu \
+    && pip install --no-cache-dir -r /tmp/requirements.no-torch.txt
+
+COPY cerebro_ai_med /app/cerebro_ai_med
+COPY services /app/services
+
+RUN useradd -u 10001 -r -s /usr/sbin/nologin appuser \
+    && chown -R appuser:appuser /app
+USER appuser

@@ -1,0 +1,68 @@
+name: metabrain-prod
+
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - metabrain_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      - GATEWAY_PORT=8080
+      - LOG_LEVEL=INFO
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - metabrain_internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      - LOG_LEVEL=INFO
+      - WORKER_HEARTBEAT_TTL_SECONDS=30
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - metabrain_internal
+    restart: unless-stopped
+
+networks:
+  metabrain_internal:
+    driver: bridge
+
+volumes:
+  redis_data:

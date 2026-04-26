@@ -1,0 +1,19 @@
+.git
+.gitignore
+.venv
+.pytest_cache
+node_modules
+dist
+.vscode
+
+# Large runtime/data folders not needed for build context
+data
+models
+k8s
+docs
+scripts
+dl
+
+# Keep app sources only
+Dockerfile*
+docker-compose*.yml

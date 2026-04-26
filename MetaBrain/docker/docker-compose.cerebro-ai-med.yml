@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  cerebro-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cerebro-api
+    container_name: cerebro-ai-med-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../cerebro_ai_med/.env.example
+    environment:
+      - APP_ENV=production
+      - CEREBRO_API_KEY=${CEREBRO_API_KEY}
+      - CEREBRO_REDIS_URL=redis://redis:6379/0
+      - CEREBRO_RATE_LIMIT_ENABLED=true
+      - CEREBRO_RATE_LIMIT_FAIL_OPEN=false
+      - CEREBRO_CORS_ALLOW_ORIGINS=http://localhost:3000
+    volumes:
+      - ../cerebro_ai_med/models/artifacts:/app/cerebro_ai_med/models/artifacts:ro
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: cerebro-ai-med-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
