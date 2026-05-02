@@ -12,7 +12,7 @@ export type AuthenticatedUser = {
   sessionId: string;
 };
 
-export type RoleLike = Role | "medico" | "recepcionista";
+export type RoleLike = Role | "super_admin" | "clinic_owner" | "clinic_admin" | "medico" | "recepcionista" | "receptionist";
 
 export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> {
   const cookieStore = await cookies();

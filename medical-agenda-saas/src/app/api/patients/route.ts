@@ -12,12 +12,13 @@ export async function GET() {
   if (!tenant.ok) return tenant.response;
 
   const patients = await prisma.patient.findMany({
+    where: { tenant_id: tenant.tenant.id },
     orderBy: { created_at: "desc" },
   });
   return ok(
     patients.map((patient) => ({
       ...patient,
-      document: "",
+      document: patient.document ?? "",
       contact: patient.phone,
     })),
   );
@@ -35,10 +36,22 @@ export async function POST(request: Request) {
     const meta = requestMeta(request);
     if (!parsed.success) return fail("Payload invalido", 422, parsed.error.flatten());
 
+    const existingDocument = await prisma.patient.findFirst({
+      where: {
+        tenant_id: tenant.tenant.id,
+        document: parsed.data.document,
+      },
+      select: { id: true },
+    });
+    if (existingDocument) return fail("Ya existe un paciente con ese DNI", 409);
+
     const created = await prisma.patient.create({
       data: {
+        tenant_id: tenant.tenant.id,
         name: parsed.data.name,
+        document: parsed.data.document,
         phone: parsed.data.contact,
+        insurance: parsed.data.insurance || null,
         notes: parsed.data.notes,
       },
     });
@@ -55,7 +68,7 @@ export async function POST(request: Request) {
     return ok(
       {
         ...created,
-        document: "",
+        document: created.document ?? "",
         contact: created.phone,
       },
       201,

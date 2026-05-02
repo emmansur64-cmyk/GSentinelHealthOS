@@ -3,11 +3,14 @@ import { logAudit, requestMeta } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser, hasRole } from "@/lib/server-auth";
 import { appointmentTodayQuerySchema } from "@/lib/validators";
+import { requireTenant } from "@/middleware/tenantMiddleware";
 
 export async function GET(request: Request) {
   const authUser = await getAuthenticatedUser();
   if (!authUser) return fail("No autenticado", 401);
   if (!hasRole(authUser, ["doctor"])) return fail("Sin permisos", 403);
+  const tenant = await requireTenant(authUser);
+  if (!tenant.ok) return tenant.response;
 
   const now = new Date();
   const startOfDay = new Date(now);
@@ -23,6 +26,7 @@ export async function GET(request: Request) {
   const appointments = await prisma.appointment.findMany({
     where: {
       doctor_id: authUser.userId,
+      tenant_id: tenant.tenant.id,
       deleted_at: null,
       datetime: { gte: startOfDay, lte: endOfDay },
     },
@@ -45,14 +49,14 @@ export async function GET(request: Request) {
   } = null;
 
   if (parsed.data.patient_id) {
-    const patient = await prisma.patient.findUnique({
-      where: { id: parsed.data.patient_id },
+    const patient = await prisma.patient.findFirst({
+      where: { id: parsed.data.patient_id, tenant_id: tenant.tenant.id },
       select: { id: true, name: true, phone: true, notes: true },
     });
 
     if (patient) {
       const historyRows = await prisma.appointment.findMany({
-        where: { patient_id: patient.id, deleted_at: null },
+        where: { patient_id: patient.id, tenant_id: tenant.tenant.id, deleted_at: null },
         include: { doctor: { include: { user: { select: { name: true } } } } },
         orderBy: { datetime: "desc" },
         take: 20,

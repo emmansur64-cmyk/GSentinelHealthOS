@@ -19,10 +19,10 @@ export async function GET(_request: Request, context: Params) {
   const { id } = await context.params;
 
   const patient = await prisma.patient.findFirst({
-    where: { id },
+    where: { id, tenant_id: tenant.tenant.id },
     include: {
       appointments: {
-        where: { deleted_at: null },
+        where: { tenant_id: tenant.tenant.id, deleted_at: null },
         orderBy: { datetime: "desc" },
         take: 50,
         include: {
@@ -35,7 +35,7 @@ export async function GET(_request: Request, context: Params) {
   if (!patient) return fail("Paciente no encontrado", 404);
   return ok({
     ...patient,
-    document: "",
+    document: patient.document ?? "",
     contact: patient.phone,
   });
 }
@@ -56,17 +56,39 @@ export async function PUT(request: Request, context: Params) {
     const meta = requestMeta(request);
     if (!parsed.success) return fail("Payload invalido", 422, parsed.error.flatten());
 
-    const existing = await prisma.patient.findFirst({ where: { id }, select: { id: true } });
+    const existing = await prisma.patient.findFirst({
+      where: { id, tenant_id: tenant.tenant.id },
+      select: { id: true, document: true },
+    });
     if (!existing) return fail("Paciente no encontrado", 404);
 
-    const updated = await prisma.patient.update({
-      where: { id },
+    if (parsed.data.document && parsed.data.document !== existing.document) {
+      const taken = await prisma.patient.findFirst({
+        where: {
+          tenant_id: tenant.tenant.id,
+          document: parsed.data.document,
+          id: { not: id },
+        },
+        select: { id: true },
+      });
+      if (taken) return fail("Ya existe un paciente con ese DNI", 409);
+    }
+
+    await prisma.patient.updateMany({
+      where: { id, tenant_id: tenant.tenant.id },
       data: {
         name: parsed.data.name,
+        document: parsed.data.document,
         phone: parsed.data.contact,
+        insurance: parsed.data.insurance,
         notes: parsed.data.notes,
       },
     });
+
+    const updated = await prisma.patient.findFirst({
+      where: { id, tenant_id: tenant.tenant.id },
+    });
+    if (!updated) return fail("Paciente no encontrado", 404);
 
     await logAudit({
       userId: authUser.userId,
@@ -81,7 +103,7 @@ export async function PUT(request: Request, context: Params) {
 
     return ok({
       ...updated,
-      document: "",
+      document: updated.document ?? "",
       contact: updated.phone,
     });
   } catch (error) {
@@ -106,9 +128,16 @@ export async function DELETE(request: Request, context: Params) {
   try {
     const meta = requestMeta(request);
 
+    const patient = await prisma.patient.findFirst({
+      where: { id, tenant_id: tenant.tenant.id },
+      select: { id: true },
+    });
+    if (!patient) return fail("Paciente no encontrado", 404);
+
     // Verificar si tiene turnos activos (planned)
     const activeCount = await prisma.appointment.count({
       where: {
+        tenant_id: tenant.tenant.id,
         patient_id: id,
         deleted_at: null,
         status: { notIn: ["cancelled", "no_show", "completed"] },
@@ -125,8 +154,8 @@ export async function DELETE(request: Request, context: Params) {
 
     // Transacción: eliminar turnos históricos y luego el paciente
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.appointment.deleteMany({ where: { patient_id: id } });
-      await tx.patient.delete({ where: { id } });
+      await tx.appointment.deleteMany({ where: { tenant_id: tenant.tenant.id, patient_id: id } });
+      await tx.patient.deleteMany({ where: { id, tenant_id: tenant.tenant.id } });
     });
 
     await logAudit({

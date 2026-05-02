@@ -29,13 +29,19 @@ export async function createSessionToken(input: { userId: string; role: Role; te
   const jwtExpiresInHours = getJwtExpiresInHours();
   const session = await prisma.session.create({
     data: {
+      tenant_id: input.tenantId,
       user_id: input.userId,
       jwt_id: crypto.randomUUID(),
       expires_at: new Date(Date.now() + jwtExpiresInHours * 60 * 60 * 1000),
     },
   });
 
-  const token = await new SignJWT({ role: input.role, tenantId: input.tenantId, sessionId: session.id })
+  const token = await new SignJWT({
+    userId: input.userId,
+    role: input.role,
+    tenantId: input.tenantId,
+    sessionId: session.id,
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(input.userId)
     .setJti(session.jwt_id)

@@ -13,6 +13,26 @@ export const loginSchema = z.object({
   identifier: z.string().trim().min(3).max(120),
   password: z.string().min(8).max(128),
   tenant: safeString(2, 80).optional(),
+  tenant_slug: safeString(2, 80).optional(),
+  clinic_slug: safeString(2, 80).optional(),
+}).strict();
+
+export const publicClinicRegistrationSchema = z.object({
+  clinic_name: safeString(2, 160),
+  tenant_slug: safeString(2, 80)
+    .transform((value) =>
+      value
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, ""),
+    )
+    .pipe(z.string().min(2).max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Slug invalido")),
+  owner_name: safeString(2, 120),
+  owner_email: z.email().transform((value) => value.trim().toLowerCase()),
+  phone: z.string().trim().min(7).max(30).regex(/^[+\d\s\-()]+$/, "Telefono invalido").optional(),
+  password: z.string().min(8).max(128),
 }).strict();
 
 function isDoctorLikeRole(role: string) {
@@ -59,6 +79,7 @@ export const patientCreateSchema = z.object({
   name: safeString(2, 120),
   document: safeString(6, 40),
   contact: safeString(8, 60),
+  insurance: safeString(1, 120).nullable().optional(),
   notes: safeString(1, 500).optional(),
 }).strict();
 
@@ -149,6 +170,7 @@ export const patientUpdateSchema = z.object({
   name: safeString(2, 120).optional(),
   document: safeString(6, 40).optional(),
   contact: safeString(8, 60).optional(),
+  insurance: safeString(1, 120).nullable().optional(),
   notes: safeString(1, 500).nullable().optional(),
 }).strict();
 

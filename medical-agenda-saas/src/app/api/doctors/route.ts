@@ -15,6 +15,7 @@ export async function GET() {
   if (!tenant.ok) return tenant.response;
 
   const doctors = await prisma.doctorProfile.findMany({
+    where: { tenant_id: tenant.tenant.id },
     select: {
       user_id: true,
       specialty: true,
@@ -37,6 +38,7 @@ export async function GET() {
   });
 
   const settings = await prisma.agendaSettings.findMany({
+    where: { tenant_id: tenant.tenant.id },
     select: {
       user_id: true,
       appointment_duration: true,
@@ -76,13 +78,16 @@ export async function POST(request: Request) {
 
     await assertCanCreateDoctor(authUser.tenantId);
 
-    const existingMatricula = await prisma.doctorProfile.findUnique({
-      where: { matricula: parsed.data.matricula },
+    const existingMatricula = await prisma.doctorProfile.findFirst({
+      where: { tenant_id: tenant.tenant.id, matricula: parsed.data.matricula },
       select: { user_id: true },
     });
     if (existingMatricula) return fail("La matricula ya existe", 409);
 
-    const existingEmail = await prisma.user.findUnique({ where: { email: parsed.data.email }, select: { id: true } });
+    const existingEmail = await prisma.user.findFirst({
+      where: { tenant_id: tenant.tenant.id, email: parsed.data.email },
+      select: { id: true },
+    });
     if (existingEmail) return fail("El email ya existe", 409);
 
     const passwordHash = await hashPassword(parsed.data.password);
@@ -93,6 +98,7 @@ export async function POST(request: Request) {
           name: parsed.data.name,
           email: parsed.data.email,
           role: "doctor",
+          tenant_id: tenant.tenant.id,
           password_hash: passwordHash,
         },
       });
@@ -100,6 +106,7 @@ export async function POST(request: Request) {
       await tx.doctorProfile.create({
         data: {
           user_id: user.id,
+          tenant_id: tenant.tenant.id,
           specialty: parsed.data.specialty,
           matricula: parsed.data.matricula,
           ai_tag: parsed.data.ai_tag,
@@ -109,6 +116,7 @@ export async function POST(request: Request) {
       await tx.agendaSettings.create({
         data: {
           user_id: user.id,
+          tenant_id: tenant.tenant.id,
           appointment_duration: parsed.data.appointment_duration,
           buffer_minutes: parsed.data.buffer_minutes,
           start_time: parsed.data.start_time,

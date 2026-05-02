@@ -17,6 +17,7 @@ export async function GET() {
 
   const appointmentsToday = await prisma.appointment.findMany({
     where: {
+      tenant_id: tenant.tenant.id,
       deleted_at: null,
       datetime: { gte: startOfDay, lte: endOfDay },
     },

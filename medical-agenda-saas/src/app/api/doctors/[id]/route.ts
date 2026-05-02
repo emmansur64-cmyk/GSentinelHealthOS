@@ -17,7 +17,7 @@ export async function GET(_request: Request, context: Params) {
   const { id } = await context.params;
 
   const doctor = await prisma.doctorProfile.findFirst({
-    where: { user_id: id },
+    where: { user_id: id, tenant_id: tenant.tenant.id },
     include: {
       user: { select: { id: true, name: true, email: true, role: true } },
       availabilityRule: {
@@ -28,7 +28,7 @@ export async function GET(_request: Request, context: Params) {
 
   if (!doctor) return fail("Medico no encontrado", 404);
 
-  const settings = await prisma.agendaSettings.findUnique({ where: { user_id: id } });
+  const settings = await prisma.agendaSettings.findFirst({ where: { user_id: id, tenant_id: tenant.tenant.id } });
 
   return ok({
     ...doctor,
@@ -54,13 +54,17 @@ async function handleUpdate(request: Request, context: Params) {
     const meta = requestMeta(request);
     if (!parsed.success) return fail("Payload invalido", 422, parsed.error.flatten());
 
-    const doctor = await prisma.doctorProfile.findFirst({ where: { user_id: id }, select: { user_id: true } });
+    const doctor = await prisma.doctorProfile.findFirst({
+      where: { user_id: id, tenant_id: tenant.tenant.id },
+      select: { user_id: true },
+    });
     if (!doctor) return fail("Medico no encontrado", 404);
 
     if (parsed.data.matricula) {
       const taken = await prisma.doctorProfile.findFirst({
         where: {
           matricula: parsed.data.matricula,
+          tenant_id: tenant.tenant.id,
           user_id: { not: id },
         },
         select: { user_id: true },
@@ -70,14 +74,14 @@ async function handleUpdate(request: Request, context: Params) {
 
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       if (parsed.data.name) {
-        await tx.user.update({
-          where: { id },
+        await tx.user.updateMany({
+          where: { id, tenant_id: tenant.tenant.id },
           data: { name: parsed.data.name },
         });
       }
 
-      await tx.doctorProfile.update({
-        where: { user_id: id },
+      await tx.doctorProfile.updateMany({
+        where: { user_id: id, tenant_id: tenant.tenant.id },
         data: {
           specialty: parsed.data.specialty,
           matricula: parsed.data.matricula,
@@ -97,6 +101,7 @@ async function handleUpdate(request: Request, context: Params) {
           where: { user_id: id },
           create: {
             user_id: id,
+            tenant_id: tenant.tenant.id,
             appointment_duration: parsed.data.appointment_duration ?? 30,
             buffer_minutes: parsed.data.buffer_minutes ?? 10,
             start_time: parsed.data.start_time ?? "08:00",
@@ -125,8 +130,8 @@ async function handleUpdate(request: Request, context: Params) {
       userAgent: meta.userAgent,
     });
 
-    const updated = await prisma.doctorProfile.findUnique({
-      where: { user_id: id },
+    const updated = await prisma.doctorProfile.findFirst({
+      where: { user_id: id, tenant_id: tenant.tenant.id },
       include: { user: { select: { id: true, name: true, email: true } } },
     });
 
@@ -151,12 +156,16 @@ export async function DELETE(request: Request, context: Params) {
   try {
     const meta = requestMeta(request);
 
-    const doctor = await prisma.doctorProfile.findFirst({ where: { user_id: id }, select: { user_id: true } });
+    const doctor = await prisma.doctorProfile.findFirst({
+      where: { user_id: id, tenant_id: tenant.tenant.id },
+      select: { user_id: true },
+    });
     if (!doctor) return fail("Medico no encontrado", 404);
 
     const activeAppointments = await prisma.appointment.count({
       where: {
         doctor_id: id,
+        tenant_id: tenant.tenant.id,
         deleted_at: null,
         status: { notIn: ["cancelled", "no_show", "completed"] },
       },
@@ -170,13 +179,13 @@ export async function DELETE(request: Request, context: Params) {
 
     await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.appointment.updateMany({
-        where: { doctor_id: id, deleted_at: null },
+        where: { tenant_id: tenant.tenant.id, doctor_id: id, deleted_at: null },
         data: { deleted_at: new Date(), status: "cancelled" },
       });
-      await tx.availabilityRule.deleteMany({ where: { doctor_id: id } });
-      await tx.agendaSettings.deleteMany({ where: { user_id: id } });
-      await tx.doctorProfile.delete({ where: { user_id: id } });
-      await tx.user.delete({ where: { id } });
+      await tx.availabilityRule.deleteMany({ where: { tenant_id: tenant.tenant.id, doctor_id: id } });
+      await tx.agendaSettings.deleteMany({ where: { tenant_id: tenant.tenant.id, user_id: id } });
+      await tx.doctorProfile.deleteMany({ where: { user_id: id, tenant_id: tenant.tenant.id } });
+      await tx.user.deleteMany({ where: { id, tenant_id: tenant.tenant.id } });
     });
 
     await logAudit({

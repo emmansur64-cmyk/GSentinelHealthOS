@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const decision = await autoAssignAppointment(payload);
+    const decision = await autoAssignAppointment(payload, { tenantId: tenant.tenant.id });
 
     await logAudit({
       userId: authUser.userId,

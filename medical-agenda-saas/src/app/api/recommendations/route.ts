@@ -28,6 +28,7 @@ export async function GET(request: Request) {
 
   try {
     const recommendations = await getRecommendations({
+      tenantId: tenant.tenant.id,
       specialty,
       limit,
       horizonDays,

@@ -16,6 +16,7 @@ export async function GET() {
   if (!tenant.ok) return tenant.response;
 
   const users = await prisma.user.findMany({
+    where: { tenant_id: tenant.tenant.id },
     select: {
       id: true,
       name: true,
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
     }
 
     const email = parsed.data.email.toLowerCase();
-    const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    const existing = await prisma.user.findFirst({ where: { tenant_id: tenant.tenant.id, email }, select: { id: true } });
     if (existing) return fail("El email ya existe", 409);
 
     const passwordHash = await hashPassword(parsed.data.password);
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
           name: parsed.data.name,
           role: parsed.data.role,
           email,
+          tenant_id: tenant.tenant.id,
           password_hash: passwordHash,
         },
       });
@@ -65,6 +67,7 @@ export async function POST(request: Request) {
         await tx.doctorProfile.create({
           data: {
             user_id: user.id,
+            tenant_id: tenant.tenant.id,
             specialty: parsed.data.specialty!,
             matricula: parsed.data.matricula!,
             ai_tag: parsed.data.ai_tag!,

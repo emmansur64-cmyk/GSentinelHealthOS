@@ -17,7 +17,7 @@ export async function GET(_request: Request, context: Params) {
 
   const { id } = await context.params;
 
-  const rule = await prisma.availabilityRule.findFirst({ where: { id } });
+  const rule = await prisma.availabilityRule.findFirst({ where: { id, tenant_id: tenant.tenant.id } });
   if (!rule) return fail("Regla de agenda no encontrada", 404);
   return ok(rule);
 }
@@ -39,7 +39,7 @@ async function handleUpdate(request: Request, context: Params) {
     if (!parsed.success) return fail("Payload invalido", 422, parsed.error.flatten());
 
     const existing = await prisma.availabilityRule.findFirst({
-      where: { id },
+      where: { id, tenant_id: tenant.tenant.id },
       select: { id: true, start_time: true, end_time: true },
     });
     if (!existing) return fail("Regla de agenda no encontrada", 404);
@@ -51,8 +51,8 @@ async function handleUpdate(request: Request, context: Params) {
       return fail("start_time debe ser anterior a end_time", 422);
     }
 
-    const updated = await prisma.availabilityRule.update({
-      where: { id },
+    await prisma.availabilityRule.updateMany({
+      where: { id, tenant_id: tenant.tenant.id },
       data: {
         day_of_week:   parsed.data.day_of_week,
         specific_date:
@@ -66,6 +66,9 @@ async function handleUpdate(request: Request, context: Params) {
         slot_duration: parsed.data.slot_duration,
       },
     });
+
+    const updated = await prisma.availabilityRule.findFirst({ where: { id, tenant_id: tenant.tenant.id } });
+    if (!updated) return fail("Regla de agenda no encontrada", 404);
 
     await logAudit({
       userId: authUser.userId,
@@ -100,10 +103,10 @@ export async function DELETE(request: Request, context: Params) {
 
   try {
     const meta = requestMeta(request);
-    const existing = await prisma.availabilityRule.findFirst({ where: { id }, select: { id: true } });
+    const existing = await prisma.availabilityRule.findFirst({ where: { id, tenant_id: tenant.tenant.id }, select: { id: true } });
     if (!existing) return fail("Regla de agenda no encontrada", 404);
 
-    await prisma.availabilityRule.delete({ where: { id } });
+    await prisma.availabilityRule.deleteMany({ where: { id, tenant_id: tenant.tenant.id } });
 
     await logAudit({
       userId: authUser.userId,

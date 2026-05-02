@@ -14,7 +14,7 @@ export async function GET(_request: Request, context: { params: Promise<{ appoin
   if (!appointment_id) return fail("appointment_id requerido", 400);
 
   try {
-    const prediction = await predictNoShowByAppointmentId(appointment_id);
+    const prediction = await predictNoShowByAppointmentId(appointment_id, tenant.tenant.id);
 
     return ok({
       appointment_id,

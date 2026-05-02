@@ -5,8 +5,9 @@ const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? "");
 
 function normalizeRole(role: string): "admin" | "medico" | "recepcionista" | "unknown" {
   if (role === "admin") return "admin";
+  if (role === "clinic_owner" || role === "clinic_admin") return "recepcionista";
   if (role === "doctor" || role === "medico") return "medico";
-  if (role === "secretaria" || role === "recepcionista") return "recepcionista";
+  if (role === "secretaria" || role === "recepcionista" || role === "receptionist") return "recepcionista";
   return "unknown";
 }
 
