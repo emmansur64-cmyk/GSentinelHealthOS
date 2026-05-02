@@ -265,6 +265,7 @@ function sortCandidateSlots(candidates: CandidateSlot[]): CandidateSlot[] {
 }
 
 type CandidatePoolInput = {
+  tenantId: string;
   doctors: AutoAssignDoctorCandidate[];
   from: Date;
   to: Date;
@@ -277,8 +278,8 @@ type CandidatePoolInput = {
 async function buildCandidatePool(input: CandidatePoolInput): Promise<CandidateSlot[]> {
   const doctorIds = input.doctors.map((doctor) => doctor.user_id);
   const [rules, occupied] = await Promise.all([
-    getAvailabilityRulesForRange({ doctorIds, from: input.from, to: input.to }),
-    getOccupiedIntervalsForRange({ doctorIds, from: input.from, to: input.to }),
+    getAvailabilityRulesForRange({ tenantId: input.tenantId, doctorIds, from: input.from, to: input.to }),
+    getOccupiedIntervalsForRange({ tenantId: input.tenantId, doctorIds, from: input.from, to: input.to }),
   ]);
 
   const rulesByDoctor = new Map<string, AvailabilityRuleRecord[]>();
@@ -404,6 +405,7 @@ async function scoreCandidateSlots(
 async function countOverlapsInSlot(
   tx: Prisma.TransactionClient,
   input: {
+    tenantId: string;
     doctorId: string;
     slotStart: Date;
     slotEnd: Date;
@@ -412,7 +414,8 @@ async function countOverlapsInSlot(
   const rows = await tx.$queryRaw<{ total: number }[]>`
     SELECT COUNT(*)::int AS total
     FROM appointments
-    WHERE doctor_id = ${input.doctorId}
+    WHERE tenant_id = ${input.tenantId}
+      AND doctor_id = ${input.doctorId}
       AND deleted_at IS NULL
       AND status NOT IN ('cancelled', 'no_show')
       AND datetime < ${input.slotEnd}
@@ -422,7 +425,7 @@ async function countOverlapsInSlot(
   return Number(rows[0]?.total ?? 0);
 }
 
-export async function autoAssignAppointment(rawInput: unknown): Promise<AutoAssignResult> {
+export async function autoAssignAppointment(rawInput: unknown, options: { tenantId: string }): Promise<AutoAssignResult> {
   const startedAt = Date.now();
   const parsed = autoAssignInputSchema.safeParse(rawInput);
   if (!parsed.success) {
@@ -455,6 +458,7 @@ export async function autoAssignAppointment(rawInput: unknown): Promise<AutoAssi
   };
 
   const doctors = await findDoctorCandidates({
+    tenantId: options.tenantId,
     specialty: normalizedInput.filters.especialidad,
     doctorId: normalizedInput.filters.doctor_id,
   });
@@ -468,6 +472,7 @@ export async function autoAssignAppointment(rawInput: unknown): Promise<AutoAssi
   let fallbackUsed = false;
 
   let candidates = await buildCandidatePool({
+    tenantId: options.tenantId,
     doctors,
     from: range.from,
     to: range.to,
@@ -481,6 +486,7 @@ export async function autoAssignAppointment(rawInput: unknown): Promise<AutoAssi
     const fallbackTo = plusDays(range.to, 3);
     fallbackUsed = true;
     candidates = await buildCandidatePool({
+      tenantId: options.tenantId,
       doctors,
       from: range.from,
       to: fallbackTo,
@@ -513,6 +519,7 @@ export async function autoAssignAppointment(rawInput: unknown): Promise<AutoAssi
         await lockDoctorForScheduling(tx, candidate.doctorId);
 
         const covered = await verifySlotCoverageInRules(tx, {
+          tenantId: options.tenantId,
           doctorId: candidate.doctorId,
           slotStart: candidate.slotStart,
           slotEnd: candidate.slotEnd,
@@ -524,6 +531,7 @@ export async function autoAssignAppointment(rawInput: unknown): Promise<AutoAssi
         }
 
         const overlap = await findOverlappingAppointment(tx, {
+          tenantId: options.tenantId,
           doctorId: candidate.doctorId,
           slotStart: candidate.slotStart,
           slotEnd: candidate.slotEnd,
@@ -532,6 +540,7 @@ export async function autoAssignAppointment(rawInput: unknown): Promise<AutoAssi
         let overbooked = false;
         if (overlap) {
           const overlapCount = await countOverlapsInSlot(tx, {
+            tenantId: options.tenantId,
             doctorId: candidate.doctorId,
             slotStart: candidate.slotStart,
             slotEnd: candidate.slotEnd,
@@ -550,7 +559,7 @@ export async function autoAssignAppointment(rawInput: unknown): Promise<AutoAssi
           incOverbookingDecision("allowed");
         }
 
-        const patient = await upsertPatientByDocument(tx, normalizedInput.patient);
+        const patient = await upsertPatientByDocument(tx, { tenantId: options.tenantId, ...normalizedInput.patient });
 
         const idempotencyKey = buildSlotIdempotencyKey({
           doctorId: candidate.doctorId,
@@ -563,6 +572,7 @@ export async function autoAssignAppointment(rawInput: unknown): Promise<AutoAssi
         return createAppointmentRecord(tx, {
           patientId: patient.id,
           doctorId: candidate.doctorId,
+          tenantId: options.tenantId,
           slotStart: candidate.slotStart,
           duration: candidate.duration,
           notes: overbooked
@@ -572,7 +582,7 @@ export async function autoAssignAppointment(rawInput: unknown): Promise<AutoAssi
         });
       }, { timeout: 10000 });
 
-      await predictNoShowByAppointmentId(created.id);
+      await predictNoShowByAppointmentId(created.id, options.tenantId);
 
       attempts.push({
         doctor_id: candidate.doctorId,

@@ -8,6 +8,7 @@ const AUTO_CANCEL_MARKER = "appointmentEngine.autocancelado_sin_confirmacion";
 
 type LifecycleAppointment = {
   id: string;
+  tenant_id: string;
   datetime: Date;
   notes: string | null;
   patient: {
@@ -156,11 +157,11 @@ export async function runAppointmentLifecycleJobs(now = new Date()): Promise<App
     }
 
     try {
-      const sent = await sendWhatsAppMessage(appointment.patient.phone, buildReminderMessage(appointment));
+      const sent = await sendWhatsAppMessage(appointment.patient.phone, buildReminderMessage(appointment), appointment.tenant_id);
       if (!sent.success) continue;
 
-      await prisma.appointment.update({
-        where: { id: appointment.id },
+      await prisma.appointment.updateMany({
+        where: { id: appointment.id, tenant_id: appointment.tenant_id },
         data: {
           notes: appendMarker(appointment.notes, REMINDER_MARKER, now.toISOString()),
         },
@@ -180,8 +181,8 @@ export async function runAppointmentLifecycleJobs(now = new Date()): Promise<App
     }
 
     try {
-      await prisma.appointment.update({
-        where: { id: appointment.id },
+      await prisma.appointment.updateMany({
+        where: { id: appointment.id, tenant_id: appointment.tenant_id },
         data: {
           status: "cancelled",
           notes: appendMarker(appointment.notes, AUTO_CANCEL_MARKER, now.toISOString()),
@@ -190,7 +191,7 @@ export async function runAppointmentLifecycleJobs(now = new Date()): Promise<App
       result.autoCancelled += 1;
 
       if (isSendableWhatsAppPhone(appointment.patient.phone)) {
-        await sendWhatsAppMessage(appointment.patient.phone, buildAutoCancellationMessage(appointment));
+        await sendWhatsAppMessage(appointment.patient.phone, buildAutoCancellationMessage(appointment), appointment.tenant_id);
       } else {
         result.skippedWithoutPhone += 1;
       }

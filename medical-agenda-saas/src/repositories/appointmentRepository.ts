@@ -9,13 +9,14 @@ function sanitizePhoneFromDocument(document: string): string {
 
 export async function upsertPatientByDocument(
   tx: Prisma.TransactionClient,
-  input: { nombre: string; documento: string; telefono?: string },
+  input: { tenantId: string; nombre: string; documento: string; telefono?: string },
 ): Promise<{ id: string; name: string }> {
   const syntheticPhone = sanitizePhoneFromDocument(input.documento);
   const targetPhone = input.telefono?.trim() || syntheticPhone;
 
   const existing = await tx.patient.findFirst({
     where: {
+      tenant_id: input.tenantId,
       OR: [
         { phone: syntheticPhone },
         ...(input.telefono ? [{ phone: input.telefono.trim() }] : []),
@@ -29,8 +30,8 @@ export async function upsertPatientByDocument(
 
   if (existing) {
     if (existing.name !== input.nombre) {
-      await tx.patient.update({
-        where: { id: existing.id },
+      await tx.patient.updateMany({
+        where: { id: existing.id, tenant_id: input.tenantId },
         data: { name: input.nombre, phone: targetPhone },
       });
     }
@@ -39,6 +40,7 @@ export async function upsertPatientByDocument(
 
   const created = await tx.patient.create({
     data: {
+      tenant_id: input.tenantId,
       name: input.nombre,
       phone: targetPhone,
       notes: `Paciente creado automaticamente por auto-assign. Documento fuente: ${input.documento}. Actualizar contacto real.`,
@@ -56,6 +58,7 @@ export async function verifySlotCoverageInRules(
   tx: Prisma.TransactionClient,
   input: {
     doctorId: string;
+    tenantId: string;
     slotStart: Date;
     slotEnd: Date;
     stepMinutes: number;
@@ -72,6 +75,7 @@ export async function verifySlotCoverageInRules(
   const coveringRule = await tx.availabilityRule.findFirst({
     where: {
       doctor_id: input.doctorId,
+      tenant_id: input.tenantId,
       start_time: {
         lte: startHHmm,
       },
@@ -101,13 +105,15 @@ export async function findOverlappingAppointment(
   tx: Prisma.TransactionClient,
   input: {
     doctorId: string;
+    tenantId: string;
     slotStart: Date;
     slotEnd: Date;
   },
 ): Promise<{ id: string } | null> {
   const overlapping = await tx.$queryRaw<{ id: string }[]>`
     SELECT id FROM appointments
-    WHERE doctor_id = ${input.doctorId}
+    WHERE tenant_id = ${input.tenantId}
+      AND doctor_id = ${input.doctorId}
       AND deleted_at IS NULL
       AND status NOT IN ('cancelled', 'no_show')
       AND datetime < ${input.slotEnd}
@@ -127,6 +133,7 @@ export async function createAppointmentRecord(
   input: {
     patientId: string;
     doctorId: string;
+    tenantId: string;
     slotStart: Date;
     duration: number;
     notes: string;
@@ -137,6 +144,7 @@ export async function createAppointmentRecord(
     data: {
       patient_id: input.patientId,
       doctor_id: input.doctorId,
+      tenant_id: input.tenantId,
       datetime: input.slotStart,
       duration: input.duration,
       status: "scheduled",

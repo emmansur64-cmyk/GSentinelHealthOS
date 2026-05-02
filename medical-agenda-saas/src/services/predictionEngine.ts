@@ -439,9 +439,9 @@ export async function recordPredictionObservation(
   `;
 }
 
-export async function predictNoShowByAppointmentId(appointmentId: string): Promise<NoShowPrediction> {
-  const appointment = await prisma.appointment.findUnique({
-    where: { id: appointmentId },
+export async function predictNoShowByAppointmentId(appointmentId: string, tenantId?: string): Promise<NoShowPrediction> {
+  const appointment = await prisma.appointment.findFirst({
+    where: { id: appointmentId, ...(tenantId ? { tenant_id: tenantId } : {}) },
     select: {
       id: true,
       patient_id: true,

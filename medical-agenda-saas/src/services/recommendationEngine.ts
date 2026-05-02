@@ -108,12 +108,16 @@ function dateList(from: Date, days: number): Date[] {
   return dates;
 }
 
-async function getDoctorCatalog(specialty?: string): Promise<Array<{ doctor_id: string; doctor_name: string; specialty: string }>> {
+async function getDoctorCatalog(
+  tenantId: string,
+  specialty?: string,
+): Promise<Array<{ doctor_id: string; doctor_name: string; specialty: string }>> {
   const rows = await prisma.$queryRaw<Array<{ doctor_id: string; doctor_name: string; specialty: string }>>`
     SELECT d.user_id AS doctor_id, u.name AS doctor_name, d.specialty
     FROM doctor_profiles d
     INNER JOIN users u ON u.id = d.user_id
-    WHERE (${specialty ?? null}::text IS NULL OR d.specialty ILIKE ${`%${specialty ?? ""}%`})
+    WHERE d.tenant_id = ${tenantId}
+      AND (${specialty ?? null}::text IS NULL OR d.specialty ILIKE ${`%${specialty ?? ""}%`})
     ORDER BY u.name ASC
   `;
 
@@ -121,11 +125,12 @@ async function getDoctorCatalog(specialty?: string): Promise<Array<{ doctor_id: 
 }
 
 async function buildCandidateSlots(input: {
+  tenantId: string;
   specialty?: string;
   limit: number;
   horizonDays: number;
 }): Promise<CandidateSlot[]> {
-  const doctors = await getDoctorCatalog(input.specialty);
+  const doctors = await getDoctorCatalog(input.tenantId, input.specialty);
   if (doctors.length === 0) return [];
 
   const doctorIds = doctors.map((doctor) => doctor.doctor_id);
@@ -135,8 +140,8 @@ async function buildCandidateSlots(input: {
   const to = horizon[horizon.length - 1] ?? now;
 
   const [rules, occupied, durations] = await Promise.all([
-    getAvailabilityRulesForRange({ doctorIds, from, to }),
-    getOccupiedIntervalsForRange({ doctorIds, from, to }),
+    getAvailabilityRulesForRange({ tenantId: input.tenantId, doctorIds, from, to }),
+    getOccupiedIntervalsForRange({ tenantId: input.tenantId, doctorIds, from, to }),
     getDoctorAppointmentDurations(doctorIds),
   ]);
 
@@ -223,11 +228,12 @@ async function buildCandidateSlots(input: {
 }
 
 async function detectScheduleGaps(input: {
+  tenantId: string;
   specialty?: string;
   maxDoctors: number;
   maxDays: number;
 }): Promise<GapRecommendation[]> {
-  const doctors = await getDoctorCatalog(input.specialty);
+  const doctors = await getDoctorCatalog(input.tenantId, input.specialty);
   const selectedDoctors = doctors.slice(0, Math.max(1, input.maxDoctors));
   if (selectedDoctors.length === 0) return [];
 
@@ -237,8 +243,8 @@ async function detectScheduleGaps(input: {
   const to = dates[dates.length - 1] ?? new Date();
 
   const [rules, occupied] = await Promise.all([
-    getAvailabilityRulesForRange({ doctorIds, from, to }),
-    getOccupiedIntervalsForRange({ doctorIds, from, to }),
+    getAvailabilityRulesForRange({ tenantId: input.tenantId, doctorIds, from, to }),
+    getOccupiedIntervalsForRange({ tenantId: input.tenantId, doctorIds, from, to }),
   ]);
 
   const doctorById = new Map(selectedDoctors.map((doctor) => [doctor.doctor_id, doctor]));
@@ -319,7 +325,8 @@ async function detectScheduleGaps(input: {
   return gaps.slice(0, 20);
 }
 
-export async function getRecommendations(input?: {
+export async function getRecommendations(input: {
+  tenantId: string;
   specialty?: string;
   limit?: number;
   horizonDays?: number;
@@ -329,9 +336,9 @@ export async function getRecommendations(input?: {
   const horizonDays = Math.max(3, Math.min(input?.horizonDays ?? 14, 45));
 
   const [candidateSlots, doctors, gaps] = await Promise.all([
-    buildCandidateSlots({ specialty: input?.specialty, limit, horizonDays }),
+    buildCandidateSlots({ tenantId: input.tenantId, specialty: input?.specialty, limit, horizonDays }),
     getDoctorScoreSnapshot({ specialty: input?.specialty, limit }),
-    detectScheduleGaps({ specialty: input?.specialty, maxDoctors: 8, maxDays: 7 }),
+    detectScheduleGaps({ tenantId: input.tenantId, specialty: input?.specialty, maxDoctors: 8, maxDays: 7 }),
   ]);
 
   const bestSlots = candidateSlots.slice(0, limit).map((slot) => ({

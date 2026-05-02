@@ -24,11 +24,13 @@ export type OccupiedInterval = {
 };
 
 export async function findDoctorCandidates(filters: {
+  tenantId: string;
   specialty: string;
   doctorId?: string;
 }): Promise<AutoAssignDoctorCandidate[]> {
   const doctors = await prisma.doctorProfile.findMany({
     where: {
+      tenant_id: filters.tenantId,
       ...(filters.doctorId ? { user_id: filters.doctorId } : {}),
       specialty: {
         contains: filters.specialty,
@@ -73,6 +75,7 @@ export async function getDoctorAppointmentDurations(doctorIds: string[]): Promis
 }
 
 export async function getAvailabilityRulesForRange(input: {
+  tenantId: string;
   doctorIds: string[];
   from: Date;
   to: Date;
@@ -81,6 +84,7 @@ export async function getAvailabilityRulesForRange(input: {
 
   return prisma.availabilityRule.findMany({
     where: {
+      tenant_id: input.tenantId,
       doctor_id: {
         in: input.doctorIds,
       },
@@ -107,6 +111,7 @@ export async function getAvailabilityRulesForRange(input: {
 }
 
 export async function getOccupiedIntervalsForRange(input: {
+  tenantId: string;
   doctorIds: string[];
   from: Date;
   to: Date;
@@ -118,6 +123,7 @@ export async function getOccupiedIntervalsForRange(input: {
 
   const rows = await prisma.appointment.findMany({
     where: {
+      tenant_id: input.tenantId,
       doctor_id: {
         in: input.doctorIds,
       },
