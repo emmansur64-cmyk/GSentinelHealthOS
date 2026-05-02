@@ -2,6 +2,7 @@ import { logServer, logServerError } from "@/lib/server-logger";
 import { prisma } from "@/lib/prisma";
 import { observeStageLatency } from "@/lib/observability/metrics";
 import { withSpan } from "@/lib/observability/tracing";
+import { resolveWhatsAppAccount } from "@/lib/whatsapp/account-resolver";
 
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 500;
@@ -21,16 +22,13 @@ export function normalizeWhatsAppRecipient(phone: string): string {
   return digits;
 }
 
-function getConfig() {
-  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID?.trim() || "default";
+
+async function getConfig(tenantId?: string) {
+  const normalizedTenantId = tenantId?.trim() || DEFAULT_TENANT_ID;
   const apiVersion = process.env.WHATSAPP_API_VERSION || "v21.0";
-
-  if (!accessToken || !phoneNumberId) {
-    throw new Error("WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID are required");
-  }
-
-  return { accessToken, phoneNumberId, apiVersion };
+  const account = await resolveWhatsAppAccount({ tenantId: normalizedTenantId });
+  return { ...account, apiVersion };
 }
 
 type SendResult = {
@@ -46,15 +44,17 @@ type SendResult = {
 export async function sendWhatsAppMessage(
   phone: string,
   message: string,
+  tenantId?: string,
 ): Promise<SendResult> {
   const sendStarted = performance.now();
   const recipientPhone = normalizeWhatsAppRecipient(phone);
+  const resolvedTenantId = tenantId?.trim() || DEFAULT_TENANT_ID;
 
   const outgoing = await prisma.outgoingMessage.create({
-    data: { phone, message, status: "pending" },
+    data: { tenant_id: resolvedTenantId, phone, message, status: "pending" },
   });
 
-  const { accessToken, phoneNumberId, apiVersion } = getConfig();
+  const { accessToken, phoneNumberId, apiVersion, source } = await getConfig(resolvedTenantId);
   const url = `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`;
 
   let lastError: string | undefined;
@@ -104,10 +104,12 @@ export async function sendWhatsAppMessage(
         });
 
         logServer("info", "whatsapp.send.success", {
+          tenant_id: resolvedTenantId,
           phone,
           recipient_phone: recipientPhone,
           wa_id: waId,
           attempt,
+          account_source: source,
         });
 
         observeStageLatency("send_message", performance.now() - sendStarted);
@@ -140,6 +142,7 @@ export async function sendWhatsAppMessage(
   });
 
   logServerError("whatsapp.send.failed", new Error(lastError ?? "Unknown"), {
+    tenant_id: resolvedTenantId,
     phone,
     recipient_phone: recipientPhone,
     outgoing_id: outgoing.id,
@@ -182,3 +185,4 @@ export async function updateOutgoingStatus(
     logServerError("whatsapp.status.update.failed", error, { wa_id: waMessageId });
   }
 }
+

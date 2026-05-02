@@ -13,7 +13,8 @@ export type DSInputProps = React.InputHTMLAttributes<HTMLInputElement> & {
 
 export const DSInput = React.forwardRef<HTMLInputElement, DSInputProps>(
   ({ id, label, helperText, error, className, containerClassName, ...props }, ref) => {
-    const inputId = id ?? React.useId();
+    const generatedId = React.useId();
+    const inputId = id ?? generatedId;
     const hasError = Boolean(error);
     const helperId = `${inputId}-helper`;
     const errorId = `${inputId}-error`;

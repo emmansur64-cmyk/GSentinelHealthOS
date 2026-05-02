@@ -8,6 +8,7 @@ import {
   CalendarDays,
   LayoutDashboard,
   LogOut,
+  MessageCircle,
   Settings,
   Stethoscope,
   Upload,
@@ -66,6 +67,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const handleConnectWhatsApp = async () => {
+    try {
+      const response = await fetch("/api/meta/oauth/start", { headers: { Accept: "application/json" } });
+      const payload = await response.json() as { ok?: boolean; data?: { url?: string }; error?: { message?: string } };
+      if (!response.ok || !payload.ok || !payload.data?.url) {
+        throw new Error(payload.error?.message || "No se pudo iniciar Meta OAuth");
+      }
+      window.location.href = payload.data.url;
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "No se pudo iniciar Meta OAuth");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#f6f8fc] text-slate-900" suppressHydrationWarning>
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-slate-200 bg-white lg:block">
@@ -77,6 +91,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               width={230}
               height={76}
               className="h-auto w-48 object-contain"
+              style={{ height: "auto" }}
               priority
             />
             <div suppressHydrationWarning>
@@ -125,9 +140,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <h1 className="text-lg font-semibold text-slate-900">{activePageLabel}</h1>
             </div>
 
-            <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700" suppressHydrationWarning>
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Entorno operativo
+            <div className="flex items-center gap-3" suppressHydrationWarning>
+              {isAdmin ? (
+                <Button variant="outline" size="sm" onClick={handleConnectWhatsApp}>
+                  <MessageCircle className="h-4 w-4" />
+                  Conectar WhatsApp
+                </Button>
+              ) : null}
+              <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700" suppressHydrationWarning>
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Entorno operativo
+              </div>
             </div>
           </div>
 

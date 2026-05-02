@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "check_messages.js",
+    "find_missing_profiles*.js",
+    "find_missing_profiles.ts",
+    "inspect_*.js",
+    "list_users.js",
   ]),
 ]);
 

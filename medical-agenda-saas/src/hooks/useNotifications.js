@@ -91,6 +91,7 @@ export function useNotifications(options = {}) {
         const delay = Math.min(30_000, reconnectDelayMs * 2 ** retryRef.current);
         retryRef.current += 1;
         reconnectRef.current = window.setTimeout(() => {
+          // eslint-disable-next-line react-hooks/immutability
           connect();
         }, delay);
       };

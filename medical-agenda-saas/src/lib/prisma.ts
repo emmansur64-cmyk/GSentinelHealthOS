@@ -47,6 +47,7 @@ const TENANT_SCOPED_MODELS = new Set([
   "AuditLog",
   "IncomingMessage",
   "OutgoingMessage",
+  "ClinicWhatsappAccount",
   "ConversationState",
   "RateLimit",
   "FailedMessage",
@@ -82,29 +83,27 @@ const prismaWithTenantScope = prismaClient.$extends({
         if (operation === "create") {
           const data = (mutableArgs.data as Record<string, unknown> | undefined) ?? {};
           mutableArgs.data = {
-            tenant_id: tenantId,
             ...data,
+            tenant_id: tenantId,
           };
         }
 
         if (operation === "createMany") {
           const data = mutableArgs.data;
           if (Array.isArray(data)) {
-            mutableArgs.data = data.map((item) => ({ tenant_id: tenantId, ...(item as Record<string, unknown>) }));
+            mutableArgs.data = data.map((item) => ({ ...(item as Record<string, unknown>), tenant_id: tenantId }));
           } else if (data && typeof data === "object") {
             mutableArgs.data = {
-              tenant_id: tenantId,
               ...(data as Record<string, unknown>),
+              tenant_id: tenantId,
             };
           }
         }
 
         if (operation === "update") {
           const data = (mutableArgs.data as Record<string, unknown> | undefined) ?? {};
-          mutableArgs.data = {
-            ...data,
-            tenant_id: tenantId,
-          };
+          delete data.tenant_id;
+          mutableArgs.data = data;
         }
 
         if (operation === "upsert") {
@@ -112,14 +111,12 @@ const prismaWithTenantScope = prismaClient.$extends({
           const updateData = (mutableArgs.update as Record<string, unknown> | undefined) ?? {};
 
           mutableArgs.create = {
-            tenant_id: tenantId,
             ...createData,
+            tenant_id: tenantId,
           };
 
-          mutableArgs.update = {
-            ...updateData,
-            tenant_id: tenantId,
-          };
+          delete updateData.tenant_id;
+          mutableArgs.update = updateData;
         }
 
         return query(mutableArgs);

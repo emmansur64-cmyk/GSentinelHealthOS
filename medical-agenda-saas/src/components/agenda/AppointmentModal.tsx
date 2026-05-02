@@ -81,9 +81,11 @@ export function AppointmentModal({
   useEffect(() => {
     if (!open) return;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSubmitError(null);
 
     if (mode === "edit" && appointment) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm({
         patient_id: appointment.patient_id,
         doctor_id: appointment.doctor_id,
@@ -96,6 +98,7 @@ export function AppointmentModal({
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setForm((prev) => ({
       ...emptyForm,
       doctor_id: selectedDoctorId !== "all" ? selectedDoctorId : doctors[0]?.user_id ?? "",

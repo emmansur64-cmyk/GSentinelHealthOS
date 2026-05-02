@@ -87,9 +87,12 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 export function CalendarView() {
   const queryClient = useQueryClient();
   const [selectedDoctorId, setSelectedDoctorId] = useState<string>("all");
-  const [calendarRange, setCalendarRange] = useState<CalendarRange>({
-    start: new Date(),
-    end: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  const [calendarRange, setCalendarRange] = useState<CalendarRange>(() => {
+    const start = new Date();
+    return {
+      start,
+      end: new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000),
+    };
   });
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");

@@ -18,6 +18,7 @@ import { observeRequest, observeStageLatency } from "@/lib/observability/metrics
 
 let workersBootPromise: Promise<void> | null = null;
 const QUEUE_ENQUEUE_TIMEOUT_MS = 1500;
+const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID?.trim() || "default";
 
 function shouldAutoBootWorkers(): boolean {
   const raw = (process.env.WHATSAPP_AUTO_BOOT_WORKERS ?? "").trim().toLowerCase();
@@ -64,6 +65,35 @@ async function dispatchIncomingMessage(messageId: string): Promise<"queued" | "i
     await processIncomingMessage(messageId);
     return "inline";
   }
+}
+
+async function resolveTenantFromPhoneNumber(phoneNumberId: string): Promise<{ tenantId: string; accountId: string | null }> {
+  try {
+    const account = await prisma.clinicWhatsappAccount.findFirst({
+      where: {
+        phoneNumberId,
+        isActive: true,
+      },
+      select: { id: true, tenantId: true },
+    });
+
+    if (account?.tenantId) {
+      await prisma.clinicWhatsappAccount.update({
+        where: { id: account.id },
+        data: { lastWebhookAt: new Date(), webhookVerified: true },
+      });
+      return { tenantId: account.tenantId, accountId: account.id };
+    }
+  } catch (error) {
+    logServerError("webhook.tenant_resolution.error", error, { phone_number_id: phoneNumberId });
+  }
+
+  logServer("warn", "webhook.tenant_resolution.fallback_global", {
+    phone_number_id: phoneNumberId,
+    tenant_id: DEFAULT_TENANT_ID,
+  });
+
+  return { tenantId: DEFAULT_TENANT_ID, accountId: null };
 }
 
 // ── GET /api/webhooks/whatsapp ─ Verificación inicial de Meta ─────────────
@@ -171,13 +201,18 @@ export async function POST(request: Request) {
         continue;
       }
 
+      const resolvedTenant = await resolveTenantFromPhoneNumber(msg.phoneNumberId);
+
       await prisma.incomingMessage.create({
         data: {
+          tenant_id: resolvedTenant.tenantId,
           message_id: msg.messageId,
           from_phone: msg.fromPhone,
           payload_json: {
             text: msg.text,
             type: msg.type,
+            phoneNumberId: msg.phoneNumberId,
+            wabaId: msg.wabaId,
             contactName: msg.contactName,
             timestamp: msg.timestamp,
             interactiveReplyId: msg.interactiveReplyId,
@@ -218,3 +253,4 @@ export async function POST(request: Request) {
   );
   });
 }
+
