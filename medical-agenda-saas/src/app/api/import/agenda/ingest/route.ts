@@ -3,6 +3,7 @@ import { logAudit, requestMeta } from "@/lib/audit";
 import { hashPassword } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser, hasRole } from "@/lib/server-auth";
+import { requireTenant } from "@/middleware/tenantMiddleware";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 
@@ -74,6 +75,8 @@ export async function POST(request: Request) {
   const authUser = await getAuthenticatedUser();
   if (!authUser) return fail("No autenticado", 401);
   if (!hasRole(authUser, ["admin", "secretaria"])) return fail("Sin permisos", 403);
+  const tenant = await requireTenant(authUser);
+  if (!tenant.ok) return tenant.response;
 
   try {
     const parsed = ingestSchema.safeParse(await request.json());
@@ -85,7 +88,10 @@ export async function POST(request: Request) {
       const autoCreateDoctors = Boolean(parsed.data.autoCreateDoctors);
 
       if (doctorUserId) {
-        const existingDoctor = await tx.doctorProfile.findUnique({ where: { user_id: doctorUserId }, select: { user_id: true } });
+        const existingDoctor = await tx.doctorProfile.findFirst({
+          where: { user_id: doctorUserId, tenant_id: tenant.tenant.id },
+          select: { user_id: true },
+        });
         if (!existingDoctor) {
           if (!autoCreateDoctors) {
             throw new Error("DOCTOR_NOT_FOUND");
@@ -95,16 +101,16 @@ export async function POST(request: Request) {
       }
 
       if (!doctorUserId) {
-        const existingByMatricula = await tx.doctorProfile.findUnique({
-          where: { matricula: parsed.data.doctor.matricula },
+        const existingByMatricula = await tx.doctorProfile.findFirst({
+          where: { tenant_id: tenant.tenant.id, matricula: parsed.data.doctor.matricula },
           select: { user_id: true },
         });
 
         if (existingByMatricula) {
           doctorUserId = existingByMatricula.user_id;
         } else {
-          const existingEmail = await tx.user.findUnique({
-            where: { email: parsed.data.doctor.email! },
+          const existingEmail = await tx.user.findFirst({
+            where: { tenant_id: tenant.tenant.id, email: parsed.data.doctor.email! },
             select: { id: true },
           });
           if (existingEmail) {
@@ -117,6 +123,7 @@ export async function POST(request: Request) {
               name: parsed.data.doctor.name,
               email: parsed.data.doctor.email!,
               role: "doctor",
+              tenant_id: tenant.tenant.id,
               password_hash: passwordHash,
             },
           });
@@ -124,6 +131,7 @@ export async function POST(request: Request) {
           await tx.doctorProfile.create({
             data: {
               user_id: user.id,
+              tenant_id: tenant.tenant.id,
               specialty: parsed.data.doctor.specialty,
               matricula: parsed.data.doctor.matricula,
               ai_tag: parsed.data.doctor.ai_tag,
@@ -142,6 +150,7 @@ export async function POST(request: Request) {
         where: { user_id: doctorUserId },
         create: {
           user_id: doctorUserId,
+          tenant_id: tenant.tenant.id,
           appointment_duration: parsed.data.doctor.appointment_duration,
           buffer_minutes: parsed.data.doctor.buffer_minutes,
           start_time: parsed.data.doctor.start_time,
@@ -163,6 +172,7 @@ export async function POST(request: Request) {
 
         const existingRule = await tx.availabilityRule.findFirst({
           where: {
+            tenant_id: tenant.tenant.id,
             doctor_id: doctorUserId,
             day_of_week: rule.day_of_week,
             specific_date: specificDate,
@@ -180,6 +190,7 @@ export async function POST(request: Request) {
 
         const created = await tx.availabilityRule.create({
           data: {
+            tenant_id: tenant.tenant.id,
             doctor_id: doctorUserId,
             day_of_week: rule.day_of_week,
             specific_date: specificDate,

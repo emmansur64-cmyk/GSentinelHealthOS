@@ -1,10 +1,18 @@
-import { createRequire } from "module";
+import { existsSync } from "fs";
+import path from "path";
+import sharp from "sharp";
 
 import { ok, fail } from "@/lib/api-response";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser } from "@/lib/server-auth";
 import { DOCUMENT_ANALYSIS_SCHEMA_VERSION, safeValidateDocumentAnalysis } from "@/lib/document-analysis-schema";
-import { buildLooseVisionFallbackFromRawText, type VisionDocumentExtraction } from "@/lib/document-ai";
+import {
+  analyzeImageDocumentWithAI,
+  buildLooseVisionFallbackFromRawText,
+  isVisionSupportedMimeType,
+  type VisionDocumentExtraction,
+} from "@/lib/document-ai";
+import { buildAgendaImportGuidance } from "@/lib/metabrain";
 import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
 import { logServer } from "@/lib/server-logger";
 import {
@@ -32,6 +40,12 @@ type CandidateAvailabilityRule = {
   slot_duration: number;
 };
 
+type OcrWorker = {
+  recognize(image: Buffer): Promise<{ data: { text?: string | null } }>;
+};
+
+let agendaOcrWorkerPromise: Promise<OcrWorker> | null = null;
+
 const DAY_KEY_TO_INDEX = {
   domingo: 0,
   lunes: 1,
@@ -57,33 +71,6 @@ const SPANISH_MONTHS: Record<string, number> = {
   noviembre: 10,
   diciembre: 11,
 };
-
-function buildRawTextFromVisionExtraction(extraction: VisionDocumentExtraction): string {
-  const scheduleLines = [
-    ...extraction.schedule.lunes.map((value) => `lunes ${value}`),
-    ...extraction.schedule.martes.map((value) => `martes ${value}`),
-    ...extraction.schedule.miercoles.map((value) => `miercoles ${value}`),
-    ...extraction.schedule.jueves.map((value) => `jueves ${value}`),
-    ...extraction.schedule.viernes.map((value) => `viernes ${value}`),
-    ...extraction.schedule.sabado.map((value) => `sabado ${value}`),
-    ...extraction.schedule.domingo.map((value) => `domingo ${value}`),
-  ];
-
-  return [
-    extraction.document_type,
-    extraction.language,
-    extraction.doctor_name,
-    extraction.specialty,
-    extraction.license_number,
-    extraction.month,
-    extraction.year,
-    extraction.raw_summary ?? "",
-    ...scheduleLines,
-  ]
-    .map((value) => String(value ?? "").trim())
-    .filter((value) => value.length > 0)
-    .join("\n");
-}
 
 function enrichAnalysisWithVision(
   analysis: ReturnType<typeof buildDocumentAnalysis>,
@@ -576,6 +563,34 @@ function buildAvailabilityRulesFromVision(
   return rules;
 }
 
+function mergeVisionExtractionWithFallback(
+  primary: VisionDocumentExtraction,
+  fallback: VisionDocumentExtraction,
+): VisionDocumentExtraction {
+  const schedule = { ...primary.schedule };
+  for (const key of Object.keys(schedule) as Array<keyof VisionDocumentExtraction["schedule"]>) {
+    if (schedule[key].length === 0 && fallback.schedule[key].length > 0) {
+      schedule[key] = fallback.schedule[key];
+    }
+  }
+
+  return {
+    ...primary,
+    doctor_name: primary.doctor_name || fallback.doctor_name,
+    specialty: primary.specialty || fallback.specialty,
+    license_number: primary.license_number || fallback.license_number,
+    month: primary.month || fallback.month,
+    year: primary.year || fallback.year,
+    schedule,
+    raw_summary: [primary.raw_summary, fallback.raw_summary].filter(Boolean).join("\n"),
+  };
+}
+
+function needsAgendaHeaderFallback(extraction: VisionDocumentExtraction | null): boolean {
+  if (!extraction) return false;
+  return !extraction.doctor_name || !extraction.license_number || !extraction.specialty || !extraction.month || !extraction.year;
+}
+
 function buildAvailabilityRulesFromAppointments(appointments: CandidateAppointment[]): CandidateAvailabilityRule[] {
   const seen = new Set<string>();
   const rules: CandidateAvailabilityRule[] = [];
@@ -621,25 +636,128 @@ function failExtraction(message: string, status: number, providerError: string) 
     error: "DOCUMENT_AI_EXTRACTION_FAILED",
     message:
       "No se pudo extraer informacion real del documento. Revise calidad de imagen, proveedor OCR/IA y credenciales.",
-    provider_error: providerError,
+    provider_error: sanitizeProviderError(providerError),
   });
 }
 
-async function extractTextFromImage(file: File): Promise<string> {
-  try {
-    const tesseract = await import("tesseract.js");
-    const require = createRequire(import.meta.url);
-    const workerPath = require.resolve("tesseract.js/src/worker-script/node/index.js");
+function sanitizeProviderError(error: string): string {
+  const value = String(error ?? "");
+  if (/invalid_api_key|invalid api key|unauthorized|401/i.test(value)) {
+    return "DOCUMENT_AI_INVALID_API_KEY";
+  }
+  if (/api[_ -]?key/i.test(value)) {
+    return "DOCUMENT_AI_CREDENTIAL_ERROR";
+  }
+  return value.slice(0, 300);
+}
 
-    const { data } = await tesseract.recognize(Buffer.from(await file.arrayBuffer()), "spa+eng", {
-      workerPath,
+function parseBooleanEnv(value: string | undefined, defaultValue: boolean): boolean {
+  if (typeof value !== "string" || value.trim() === "") return defaultValue;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+  return defaultValue;
+}
+
+function parseIntegerEnv(value: string | undefined, defaultValue: number, min: number, max: number): number {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) return defaultValue;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function getAgendaImportGroqConfig() {
+  const apiKey = String(process.env.AGENDA_IMPORT_GROQ_API_KEY ?? "").trim();
+  return {
+    enabled: parseBooleanEnv(process.env.AGENDA_IMPORT_GROQ_ENABLED, false) && apiKey.length > 0,
+    requireSuccess: parseBooleanEnv(process.env.AGENDA_IMPORT_GROQ_REQUIRE_SUCCESS, false),
+    apiKey,
+    baseUrl: String(process.env.AGENDA_IMPORT_GROQ_BASE_URL ?? "https://api.groq.com/openai/v1").trim(),
+    model: String(process.env.AGENDA_IMPORT_GROQ_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct").trim(),
+    timeoutMs: parseIntegerEnv(process.env.AGENDA_IMPORT_GROQ_TIMEOUT_MS, 12_000, 3_000, 60_000),
+    maxRetries: parseIntegerEnv(process.env.AGENDA_IMPORT_GROQ_MAX_RETRIES, 0, 0, 2),
+  };
+}
+
+function getTesseractWorkerPath(): string | undefined {
+  const workerPath = path.join(
+    process.cwd(),
+    "node_modules",
+    "tesseract.js",
+    "src",
+    "worker-script",
+    "node",
+    "index.js",
+  );
+
+  return existsSync(workerPath) ? workerPath : undefined;
+}
+
+async function getAgendaOcrWorker(): Promise<OcrWorker> {
+  if (!agendaOcrWorkerPromise) {
+    agendaOcrWorkerPromise = (async () => {
+      const tesseract = await import("tesseract.js");
+      const workerPath = getTesseractWorkerPath();
+      const options = workerPath ? { workerPath } : undefined;
+      const langs = String(process.env.AGENDA_OCR_LANGS ?? "spa").trim() || "spa";
+      const worker = await tesseract.createWorker(langs, 1, options);
+      await worker.setParameters({
+        preserve_interword_spaces: "1",
+      });
+      return worker as OcrWorker;
+    })().catch((error) => {
+      agendaOcrWorkerPromise = null;
+      throw error;
+    });
+  }
+
+  return agendaOcrWorkerPromise;
+}
+
+async function prepareImageForAgendaOcr(file: File): Promise<Buffer> {
+  const original = Buffer.from(await file.arrayBuffer());
+  try {
+    return await sharp(original)
+      .rotate()
+      .resize({
+        width: 1800,
+        height: 1800,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .grayscale()
+      .normalize()
+      .png()
+      .toBuffer();
+  } catch (error) {
+    logServer("warn", "document_ocr.preprocess_failed", {
+      endpoint: "/api/import/agenda/parse",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return original;
+  }
+}
+
+async function extractTextFromImage(file: File): Promise<string> {
+  const startedAt = Date.now();
+  try {
+    const worker = await getAgendaOcrWorker();
+    const image = await prepareImageForAgendaOcr(file);
+    const { data } = await worker.recognize(image);
+    const text = (data.text ?? "").trim();
+
+    logServer("info", "document_ocr.completed", {
+      endpoint: "/api/import/agenda/parse",
+      engine: "tesseract",
+      elapsed_ms: Date.now() - startedAt,
+      text_length: text.length,
     });
 
-    return (data.text ?? "").trim();
+    return text;
   } catch (error) {
     logServer("warn", "document_ocr.fallback_failed", {
       endpoint: "/api/import/agenda/parse",
       engine: "tesseract",
+      elapsed_ms: Date.now() - startedAt,
       error: error instanceof Error ? error.message : String(error),
     });
     return "";
@@ -682,13 +800,18 @@ export async function POST(request: Request) {
     let rawText = "";
     let visionExtraction: VisionDocumentExtraction | null = null;
     let medicalImagingAnalysis: MedicalImagingAnalysis | null = null;
+    let extractedWithAI = false;
+    let agendaImportSource: "groq" | "ocr_local" | "pdf_text" | "medical_imaging" = "ocr_local";
 
     if (mimeType === "application/pdf") {
       rawText = await extractTextFromPdf(file);
+      agendaImportSource = "pdf_text";
     } else {
       const detection = detectMedicalImageInput(file, mimeType);
       if (detection.isMedicalImage || dicomUpload) {
         medicalImagingAnalysis = await analyzeMedicalImage(file, mimeType);
+        extractedWithAI = true;
+        agendaImportSource = "medical_imaging";
         rawText = buildMedicalImagingNarrative(medicalImagingAnalysis, file.name);
         logServer("info", "medical_imaging.structured_analysis", {
           endpoint: "/api/import/agenda/parse",
@@ -702,8 +825,79 @@ export async function POST(request: Request) {
           pipeline: medicalImagingAnalysis.pipeline,
         });
       } else {
-        // MetaBrain: extrae texto via OCR local y construye estructura de horarios
-        rawText = await extractTextFromImage(file);
+        const groqConfig = getAgendaImportGroqConfig();
+        if (groqConfig.enabled && isVisionSupportedMimeType(mimeType)) {
+          try {
+            visionExtraction = await analyzeImageDocumentWithAI(file, {
+              provider: "groq",
+              baseUrl: groqConfig.baseUrl,
+              model: groqConfig.model,
+              apiKey: groqConfig.apiKey,
+              timeoutMs: groqConfig.timeoutMs,
+              maxRetries: groqConfig.maxRetries,
+              maxImagePixels: 30_000_000,
+              maxImageEdge: 4096,
+            });
+            rawText = [
+              visionExtraction.document_type,
+              visionExtraction.doctor_name,
+              visionExtraction.specialty,
+              visionExtraction.license_number,
+              visionExtraction.month,
+              visionExtraction.year,
+              visionExtraction.raw_summary ?? "",
+              ...visionExtraction.schedule.lunes.map((value) => `lunes ${value}`),
+              ...visionExtraction.schedule.martes.map((value) => `martes ${value}`),
+              ...visionExtraction.schedule.miercoles.map((value) => `miercoles ${value}`),
+              ...visionExtraction.schedule.jueves.map((value) => `jueves ${value}`),
+              ...visionExtraction.schedule.viernes.map((value) => `viernes ${value}`),
+              ...visionExtraction.schedule.sabado.map((value) => `sabado ${value}`),
+              ...visionExtraction.schedule.domingo.map((value) => `domingo ${value}`),
+            ]
+              .map((value) => String(value ?? "").trim())
+              .filter(Boolean)
+              .join("\n");
+            extractedWithAI = true;
+            agendaImportSource = "groq";
+          } catch (error) {
+            logServer("warn", "agenda_import.groq_analysis_failed", {
+              endpoint: "/api/import/agenda/parse",
+              mime_type: mimeType,
+              required: groqConfig.requireSuccess,
+              error: sanitizeProviderError(error instanceof Error ? error.message : String(error)),
+            });
+
+            if (groqConfig.requireSuccess) {
+              return failExtraction(
+                "DOCUMENT_AI_EXTRACTION_FAILED",
+                422,
+                error instanceof Error ? error.message : "Agenda Groq analysis failed",
+              );
+            }
+          }
+        }
+
+        if (visionExtraction && needsAgendaHeaderFallback(visionExtraction)) {
+          const ocrText = await extractTextFromImage(file);
+          if (ocrText) {
+            const fallbackExtraction = buildLooseVisionFallbackFromRawText(ocrText);
+            visionExtraction = mergeVisionExtractionWithFallback(visionExtraction, fallbackExtraction);
+            rawText = [rawText, ocrText].filter(Boolean).join("\n");
+            logServer("info", "agenda_import.header_fallback_applied", {
+              endpoint: "/api/import/agenda/parse",
+              doctor_detected: Boolean(visionExtraction.doctor_name),
+              license_detected: Boolean(visionExtraction.license_number),
+              specialty_detected: Boolean(visionExtraction.specialty),
+              month_detected: Boolean(visionExtraction.month),
+              year_detected: Boolean(visionExtraction.year),
+            });
+          }
+        }
+
+        if (!rawText) {
+          rawText = await extractTextFromImage(file);
+          agendaImportSource = "ocr_local";
+        }
         if (rawText) {
           visionExtraction = buildLooseVisionFallbackFromRawText(rawText);
         }
@@ -828,12 +1022,23 @@ export async function POST(request: Request) {
     const detected_doctor_name = visionExtraction?.doctor_name?.trim() || analysisValidated.data.provider?.professional_name?.trim() || "";
     const detected_doctor_license = visionExtraction?.license_number?.trim() || analysisValidated.data.provider?.license_number?.trim() || "";
 
-    const source: "vision" | "ocr" = medicalImagingAnalysis ? "vision" : "ocr";
+    const source: "vision" | "groq" | "metabrain_local" = medicalImagingAnalysis ? "vision" : agendaImportSource === "groq" ? "groq" : "metabrain_local";
+    const metabrainDecision = buildAgendaImportGuidance({
+      source: agendaImportSource,
+      raw_text_length: rawText.length,
+      detected_availability_rules: availabilityRules.length,
+      detected_appointments: appointments.length,
+      detected_doctor_name,
+      quality_score: analysisValidated.data.quality_score,
+    });
 
     void publishMetaBrainSignal({
       event: "document.analysis.parse.complete",
       details: {
         source,
+        metabrain_action: metabrainDecision.action,
+        metabrain_source: metabrainDecision.source,
+        metabrain_confidence: metabrainDecision.confidence,
         file_name: file.name,
         mime_type: mimeType,
         detected_appointments: appointments.length,
@@ -846,6 +1051,12 @@ export async function POST(request: Request) {
       ok: true,
       source,
       analysis: analysisValidated.data,
+      metabrain: {
+        action: metabrainDecision.action,
+        response: metabrainDecision.response,
+        confidence: metabrainDecision.confidence,
+        source: metabrainDecision.source,
+      },
       imaging_analysis: medicalImagingAnalysis,
       appointments,
       availability_rules: availabilityRules,
