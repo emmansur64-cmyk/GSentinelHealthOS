@@ -23,6 +23,7 @@ export type SuggestedSlot = {
 };
 
 type FindNextAvailableSlotOptions = {
+  tenantId: string;
   preferredStart?: Date;
   excludeAppointmentId?: string;
   maxSearchDays?: number;
@@ -74,9 +75,15 @@ function overlaps(candidateStart: Date, candidateEnd: Date, busy: BusyInterval[]
   return busy.some((interval) => interval.start < candidateEnd && interval.end > candidateStart);
 }
 
-async function getDayBusyIntervals(doctorId: string, day: Date, excludeAppointmentId?: string): Promise<BusyInterval[]> {
+async function getDayBusyIntervals(
+  doctorId: string,
+  day: Date,
+  tenantId: string,
+  excludeAppointmentId?: string,
+): Promise<BusyInterval[]> {
   const rows = await prisma.appointment.findMany({
     where: {
+      tenant_id: tenantId,
       doctor_id: doctorId,
       deleted_at: null,
       datetime: {
@@ -108,9 +115,13 @@ export async function detectAvailableGaps(
 ): Promise<SuggestedSlot[]> {
   const preferredStart = options?.preferredStart ?? new Date();
   const maxSearchDays = options?.maxSearchDays ?? 30;
+  const tenantId = options?.tenantId;
+  if (!tenantId) {
+    throw new Error("tenantId is required to compute schedule availability");
+  }
 
   const rules = await prisma.availabilityRule.findMany({
-    where: { doctor_id },
+    where: { tenant_id: tenantId, doctor_id },
     select: {
       day_of_week: true,
       specific_date: true,
@@ -127,7 +138,7 @@ export async function detectAvailableGaps(
     if (options?.allowPreferredFallbackWhenNoRules) {
       const fallbackStart = new Date(preferredStart);
       const fallbackEnd = new Date(fallbackStart.getTime() + duration * 60_000);
-      const busy = await getDayBusyIntervals(doctor_id, fallbackStart, options?.excludeAppointmentId);
+      const busy = await getDayBusyIntervals(doctor_id, fallbackStart, tenantId, options?.excludeAppointmentId);
 
       if (!overlaps(fallbackStart, fallbackEnd, busy)) {
         return [
@@ -171,7 +182,7 @@ export async function detectAvailableGaps(
     ];
     if (dayRules.length === 0) continue;
 
-    const busy = await getDayBusyIntervals(doctor_id, day, options?.excludeAppointmentId);
+    const busy = await getDayBusyIntervals(doctor_id, day, tenantId, options?.excludeAppointmentId);
 
     for (const rule of dayRules) {
       const ruleStart = withMinutes(day, parseTimeToMinutes(rule.start_time));
