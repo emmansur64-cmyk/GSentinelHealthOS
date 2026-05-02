@@ -91,6 +91,7 @@ export async function processIncomingMessage(messageId: string): Promise<void> {
   }
 
   const phone = message.from_phone;
+  const tenantId = message.tenant_id;
   const payload = message.payload_json as {
     text?: string;
     type?: string;
@@ -102,7 +103,7 @@ export async function processIncomingMessage(messageId: string): Promise<void> {
   try {
     // 2. Lock por usuario (advisory lock por phone)
     const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wa_user:${phone}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wa_user:${tenantId}:${phone}`}))`;
 
       // 3. Revalidar que no esté ya procesado
       const current = await tx.incomingMessage.findUnique({
@@ -114,7 +115,7 @@ export async function processIncomingMessage(messageId: string): Promise<void> {
       }
 
       // 4. Rate limiting
-      const allowed = await checkRateLimit(phone);
+      const allowed = await checkRateLimit(phone, tenantId);
       if (!allowed) {
         return {
           reply: "Estas enviando muchos mensajes. Espera un minuto e intenta de nuevo.",
@@ -125,19 +126,19 @@ export async function processIncomingMessage(messageId: string): Promise<void> {
 
       // 5. Leer/crear contexto conversacional
       const state = await tx.conversationState.upsert({
-        where: { phone },
+        where: { tenant_id_phone: { tenant_id: tenantId, phone } },
         update: {},
-        create: { phone, context_json: {} },
+        create: { tenant_id: tenantId, phone, context_json: {} },
       });
 
       const context = (state.context_json ?? {}) as ConversationContext;
 
       // 6. Procesar mensaje
-      const processResult = await handleMessage(tx, phone, text, context, payload);
+      const processResult = await handleMessage(tx, tenantId, phone, text, context, payload);
 
       // 7. Actualizar contexto
       await tx.conversationState.update({
-        where: { phone },
+        where: { tenant_id_phone: { tenant_id: tenantId, phone } },
         data: {
           last_intent: processResult.intent,
           context_json: processResult.newContext ?? context,
@@ -150,7 +151,7 @@ export async function processIncomingMessage(messageId: string): Promise<void> {
     if (!result) return; // ya procesado
 
     // 8. Enviar respuesta via WhatsApp
-    await sendWhatsAppMessage(phone, result.reply);
+    await sendWhatsAppMessage(phone, result.reply, tenantId);
 
     // 9. Marcar como done
     await prisma.incomingMessage.update({
@@ -179,7 +180,7 @@ export async function processIncomingMessage(messageId: string): Promise<void> {
 
     // Fallback: intentar enviar mensaje de error al usuario
     try {
-      await sendWhatsAppMessage(phone, "Disculpa, tuve un problema procesando tu mensaje. Intenta de nuevo en unos minutos.");
+      await sendWhatsAppMessage(phone, "Disculpa, tuve un problema procesando tu mensaje. Intenta de nuevo en unos minutos.", tenantId);
     } catch {
       // No propagar error secundario
     }
@@ -195,6 +196,7 @@ type HandleResult = ProcessResult & { newContext?: ConversationContext };
 async function handleMessage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
+  tenantId: string,
   phone: string,
   text: string,
   context: ConversationContext,
@@ -203,7 +205,7 @@ async function handleMessage(
   // Si hay interactive reply, tratar como confirm/deny
   if (payload.interactiveReplyId) {
     if (payload.interactiveReplyId.startsWith("confirm_")) {
-      return handleConfirmAppointment(tx, phone, context);
+      return handleConfirmAppointment(tx, tenantId, phone, context);
     }
     if (payload.interactiveReplyId.startsWith("deny_")) {
       return {
@@ -217,6 +219,7 @@ async function handleMessage(
 
   const metabrainReply = await generateWhatsAppMetaBrainReply({
     tx,
+    tenantId,
     phone,
     text,
     contactName: payload.contactName,
@@ -260,7 +263,7 @@ async function handleMessage(
   // Si estamos en un flujo intermedio, manejar confirmación/denegación
   if (context.step === "confirming") {
     if (parsed.intent === "confirm") {
-      return handleConfirmAppointment(tx, phone, context);
+      return handleConfirmAppointment(tx, tenantId, phone, context);
     }
     if (parsed.intent === "deny") {
       return {
@@ -278,20 +281,20 @@ async function handleMessage(
       return { reply: MENU_TEXT, intent: parsed.intent, newContext: {} };
 
     case "create_appointment":
-      return handleCreateAppointment(tx, phone, text, parsed.entities, context);
+      return handleCreateAppointment(tx, tenantId, phone, text, parsed.entities, context);
 
     case "query_appointment":
-      return handleQueryAppointments(tx, phone);
+      return handleQueryAppointments(tx, tenantId, phone);
 
     case "cancel_appointment":
-      return handleCancelAppointment(tx, phone, context);
+      return handleCancelAppointment(tx, tenantId, phone, context);
 
     case "reschedule_appointment":
-      return handleRescheduleAppointment(tx, phone, context);
+      return handleRescheduleAppointment(tx, tenantId, phone, context);
 
     case "confirm":
       if (context.step === "confirming") {
-        return handleConfirmAppointment(tx, phone, context);
+        return handleConfirmAppointment(tx, tenantId, phone, context);
       }
       return { reply: "No hay nada pendiente para confirmar. " + MENU_TEXT, intent: "confirm", newContext: {} };
 
@@ -312,6 +315,7 @@ async function handleMessage(
 async function handleCreateAppointment(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
+  tenantId: string,
   phone: string,
   text: string,
   entities: { doctor_name?: string; date?: string; time?: string; specialty?: string },
@@ -319,7 +323,7 @@ async function handleCreateAppointment(
 ): Promise<HandleResult> {
   // Buscar paciente por teléfono
   const patient = await tx.patient.findFirst({
-    where: { phone: { contains: phone.slice(-10) } },
+    where: { tenant_id: tenantId, phone: { contains: phone.slice(-10) } },
     select: { id: true, name: true },
   });
 
@@ -334,8 +338,8 @@ async function handleCreateAppointment(
 
   // Buscar doctor por especialidad o tomar el primero disponible
   const doctorWhere = entities.specialty
-    ? { specialty: { contains: entities.specialty, mode: "insensitive" as const } }
-    : {};
+    ? { tenant_id: tenantId, specialty: { contains: entities.specialty, mode: "insensitive" as const } }
+    : { tenant_id: tenantId };
 
   const doctor = await tx.doctorProfile.findFirst({
     where: doctorWhere,
@@ -377,6 +381,7 @@ async function handleCreateAppointment(
 
   // Buscar próximo slot disponible
   const slot = await findNextAvailableSlot(doctor.user_id, duration, {
+    tenantId,
     preferredStart,
     maxSearchDays: 30,
   });
@@ -429,6 +434,7 @@ async function handleCreateAppointment(
 async function handleConfirmAppointment(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
+  tenantId: string,
   phone: string,
   context: ConversationContext,
 ): Promise<HandleResult> {
@@ -447,8 +453,8 @@ async function handleConfirmAppointment(
   const idempotencyKey = `wa-${phone}-${context.proposed_time}`;
 
   // ===== IDEMPOTENCIA: Verificar si ya se creó este turno =====
-  const existingByKey = await tx.appointment.findUnique({
-    where: { idempotency_key: idempotencyKey },
+  const existingByKey = await tx.appointment.findFirst({
+    where: { tenant_id: tenantId, idempotency_key: idempotencyKey },
     select: { id: true, datetime: true, doctor_id: true },
   });
 
@@ -492,7 +498,8 @@ async function handleConfirmAppointment(
   // Verificar que sigue disponible
   const overlapping = await tx.$queryRaw<{ id: string }[]>`
     SELECT id FROM appointments
-    WHERE doctor_id  = ${context.doctor_id}::uuid
+    WHERE tenant_id = ${tenantId}
+      AND doctor_id  = ${context.doctor_id}::uuid
       AND deleted_at IS NULL
       AND status NOT IN ('cancelled', 'no_show')
       AND datetime < ${candidateEnd}::timestamptz
@@ -518,6 +525,7 @@ async function handleConfirmAppointment(
   try {
     appointment = await tx.appointment.create({
       data: {
+        tenant_id: tenantId,
         patient_id: context.patient_id,
         doctor_id: context.doctor_id,
         datetime: candidateStart,
@@ -538,8 +546,8 @@ async function handleConfirmAppointment(
         idempotency_key: idempotencyKey,
       });
       // Recuperar el turno creado concurrentemente
-      const concurrent = await tx.appointment.findUnique({
-        where: { idempotency_key: idempotencyKey },
+      const concurrent = await tx.appointment.findFirst({
+        where: { tenant_id: tenantId, idempotency_key: idempotencyKey },
       });
       if (concurrent) {
         const concurrentDate = new Date(concurrent.datetime);
@@ -598,10 +606,11 @@ async function handleConfirmAppointment(
 async function handleQueryAppointments(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
+  tenantId: string,
   phone: string,
 ): Promise<HandleResult> {
   const patient = await tx.patient.findFirst({
-    where: { phone: { contains: phone.slice(-10) } },
+    where: { tenant_id: tenantId, phone: { contains: phone.slice(-10) } },
     select: { id: true },
   });
 
@@ -618,6 +627,7 @@ async function handleQueryAppointments(
   const appointments = await tx.appointment.findMany({
     where: {
       patient_id: patient.id,
+      tenant_id: tenantId,
       deleted_at: null,
       status: { notIn: ["cancelled", "no_show"] },
       datetime: { gte: now },
@@ -670,11 +680,12 @@ async function handleQueryAppointments(
 async function handleCancelAppointment(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
+  tenantId: string,
   phone: string,
   context: ConversationContext,
 ): Promise<HandleResult> {
   const patient = await tx.patient.findFirst({
-    where: { phone: { contains: phone.slice(-10) } },
+    where: { tenant_id: tenantId, phone: { contains: phone.slice(-10) } },
     select: { id: true },
   });
 
@@ -691,6 +702,7 @@ async function handleCancelAppointment(
   const nextAppointment = await tx.appointment.findFirst({
     where: {
       patient_id: patient.id,
+      tenant_id: tenantId,
       deleted_at: null,
       status: { notIn: ["cancelled", "no_show", "completed"] },
       datetime: { gte: now },
@@ -710,8 +722,8 @@ async function handleCancelAppointment(
     };
   }
 
-  await tx.appointment.update({
-    where: { id: nextAppointment.id },
+  await tx.appointment.updateMany({
+    where: { id: nextAppointment.id, tenant_id: tenantId },
     data: { status: "cancelled" },
   });
 
@@ -739,11 +751,12 @@ async function handleCancelAppointment(
 async function handleRescheduleAppointment(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
+  tenantId: string,
   phone: string,
   context: ConversationContext,
 ): Promise<HandleResult> {
   const patient = await tx.patient.findFirst({
-    where: { phone: { contains: phone.slice(-10) } },
+    where: { tenant_id: tenantId, phone: { contains: phone.slice(-10) } },
     select: { id: true },
   });
 
@@ -760,6 +773,7 @@ async function handleRescheduleAppointment(
   const nextAppointment = await tx.appointment.findFirst({
     where: {
       patient_id: patient.id,
+      tenant_id: tenantId,
       deleted_at: null,
       status: { notIn: ["cancelled", "no_show", "completed"] },
       datetime: { gte: now },
@@ -780,8 +794,8 @@ async function handleRescheduleAppointment(
   }
 
   // Cancelar el turno actual
-  await tx.appointment.update({
-    where: { id: nextAppointment.id },
+  await tx.appointment.updateMany({
+    where: { id: nextAppointment.id, tenant_id: tenantId },
     data: { status: "cancelled" },
   });
 
@@ -789,7 +803,7 @@ async function handleRescheduleAppointment(
   const slot = await findNextAvailableSlot(
     nextAppointment.doctor_id,
     nextAppointment.duration,
-    { preferredStart: now, maxSearchDays: 30 },
+    { tenantId, preferredStart: now, maxSearchDays: 30 },
   );
 
   if (!slot) {

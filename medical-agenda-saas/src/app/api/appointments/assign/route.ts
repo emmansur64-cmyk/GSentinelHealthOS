@@ -35,12 +35,12 @@ function formatTime(date: Date): string {
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
 
-async function resolveDoctorCandidates(input: z.infer<typeof assignRequestSchema>): Promise<DoctorCandidate[]> {
+async function resolveDoctorCandidates(input: z.infer<typeof assignRequestSchema>, tenantId: string): Promise<DoctorCandidate[]> {
   if (input.doctorId || input.aiTag) {
     const doctor = await prisma.doctorProfile.findFirst({
       where: input.doctorId
-        ? { user_id: input.doctorId }
-        : { ai_tag: input.aiTag },
+        ? { user_id: input.doctorId, tenant_id: tenantId }
+        : { ai_tag: input.aiTag, tenant_id: tenantId },
       select: {
         user_id: true,
         specialty: true,
@@ -60,6 +60,7 @@ async function resolveDoctorCandidates(input: z.infer<typeof assignRequestSchema
 
   const doctors = await prisma.doctorProfile.findMany({
     where: {
+      tenant_id: tenantId,
       specialty: {
         contains: input.specialty,
         mode: "insensitive",
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
     }
 
     const preferredStart = parsed.data.preferredStart ? new Date(parsed.data.preferredStart) : new Date();
-    const candidates = await resolveDoctorCandidates(parsed.data);
+    const candidates = await resolveDoctorCandidates(parsed.data, tenant.tenant.id);
 
     if (candidates.length === 0) {
       return fail("No se encontraron medicos para la solicitud", 404);
@@ -103,6 +104,7 @@ export async function POST(request: Request) {
 
     for (const doctor of candidates) {
       const slot = await findNextAvailableSlot(doctor.user_id, parsed.data.duration, {
+        tenantId: tenant.tenant.id,
         preferredStart,
         maxSearchDays: 60,
       });
@@ -138,6 +140,7 @@ export async function POST(request: Request) {
     const alternatives = await Promise.all(
       candidates.slice(0, 3).map(async (doctor) => {
         const slot = await findNextAvailableSlot(doctor.user_id, parsed.data.duration, {
+          tenantId: tenant.tenant.id,
           preferredStart: new Date(preferredStart.getTime() + 24 * 60 * 60 * 1000),
           maxSearchDays: 90,
         });

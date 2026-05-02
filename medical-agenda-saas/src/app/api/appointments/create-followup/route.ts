@@ -7,6 +7,7 @@ import { getAuthenticatedUser, hasRole } from "@/lib/server-auth";
 import { logServerError } from "@/lib/server-logger";
 import { findNextAvailableSlot } from "@/lib/smart-schedule";
 import { appointmentCreateFollowupSchema } from "@/lib/validators";
+import { requireTenant } from "@/middleware/tenantMiddleware";
 import type { Prisma } from "@prisma/client";
 
 function applyTime(baseDate: Date, hhmm?: string) {
@@ -21,13 +22,15 @@ export async function POST(request: Request) {
   const authUser = await getAuthenticatedUser();
   if (!authUser) return fail("No autenticado", 401);
   if (!hasRole(authUser, ["doctor"])) return fail("Sin permisos", 403);
+  const tenant = await requireTenant(authUser);
+  if (!tenant.ok) return tenant.response;
 
   try {
     const parsed = appointmentCreateFollowupSchema.safeParse(await request.json());
     if (!parsed.success) return fail("Payload invalido", 422, parsed.error.flatten());
 
     const sourceAppointment = await prisma.appointment.findFirst({
-      where: { id: parsed.data.appointment_id, doctor_id: authUser.userId, deleted_at: null },
+      where: { id: parsed.data.appointment_id, tenant_id: tenant.tenant.id, doctor_id: authUser.userId, deleted_at: null },
       include: { patient: true },
     });
     if (!sourceAppointment) return fail("Turno base no encontrado", 404);
@@ -37,6 +40,7 @@ export async function POST(request: Request) {
     const requestedDate = applyTime(nextDate, parsed.data.time);
 
     const slot = await findNextAvailableSlot(sourceAppointment.doctor_id, sourceAppointment.duration, {
+      tenantId: tenant.tenant.id,
       preferredStart: requestedDate,
       maxSearchDays: 90,
     });
@@ -53,7 +57,8 @@ export async function POST(request: Request) {
       const end = new Date(slot.start.getTime() + sourceAppointment.duration * 60_000);
       const overlapping = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM appointments
-        WHERE doctor_id = ${sourceAppointment.doctor_id}::uuid
+        WHERE tenant_id = ${tenant.tenant.id}
+          AND doctor_id = ${sourceAppointment.doctor_id}::uuid
           AND deleted_at IS NULL
           AND status NOT IN ('cancelled', 'no_show')
           AND datetime < ${end}::timestamptz
@@ -69,6 +74,7 @@ export async function POST(request: Request) {
         data: {
           patient_id: sourceAppointment.patient_id,
           doctor_id: sourceAppointment.doctor_id,
+          tenant_id: tenant.tenant.id,
           datetime: slot.start,
           duration: sourceAppointment.duration,
           status: "scheduled",

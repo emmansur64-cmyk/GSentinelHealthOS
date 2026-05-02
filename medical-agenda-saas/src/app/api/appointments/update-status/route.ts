@@ -10,6 +10,7 @@ import { getAuthenticatedUser, hasRole } from "@/lib/server-auth";
 import { logServerError } from "@/lib/server-logger";
 import { findNextAvailableSlot } from "@/lib/smart-schedule";
 import { appointmentUpdateStatusSchema } from "@/lib/validators";
+import { requireTenant } from "@/middleware/tenantMiddleware";
 
 function normalizeStatus(status?: string): AppointmentStatus | undefined {
   if (!status) return undefined;
@@ -40,13 +41,15 @@ export async function POST(request: Request) {
   const authUser = await getAuthenticatedUser();
   if (!authUser) return fail("No autenticado", 401);
   if (!hasRole(authUser, ["doctor"])) return fail("Sin permisos", 403);
+  const tenant = await requireTenant(authUser);
+  if (!tenant.ok) return tenant.response;
 
   try {
     const parsed = appointmentUpdateStatusSchema.safeParse(await request.json());
     if (!parsed.success) return fail("Payload invalido", 422, parsed.error.flatten());
 
     const existing = await prisma.appointment.findFirst({
-      where: { id: parsed.data.appointment_id, doctor_id: authUser.userId, deleted_at: null },
+      where: { id: parsed.data.appointment_id, tenant_id: tenant.tenant.id, doctor_id: authUser.userId, deleted_at: null },
       select: { id: true, notes: true, datetime: true, duration: true, doctor_id: true, status: true },
     });
     if (!existing) return fail("Turno no encontrado", 404);
@@ -66,6 +69,7 @@ export async function POST(request: Request) {
     const targetDuration = parsed.data.duration ?? existing.duration;
 
     const slot = await findNextAvailableSlot(existing.doctor_id, targetDuration, {
+      tenantId: tenant.tenant.id,
       preferredStart: requestedStart,
       excludeAppointmentId: existing.id,
       maxSearchDays: 45,
@@ -83,7 +87,8 @@ export async function POST(request: Request) {
       const end = new Date(slot.start.getTime() + targetDuration * 60_000);
       const overlapping = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM appointments
-        WHERE doctor_id = ${existing.doctor_id}::uuid
+        WHERE tenant_id = ${tenant.tenant.id}
+          AND doctor_id = ${existing.doctor_id}::uuid
           AND id <> ${existing.id}::uuid
           AND deleted_at IS NULL
           AND status NOT IN ('cancelled', 'no_show')
@@ -96,19 +101,25 @@ export async function POST(request: Request) {
         throw new Error("OVERLAP_ON_STATUS_UPDATE");
       }
 
-      return tx.appointment.update({
-        where: { id: parsed.data.appointment_id },
+      await tx.appointment.updateMany({
+        where: { id: parsed.data.appointment_id, tenant_id: tenant.tenant.id },
         data: {
           status: nextStatus,
           datetime: slot.start,
           duration: targetDuration,
           notes: mergedNotes,
         },
+      });
+
+      const appointment = await tx.appointment.findFirst({
+        where: { id: parsed.data.appointment_id, tenant_id: tenant.tenant.id },
         include: {
           patient: true,
           doctor: { include: { user: { select: { name: true } } } },
         },
       });
+      if (!appointment) throw new Error("APPOINTMENT_NOT_FOUND_AFTER_STATUS_UPDATE");
+      return appointment;
     });
 
     const meta = requestMeta(request);
