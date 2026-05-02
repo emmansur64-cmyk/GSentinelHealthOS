@@ -9,6 +9,7 @@ import { getAuthenticatedUser, hasRole } from "@/lib/server-auth";
 import { logServerError } from "@/lib/server-logger";
 import { findNextAvailableSlot } from "@/lib/smart-schedule";
 import { appointmentCreateSchema } from "@/lib/validators";
+import { requireTenant } from "@/middleware/tenantMiddleware";
 import { BillingLimitError, assertCanCreateAppointment } from "@/services/billingService";
 
 const appointmentInclude = {
@@ -36,6 +37,8 @@ function serializeAppointment<T>(appointment: T) {
 export async function GET(request: Request) {
   const authUser = await getAuthenticatedUser();
   if (!authUser) return fail("No autenticado", 401);
+  const tenant = await requireTenant(authUser);
+  if (!tenant.ok) return tenant.response;
 
   const { searchParams } = new URL(request.url);
   const doctorId  = searchParams.get("doctor_id");
@@ -50,7 +53,7 @@ export async function GET(request: Request) {
     return fail(`status inválido. Valores permitidos: ${validStatuses.join(", ")}`, 422);
   }
 
-  const where: Prisma.AppointmentWhereInput = {};
+  const where: Prisma.AppointmentWhereInput = { tenant_id: tenant.tenant.id };
 
   if (doctorId)  where.doctor_id  = doctorId;
   if (patientId) where.patient_id = patientId;
@@ -80,6 +83,8 @@ export async function POST(request: Request) {
   if (!hasRole(authUser, ["admin", "secretaria", "recepcionista", "doctor", "medico"])) {
     return fail("Sin permisos", 403);
   }
+  const tenant = await requireTenant(authUser);
+  if (!tenant.ok) return tenant.response;
 
   try {
     const idempotencyKey = request.headers.get("idempotency-key")?.trim() || null;
@@ -95,7 +100,7 @@ export async function POST(request: Request) {
 
     if (idempotencyKey) {
       const existingByKey = await prisma.appointment.findUnique({
-        where: { idempotency_key: idempotencyKey },
+        where: { tenant_id_idempotency_key: { tenant_id: tenant.tenant.id, idempotency_key: idempotencyKey } },
         include: appointmentInclude,
       });
 
@@ -106,8 +111,8 @@ export async function POST(request: Request) {
 
     // Validaciones FK fuera de la transacción (lectura rápida)
     const [doctor, patient] = await Promise.all([
-      prisma.doctorProfile.findUnique({ where: { user_id: parsed.data.doctor_id }, select: { user_id: true } }),
-      prisma.patient.findUnique({ where: { id: parsed.data.patient_id }, select: { id: true } }),
+      prisma.doctorProfile.findFirst({ where: { tenant_id: tenant.tenant.id, user_id: parsed.data.doctor_id }, select: { user_id: true } }),
+      prisma.patient.findFirst({ where: { tenant_id: tenant.tenant.id, id: parsed.data.patient_id }, select: { id: true } }),
     ]);
     if (!doctor)  return fail("Doctor inexistente", 404);
     if (!patient) return fail("Paciente inexistente", 404);
@@ -126,6 +131,7 @@ export async function POST(request: Request) {
           : new Date(chosenStart.getTime() + Math.max(5, parsed.data.duration) * 60_000);
 
       const slot = await findNextAvailableSlot(doctorId, parsed.data.duration, {
+        tenantId: tenant.tenant.id,
         preferredStart,
         maxSearchDays: 45,
         allowPreferredFallbackWhenNoRules: true,
@@ -150,7 +156,8 @@ export async function POST(request: Request) {
 
           const overlapping = await tx.$queryRaw<{ id: string }[]>`
             SELECT id FROM appointments
-            WHERE doctor_id  = ${doctorId}::uuid
+            WHERE tenant_id = ${tenant.tenant.id}
+              AND doctor_id  = ${doctorId}::uuid
               AND deleted_at IS NULL
               AND status NOT IN ('cancelled', 'no_show')
               AND datetime < ${end}::timestamptz
@@ -164,6 +171,7 @@ export async function POST(request: Request) {
 
           return tx.appointment.create({
             data: {
+              tenant_id: tenant.tenant.id,
               patient_id: parsed.data.patient_id,
               doctor_id:  doctorId,
               datetime:   candidateStart,
@@ -250,7 +258,7 @@ export async function POST(request: Request) {
       const key = request.headers.get("idempotency-key")?.trim() || null;
       if (key) {
         const existingByKey = await prisma.appointment.findUnique({
-          where: { idempotency_key: key },
+          where: { tenant_id_idempotency_key: { tenant_id: tenant.tenant.id, idempotency_key: key } },
           include: appointmentInclude,
         });
         if (existingByKey && !existingByKey.deleted_at) {
