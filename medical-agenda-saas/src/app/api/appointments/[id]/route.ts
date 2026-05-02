@@ -56,7 +56,7 @@ export async function GET(_request: Request, context: Params) {
   const { id } = await context.params;
 
   const appointment = await prisma.appointment.findFirst({
-    where: { id, deleted_at: null },
+    where: { id, tenant_id: tenant.tenant.id, deleted_at: null },
     include: appointmentInclude,
   });
 
@@ -85,7 +85,7 @@ async function handleUpdate(request: Request, context: Params) {
     if (!parsed.success) return fail("Payload invalido", 422, parsed.error.flatten());
 
     const existing = await prisma.appointment.findFirst({
-      where: { id, deleted_at: null },
+      where: { id, tenant_id: tenant.tenant.id, deleted_at: null },
       select: { id: true, doctor_id: true, datetime: true, duration: true, deleted_at: true, status: true },
     });
     if (!existing || existing.deleted_at) return fail("Turno no encontrado", 404);
@@ -101,7 +101,21 @@ async function handleUpdate(request: Request, context: Params) {
     const targetDuration = parsed.data.duration ?? existing.duration;
     const requestedStart = parsed.data.datetime ? new Date(parsed.data.datetime) : existing.datetime;
 
+    if (parsed.data.doctor_id || parsed.data.patient_id) {
+      const [doctor, patient] = await Promise.all([
+        parsed.data.doctor_id
+          ? prisma.doctorProfile.findFirst({ where: { user_id: parsed.data.doctor_id, tenant_id: tenant.tenant.id }, select: { user_id: true } })
+          : Promise.resolve({ user_id: existing.doctor_id }),
+        parsed.data.patient_id
+          ? prisma.patient.findFirst({ where: { id: parsed.data.patient_id, tenant_id: tenant.tenant.id }, select: { id: true } })
+          : Promise.resolve({ id: null }),
+      ]);
+      if (!doctor) return fail("Doctor inexistente", 404);
+      if (parsed.data.patient_id && !patient) return fail("Paciente inexistente", 404);
+    }
+
     const slot = await findNextAvailableSlot(targetDoctorId, targetDuration, {
+      tenantId: tenant.tenant.id,
       preferredStart: requestedStart,
       excludeAppointmentId: id,
       maxSearchDays: 45,
@@ -119,7 +133,8 @@ async function handleUpdate(request: Request, context: Params) {
       const end = new Date(slot.start.getTime() + targetDuration * 60_000);
       const overlapping = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM appointments
-        WHERE doctor_id = ${targetDoctorId}::uuid
+        WHERE tenant_id = ${tenant.tenant.id}
+          AND doctor_id = ${targetDoctorId}::uuid
           AND id <> ${id}::uuid
           AND deleted_at IS NULL
           AND status NOT IN ('cancelled', 'no_show')
@@ -132,8 +147,8 @@ async function handleUpdate(request: Request, context: Params) {
         throw new Error("OVERLAP_ON_UPDATE");
       }
 
-      return tx.appointment.update({
-        where: { id },
+      await tx.appointment.updateMany({
+        where: { id, tenant_id: tenant.tenant.id },
         data: {
           patient_id: parsed.data.patient_id,
           doctor_id: targetDoctorId,
@@ -143,8 +158,14 @@ async function handleUpdate(request: Request, context: Params) {
           source: parsed.data.source,
           notes: parsed.data.notes,
         },
+      });
+
+      const appointment = await tx.appointment.findFirst({
+        where: { id, tenant_id: tenant.tenant.id },
         include: appointmentInclude,
       });
+      if (!appointment) throw new Error("APPOINTMENT_NOT_FOUND_AFTER_UPDATE");
+      return appointment;
     });
 
     await logAudit({
@@ -221,7 +242,7 @@ export async function DELETE(request: Request, context: Params) {
   try {
     const meta = requestMeta(request);
     const existing = await prisma.appointment.findFirst({
-      where: { id, deleted_at: null },
+      where: { id, tenant_id: tenant.tenant.id, deleted_at: null },
       select: {
         id: true,
         doctor_id: true,
@@ -239,8 +260,8 @@ export async function DELETE(request: Request, context: Params) {
 
     const deletedAt = new Date();
 
-    await prisma.appointment.update({
-      where: { id },
+    await prisma.appointment.updateMany({
+      where: { id, tenant_id: tenant.tenant.id },
       data: {
         deleted_at: deletedAt,
         status: "cancelled",
