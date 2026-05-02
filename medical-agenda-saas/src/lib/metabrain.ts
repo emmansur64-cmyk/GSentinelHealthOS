@@ -51,6 +51,15 @@ export type ImagingMetaBrainInput = {
   confidence: number;
 };
 
+export type AgendaImportMetaBrainInput = {
+  source: "groq" | "ocr_local" | "pdf_text" | "medical_imaging";
+  raw_text_length: number;
+  detected_availability_rules: number;
+  detected_appointments: number;
+  detected_doctor_name?: string | null;
+  quality_score?: number | null;
+};
+
 const URGENT_TERMS = [
   "dolor toracico",
   "disnea",
@@ -420,6 +429,38 @@ export function buildImagingClinicalGuidance(input: ImagingMetaBrainInput): Meta
       `Hallazgos sugeridos: ${input.findings.join(" | ") || "sin hallazgos evidentes"}.`,
       recommendation,
       warning,
+    ].join(" "),
+  };
+}
+
+export function buildAgendaImportGuidance(input: AgendaImportMetaBrainInput): MetaBrainDecision {
+  const hasRows = input.detected_availability_rules > 0 || input.detected_appointments > 0;
+  const quality = typeof input.quality_score === "number" ? input.quality_score : 0.5;
+  const confidence = Number(Math.max(0.45, Math.min(0.92, hasRows ? quality + 0.12 : quality)).toFixed(2));
+
+  if (!hasRows) {
+    return {
+      action: "AGENDA_IMPORT_REVIEW_REQUIRED",
+      source: "RULES",
+      confidence,
+      response:
+        "MetaBrain local no detecto reglas importables de agenda. Revisar legibilidad, formato de dias/horarios y datos del profesional antes de confirmar.",
+    };
+  }
+
+  const doctorText = input.detected_doctor_name?.trim()
+    ? ` Profesional detectado: ${input.detected_doctor_name.trim()}.`
+    : " Profesional no confirmado automaticamente.";
+
+  return {
+    action: "AGENDA_IMPORT_READY_FOR_REVIEW",
+    source: "RULES",
+    confidence,
+    response: [
+      "MetaBrain local detecto disponibilidad importable para revision humana.",
+      `Reglas: ${input.detected_availability_rules}. Turnos puntuales: ${input.detected_appointments}.`,
+      doctorText,
+      "Confirmar visualmente antes de importar agenda.",
     ].join(" "),
   };
 }

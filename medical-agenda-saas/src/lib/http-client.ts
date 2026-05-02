@@ -12,6 +12,23 @@ type RetryOptions = {
   timeoutMs?: number;
 };
 
+type HttpErrorDetails = {
+  status: number;
+  details?: unknown;
+};
+
+export class HttpRequestError extends Error {
+  status: number;
+  details?: unknown;
+
+  constructor(message: string, options: HttpErrorDetails) {
+    super(message);
+    this.name = "HttpRequestError";
+    this.status = options.status;
+    this.details = options.details;
+  }
+}
+
 const DEFAULT_RETRIES = 2;
 const DEFAULT_RETRY_DELAY_MS = 300;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -69,17 +86,26 @@ export async function fetchJsonWithRetry<T>(
 
       if (!response.ok || payload.ok === false) {
         const message = payload.error?.message ?? `HTTP ${response.status}`;
+        const requestError = new HttpRequestError(message, {
+          status: response.status,
+          details: payload.error?.details,
+        });
 
         if (attempt < retries && shouldRetry(response.status)) {
           await sleep(retryDelayMs * (attempt + 1));
           continue;
         }
 
-        throw new Error(message);
+        throw requestError;
       }
 
       return payload.data as T;
     } catch (error) {
+      // Los errores HTTP de cliente (401/403/404/409/422) no se reintentan.
+      if (error instanceof HttpRequestError && !shouldRetry(error.status)) {
+        throw error;
+      }
+
       lastError = error instanceof Error ? error : new Error("Network error");
       if (attempt >= retries) break;
       await sleep(retryDelayMs * (attempt + 1));

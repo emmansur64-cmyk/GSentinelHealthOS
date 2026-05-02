@@ -37,7 +37,7 @@ type BrainDecidePayload = {
 };
 
 const BRAIN_API_URL = (process.env.BRAIN_API_URL ?? "http://localhost:8001").replace(/\/$/, "");
-const BRAIN_API_KEY = process.env.BRAIN_API_KEY ?? "";
+const BRAIN_API_KEY = (process.env.BRAIN_API_KEY ?? process.env.INTERNAL_SERVICES_KEY ?? "").trim();
 const BRAIN_TIMEOUT_MS = Number(process.env.BRAIN_TIMEOUT_MS ?? "10000");
 const BRAIN_RETRY_ATTEMPTS = Math.max(1, Number(process.env.BRAIN_RETRY_ATTEMPTS ?? "2"));
 const BRAIN_RETRY_DELAY_MS = Math.max(0, Number(process.env.BRAIN_RETRY_DELAY_MS ?? "250"));
@@ -47,6 +47,23 @@ const BRAIN_FAILURE_ALERT_THRESHOLD = Math.max(
 );
 
 let consecutiveBrainFailures = 0;
+
+class BrainAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BrainAuthError";
+  }
+}
+
+function isPlaceholderBrainApiKey(value: string): boolean {
+  const normalized = (value || "").trim().toLowerCase();
+  if (!normalized) return true;
+  return (
+    normalized.includes("change-me") ||
+    normalized.includes("change_production") ||
+    normalized.includes("brain-secret-key-change-production")
+  );
+}
 
 type OrchestrateApiResponse = {
   message: string;
@@ -212,13 +229,19 @@ function buildSessionId(payload: BrainDecidePayload): string | null {
 export async function callBrainDecide(
   payload: BrainDecidePayload,
 ): Promise<BrainDecideResponse | null> {
+  if (isPlaceholderBrainApiKey(BRAIN_API_KEY)) {
+    logServer("error", "brain.auth.misconfigured", {
+      target_url: `${BRAIN_API_URL}/orchestrate`,
+      message: "BRAIN_API_KEY no configurada o invalida en frontend server",
+    });
+    return null;
+  }
+
   const authHeaders: Record<string, string> = {
     "Content-Type": "application/json",
   };
   if (BRAIN_API_KEY) {
     authHeaders["X-Internal-Key"] = BRAIN_API_KEY;
-  } else {
-    logServer("warn", "BRAIN_API_KEY no configurado — intentando Brain sin clave (modo dev)");
   }
 
   const controller = new AbortController();
@@ -251,6 +274,10 @@ export async function callBrainDecide(
       };
     }
 
+    if (orchestrateRes.status === 401 || orchestrateRes.status === 403) {
+      throw new BrainAuthError("Brain rechazo autenticacion. Verifica BRAIN_API_KEY");
+    }
+
     const orchestrateErr = await orchestrateRes.text().catch(() => "");
     logServer("warn", "Brain /orchestrate respondió con error; fallback a /api/v1/brain/decide", {
       target_url: orchestrateUrl,
@@ -277,6 +304,9 @@ export async function callBrainDecide(
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
+      if (res.status === 401 || res.status === 403) {
+        throw new BrainAuthError("Brain rechazo autenticacion en endpoint legacy. Verifica BRAIN_API_KEY");
+      }
       logServer("warn", "Brain /api/v1/brain/decide respondió con error", {
         target_url: legacyUrl,
         timeout_ms: BRAIN_TIMEOUT_MS,
@@ -297,6 +327,14 @@ export async function callBrainDecide(
     registerSuccessIfRecovered();
     return data;
   } catch (err) {
+    if (err instanceof BrainAuthError) {
+      logServer("error", "brain.auth.failed", {
+        target_url: `${BRAIN_API_URL}/orchestrate`,
+        message: err.message,
+      });
+      return null;
+    }
+
     if (err instanceof Error && err.name === "AbortError") {
       incDoctorChatFetchFailed("orchestrate", "timeout");
       registerConsecutiveFailure({
