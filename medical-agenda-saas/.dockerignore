@@ -5,3 +5,13 @@ npm-debug.log
 *.md
 .env
 .env.local
+backups
+logs
+tmp
+temp
+coverage
+.turbo
+.vercel
+dist
+build
+*.log
