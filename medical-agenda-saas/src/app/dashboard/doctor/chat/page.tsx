@@ -9,8 +9,8 @@ export default async function DoctorChatPage() {
   if (!user) redirect("/login");
   if (!hasRole(user, ["doctor", "medico"])) redirect("/dashboard");
 
-  const doctor = await prisma.doctorProfile.findUnique({
-    where: { user_id: user.userId },
+  const doctor = await prisma.doctorProfile.findFirst({
+    where: { user_id: user.userId, tenant_id: user.tenantId },
     select: { user_id: true },
   });
 

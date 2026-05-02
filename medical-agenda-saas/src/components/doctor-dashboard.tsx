@@ -488,6 +488,7 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
               width={260}
               height={88}
               className="h-auto w-56 object-contain"
+              style={{ height: "auto" }}
             />
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Panel Doctor</p>

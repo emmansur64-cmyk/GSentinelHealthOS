@@ -33,7 +33,10 @@ const emptyForm: PatientForm = {
 
 async function fetchPatients(): Promise<Patient[]> {
   const response = await fetch("/api/patients", { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new Error("No se pudo cargar pacientes");
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.error?.message ?? `No se pudo cargar pacientes (HTTP ${response.status})`);
+  }
   const payload = await response.json();
   return payload?.data ?? payload;
 }

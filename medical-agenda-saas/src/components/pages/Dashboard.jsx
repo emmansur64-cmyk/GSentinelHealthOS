@@ -15,7 +15,8 @@ async function fetchTodayStats() {
   });
 
   if (!response.ok) {
-    const message = "No se pudieron cargar las metricas de hoy";
+    const payload = await response.json().catch(() => null);
+    const message = payload?.error?.message ?? `No se pudieron cargar las metricas de hoy (HTTP ${response.status})`;
     throw new Error(message);
   }
 

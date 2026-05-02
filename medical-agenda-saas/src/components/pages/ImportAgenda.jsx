@@ -239,8 +239,14 @@ export default function ImportAgenda() {
     }
 
     // Si la IA detectó doctor pero no hay coincidencia en BD, crear ID placeholder
-    const detected_doctor_name = data?.detected_doctor_name?.trim() || "";
-    const detected_doctor_license = data?.detected_doctor_license?.trim() || "";
+    const detected_doctor_name =
+      data?.detected_doctor_name?.trim() ||
+      analysisValidation.data?.provider?.professional_name?.trim() ||
+      "";
+    const detected_doctor_license =
+      data?.detected_doctor_license?.trim() ||
+      analysisValidation.data?.provider?.license_number?.trim() ||
+      "";
     const matched_doctor_id = data?.matched_doctor_id || null;
     const parsedRows =
       Array.isArray(data?.availability_rules) && data.availability_rules.length > 0
@@ -264,6 +270,7 @@ export default function ImportAgenda() {
 
     return {
       analysis: analysisValidation.data,
+      source: data?.source ?? "ocr",
       rows: rows_with_detected,
       detected_doctor_name,
       detected_doctor_license,
@@ -280,8 +287,9 @@ export default function ImportAgenda() {
     setStep(2);
 
     try {
-      const { analysis, rows, detected_doctor_name, detected_doctor_license } = await processWithBackend(selectedFile);
+      const { analysis, source, rows, detected_doctor_name, detected_doctor_license } = await processWithBackend(selectedFile);
       setAnalysisMeta({
+        source,
         document_type: analysis.document_type,
         quality: analysis.quality,
         quality_score: analysis.quality_score,
@@ -353,11 +361,20 @@ export default function ImportAgenda() {
       return;
     }
 
-    const incompleteRow = previewRows.find(
-      (row) => !row.doctor_id || !row.start_time || !row.end_time || Number.isNaN(Number(row.slot_duration)),
-    );
+    const incompleteRow = previewRows.find((row) => {
+      const duration = Number(row.slot_duration);
+      return !row.doctor_id || !row.start_time || !row.end_time || !Number.isFinite(duration) || duration <= 0;
+    });
     if (incompleteRow) {
-      toast.error("Completa profesional, horario y duracion antes de importar");
+      if (!incompleteRow.doctor_id) {
+        toast.error("Falta seleccionar o crear el profesional en una franja antes de importar");
+        return;
+      }
+      if (!incompleteRow.start_time || !incompleteRow.end_time) {
+        toast.error("Falta completar el horario en una franja antes de importar");
+        return;
+      }
+      toast.error("Falta completar una duracion valida antes de importar");
       return;
     }
 
@@ -680,7 +697,8 @@ export default function ImportAgenda() {
                   ) : null}
                 </div>
               ) : null}
-              <div className="grid gap-2 md:grid-cols-4">
+              <div className="grid gap-2 md:grid-cols-5">
+                <p><span className="font-semibold text-slate-900">Motor:</span> {analysisMeta.source}</p>
                 <p><span className="font-semibold text-slate-900">Documento:</span> {analysisMeta.document_type}</p>
                 <p><span className="font-semibold text-slate-900">Calidad:</span> {analysisMeta.quality}</p>
                 <p><span className="font-semibold text-slate-900">Score:</span> {analysisMeta.quality_score}</p>

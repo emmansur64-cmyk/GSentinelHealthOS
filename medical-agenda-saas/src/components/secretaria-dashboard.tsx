@@ -9,7 +9,7 @@ import interactionPlugin from "@fullcalendar/interaction";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { DateSelectArg, DatesSetArg, EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core";
 import { isSameDay } from "date-fns";
-import { AlertTriangle, CalendarCheck2, Clock3, LoaderCircle, Plus, Trash2, UserRound, UserX2, UsersRound } from "lucide-react";
+import { AlertTriangle, CalendarCheck2, Clock3, LoaderCircle, Pencil, Plus, Trash2, UserRound, UserX2, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +30,11 @@ type Doctor = {
   specialty: string;
   matricula: string;
   ai_tag: string;
+  appointment_duration?: number;
+  buffer_minutes?: number;
+  start_time?: string;
+  end_time?: string;
+  working_days?: string[];
   user: { name: string; email: string };
 };
 
@@ -38,6 +43,7 @@ type Patient = {
   name: string;
   document: string;
   contact: string;
+  insurance?: string | null;
   notes?: string | null;
 };
 
@@ -116,6 +122,30 @@ type RuleForm = {
   slot_duration: string;
 };
 
+type PatientForm = {
+  id?: string;
+  name: string;
+  document: string;
+  contact: string;
+  insurance: string;
+  notes: string;
+};
+
+type DoctorForm = {
+  id?: string;
+  name: string;
+  email: string;
+  password: string;
+  specialty: string;
+  matricula: string;
+  ai_tag: string;
+  appointment_duration: string;
+  buffer_minutes: string;
+  start_time: string;
+  end_time: string;
+  working_days: string;
+};
+
 const emptyAppointmentForm: AppointmentForm = {
   patient_id: "",
   doctor_id: "",
@@ -134,6 +164,28 @@ const emptyRuleForm: RuleForm = {
   start_time: "09:00",
   end_time: "17:00",
   slot_duration: "30",
+};
+
+const emptyPatientForm: PatientForm = {
+  name: "",
+  document: "",
+  contact: "",
+  insurance: "",
+  notes: "",
+};
+
+const emptyDoctorForm: DoctorForm = {
+  name: "",
+  email: "",
+  password: "",
+  specialty: "",
+  matricula: "",
+  ai_tag: "",
+  appointment_duration: "30",
+  buffer_minutes: "10",
+  start_time: "08:00",
+  end_time: "18:00",
+  working_days: "monday,tuesday,wednesday,thursday,friday",
 };
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -365,6 +417,10 @@ export function SecretariaDashboard() {
   const [editOpen, setEditOpen] = useState(false);
   const [createForm, setCreateForm] = useState<AppointmentForm>(emptyAppointmentForm);
   const [editForm, setEditForm] = useState<AppointmentForm>(emptyAppointmentForm);
+  const [patientOpen, setPatientOpen] = useState(false);
+  const [patientForm, setPatientForm] = useState<PatientForm>(emptyPatientForm);
+  const [doctorOpen, setDoctorOpen] = useState(false);
+  const [doctorForm, setDoctorForm] = useState<DoctorForm>(emptyDoctorForm);
 
   const [ruleForm, setRuleForm] = useState<RuleForm>(emptyRuleForm);
   const [ruleEditOpen, setRuleEditOpen] = useState(false);
@@ -453,6 +509,136 @@ export function SecretariaDashboard() {
       return;
     }
     setEditForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const openPatientCreate = () => {
+    setPatientForm(emptyPatientForm);
+    setPatientOpen(true);
+  };
+
+  const openPatientEdit = (patient: Patient) => {
+    setPatientForm({
+      id: patient.id,
+      name: patient.name,
+      document: patient.document,
+      contact: patient.contact,
+      insurance: patient.insurance ?? "",
+      notes: patient.notes ?? "",
+    });
+    setPatientOpen(true);
+  };
+
+  const savePatient = async () => {
+    const name = patientForm.name.trim();
+    const document = patientForm.document.trim();
+    const contact = patientForm.contact.trim();
+    const insurance = patientForm.insurance.trim();
+
+    if (!name || !document || !contact) {
+      toast.error("Completa apellido y nombre, DNI y telefono antes de guardar");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const saved = await fetchJson<Patient>(patientForm.id ? `/api/patients/${patientForm.id}` : "/api/patients", {
+        method: patientForm.id ? "PUT" : "POST",
+        body: JSON.stringify({
+          name,
+          document,
+          contact,
+          insurance: insurance || null,
+          notes: patientForm.notes.trim() || undefined,
+        }),
+      });
+
+      setPatients((prev) => {
+        if (patientForm.id) return prev.map((item) => (item.id === saved.id ? saved : item));
+        return [saved, ...prev];
+      });
+      if (!createForm.patient_id && !patientForm.id) {
+        setCreateForm((prev) => ({ ...prev, patient_id: saved.id }));
+      }
+      setPatientOpen(false);
+      setPatientForm(emptyPatientForm);
+      toast.success(patientForm.id ? "Paciente actualizado" : "Paciente creado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo guardar paciente");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openDoctorCreate = () => {
+    setDoctorForm(emptyDoctorForm);
+    setDoctorOpen(true);
+  };
+
+  const openDoctorEdit = (doctor: Doctor) => {
+    setDoctorForm({
+      id: doctor.user_id,
+      name: doctor.user.name,
+      email: doctor.user.email,
+      password: "",
+      specialty: doctor.specialty,
+      matricula: doctor.matricula,
+      ai_tag: doctor.ai_tag,
+      appointment_duration: String(doctor.appointment_duration ?? 30),
+      buffer_minutes: String(doctor.buffer_minutes ?? 10),
+      start_time: doctor.start_time ?? "08:00",
+      end_time: doctor.end_time ?? "18:00",
+      working_days: (doctor.working_days ?? ["monday", "tuesday", "wednesday", "thursday", "friday"]).join(","),
+    });
+    setDoctorOpen(true);
+  };
+
+  const saveDoctor = async () => {
+    const name = doctorForm.name.trim();
+    const email = doctorForm.email.trim().toLowerCase();
+    const specialty = doctorForm.specialty.trim();
+    const matricula = doctorForm.matricula.trim();
+    const aiTag = doctorForm.ai_tag.trim();
+    const workingDays = doctorForm.working_days
+      .split(",")
+      .map((day) => day.trim())
+      .filter(Boolean);
+
+    if (!name || !specialty || !matricula || !aiTag) {
+      toast.error("Completa nombre, especialidad, matricula y etiqueta IA del medico");
+      return;
+    }
+    if (!doctorForm.id && (!email || doctorForm.password.length < 12)) {
+      toast.error("Para crear medico completa email y clave inicial de al menos 12 caracteres");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await fetchJson(doctorForm.id ? `/api/doctors/${doctorForm.id}` : "/api/doctors", {
+        method: doctorForm.id ? "PATCH" : "POST",
+        body: JSON.stringify({
+          name,
+          ...(doctorForm.id ? {} : { email, password: doctorForm.password }),
+          specialty,
+          matricula,
+          ai_tag: aiTag,
+          appointment_duration: Number(doctorForm.appointment_duration),
+          buffer_minutes: Number(doctorForm.buffer_minutes),
+          start_time: doctorForm.start_time,
+          end_time: doctorForm.end_time,
+          working_days: workingDays,
+        }),
+      });
+
+      await loadCoreData();
+      setDoctorOpen(false);
+      setDoctorForm(emptyDoctorForm);
+      toast.success(doctorForm.id ? "Medico actualizado" : "Medico creado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo guardar medico");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const onCalendarSelect = (selection: DateSelectArg) => {
@@ -956,6 +1142,7 @@ export function SecretariaDashboard() {
               width={260}
               height={88}
               className="h-auto w-56 object-contain"
+              style={{ height: "auto" }}
             />
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Panel Secretaria</p>
@@ -1028,8 +1215,11 @@ export function SecretariaDashboard() {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[260px_1fr_320px]">
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">Profesionales</CardTitle>
+            <Button variant="outline" size="sm" onClick={openDoctorCreate} title="Cargar medico manualmente">
+              <Plus className="h-4 w-4" />
+            </Button>
           </CardHeader>
           <CardContent className="space-y-2">
             <Button
@@ -1041,15 +1231,19 @@ export function SecretariaDashboard() {
             </Button>
 
             {doctors.map((doctor) => (
-              <Button
-                key={doctor.user_id}
-                variant={selectedDoctorId === doctor.user_id ? "default" : "outline"}
-                className="w-full justify-start"
-                onClick={() => setSelectedDoctorId(doctor.user_id)}
-              >
-                <UserRound className="mr-2 h-4 w-4" />
-                {doctor.user.name}
-              </Button>
+              <div key={doctor.user_id} className="flex gap-2">
+                <Button
+                  variant={selectedDoctorId === doctor.user_id ? "default" : "outline"}
+                  className="min-w-0 flex-1 justify-start"
+                  onClick={() => setSelectedDoctorId(doctor.user_id)}
+                >
+                  <UserRound className="mr-2 h-4 w-4 shrink-0" />
+                  <span className="truncate">{doctor.user.name}</span>
+                </Button>
+                <Button variant="outline" size="icon" title="Editar medico" onClick={() => openDoctorEdit(doctor)}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </div>
             ))}
 
             <div className="rounded-md border bg-slate-50 p-3 text-xs text-slate-600">
@@ -1141,6 +1335,34 @@ export function SecretariaDashboard() {
                   <span>{alert}</span>
                 </div>
               ))}
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Pacientes</p>
+                <Button variant="outline" size="sm" onClick={openPatientCreate}>
+                  <Plus className="mr-1 h-4 w-4" />
+                  Nuevo
+                </Button>
+              </div>
+              <div className="max-h-72 space-y-2 overflow-auto pr-1">
+                {patients.length === 0 ? (
+                  <p className="text-sm text-slate-500">Sin pacientes cargados.</p>
+                ) : (
+                  patients.slice(0, 20).map((patient) => (
+                    <button
+                      key={patient.id}
+                      type="button"
+                      className="w-full rounded-md border p-2 text-left text-sm transition hover:border-blue-300 hover:bg-blue-50"
+                      onClick={() => openPatientEdit(patient)}
+                    >
+                      <span className="font-medium">{patient.name}</span>
+                      <p className="text-xs text-slate-600">DNI {patient.document || "-"} - Tel {patient.contact || "-"}</p>
+                      <p className="text-xs text-slate-500">{patient.insurance ? `Obra social: ${patient.insurance}` : "Sin obra social registrada"}</p>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -1373,7 +1595,13 @@ export function SecretariaDashboard() {
             </div>
 
             <div className="space-y-1">
-              <Label>Paciente</Label>
+              <div className="flex items-center justify-between">
+                <Label>Paciente</Label>
+                <Button variant="ghost" size="sm" onClick={openPatientCreate}>
+                  <Plus className="mr-1 h-4 w-4" />
+                  Nuevo
+                </Button>
+              </div>
               <Select value={createForm.patient_id} onValueChange={(value) => setFormField("patient_id", value ?? "", "create")}>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar paciente" />
@@ -1381,7 +1609,7 @@ export function SecretariaDashboard() {
                 <SelectContent>
                   {patients.map((patient) => (
                     <SelectItem key={patient.id} value={patient.id}>
-                      {patient.name}
+                      {patient.name} - DNI {patient.document || "-"}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1483,6 +1711,7 @@ export function SecretariaDashboard() {
               <p><span className="font-semibold">Paciente:</span> {patients.find((p) => p.id === editForm.patient_id)?.name ?? ""}</p>
               <p><span className="font-semibold">Documento:</span> {patients.find((p) => p.id === editForm.patient_id)?.document ?? ""}</p>
               <p><span className="font-semibold">Contacto:</span> {patients.find((p) => p.id === editForm.patient_id)?.contact ?? ""}</p>
+              <p><span className="font-semibold">Obra social:</span> {patients.find((p) => p.id === editForm.patient_id)?.insurance ?? ""}</p>
               <p><span className="font-semibold">Motivo:</span> {editForm.notes || ""}</p>
               <p><span className="font-semibold">Doctor:</span> {doctors.find((d) => d.user_id === editForm.doctor_id)?.user.name ?? ""}</p>
             </div>
@@ -1626,6 +1855,137 @@ export function SecretariaDashboard() {
                 {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : "Guardar cambios"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={patientOpen} onOpenChange={setPatientOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{patientForm.id ? "Modificar paciente" : "Ingresar paciente"}</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-3">
+            <div className="space-y-1">
+              <Label>Apellido y nombre</Label>
+              <Input value={patientForm.name} onChange={(event) => setPatientForm((prev) => ({ ...prev, name: event.target.value }))} />
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-1">
+                <Label>DNI</Label>
+                <Input value={patientForm.document} onChange={(event) => setPatientForm((prev) => ({ ...prev, document: event.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Telefono</Label>
+                <Input value={patientForm.contact} onChange={(event) => setPatientForm((prev) => ({ ...prev, contact: event.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Obra social</Label>
+              <Input
+                value={patientForm.insurance}
+                onChange={(event) => setPatientForm((prev) => ({ ...prev, insurance: event.target.value }))}
+                placeholder="Dejar vacio si no tiene"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Notas</Label>
+              <Textarea value={patientForm.notes} onChange={(event) => setPatientForm((prev) => ({ ...prev, notes: event.target.value }))} />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPatientOpen(false)}>
+              Cancelar
+            </Button>
+            <Button disabled={saving} onClick={savePatient}>
+              {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : "Guardar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={doctorOpen} onOpenChange={setDoctorOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{doctorForm.id ? "Modificar medico" : "Cargar medico"}</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <Label>Nombre</Label>
+              <Input value={doctorForm.name} onChange={(event) => setDoctorForm((prev) => ({ ...prev, name: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={doctorForm.email}
+                disabled={Boolean(doctorForm.id)}
+                onChange={(event) => setDoctorForm((prev) => ({ ...prev, email: event.target.value }))}
+              />
+            </div>
+            {!doctorForm.id ? (
+              <div className="space-y-1 md:col-span-2">
+                <Label>Clave inicial</Label>
+                <Input
+                  type="password"
+                  value={doctorForm.password}
+                  onChange={(event) => setDoctorForm((prev) => ({ ...prev, password: event.target.value }))}
+                />
+              </div>
+            ) : null}
+            <div className="space-y-1">
+              <Label>Especialidad</Label>
+              <Input value={doctorForm.specialty} onChange={(event) => setDoctorForm((prev) => ({ ...prev, specialty: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Matricula</Label>
+              <Input value={doctorForm.matricula} onChange={(event) => setDoctorForm((prev) => ({ ...prev, matricula: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Etiqueta IA</Label>
+              <Input value={doctorForm.ai_tag} onChange={(event) => setDoctorForm((prev) => ({ ...prev, ai_tag: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Duracion turno (min)</Label>
+              <Input
+                type="number"
+                min={10}
+                value={doctorForm.appointment_duration}
+                onChange={(event) => setDoctorForm((prev) => ({ ...prev, appointment_duration: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Inicio agenda</Label>
+              <Input type="time" value={doctorForm.start_time} onChange={(event) => setDoctorForm((prev) => ({ ...prev, start_time: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Fin agenda</Label>
+              <Input type="time" value={doctorForm.end_time} onChange={(event) => setDoctorForm((prev) => ({ ...prev, end_time: event.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label>Buffer entre pacientes (min)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={doctorForm.buffer_minutes}
+                onChange={(event) => setDoctorForm((prev) => ({ ...prev, buffer_minutes: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <Label>Dias laborales</Label>
+              <Input value={doctorForm.working_days} onChange={(event) => setDoctorForm((prev) => ({ ...prev, working_days: event.target.value }))} />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDoctorOpen(false)}>
+              Cancelar
+            </Button>
+            <Button disabled={saving} onClick={saveDoctor}>
+              {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : "Guardar"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

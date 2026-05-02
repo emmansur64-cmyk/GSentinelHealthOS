@@ -2,8 +2,11 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { DashboardSessionHydrator } from "@/components/dashboard-session-hydrator";
+import { SystemNotificationBanner } from "@/components/system-notification-banner";
 import { getAuthenticatedUser } from "@/lib/server-auth";
 import { prisma } from "@/lib/prisma";
+
+export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const authUser = await getAuthenticatedUser();
@@ -18,7 +21,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <DashboardSessionHydrator user={{ ...user, tenant_id: authUser.tenantId }}>
-      <AppShell>{children}</AppShell>
+      <AppShell>
+        <SystemNotificationBanner tenantId={authUser.tenantId} />
+        {children}
+      </AppShell>
     </DashboardSessionHydrator>
   );
 }
