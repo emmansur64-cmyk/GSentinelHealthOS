@@ -26,8 +26,8 @@ export async function GET(request: Request) {
 
     if (!parsed.success) return fail("Query invalida", 422, parsed.error.flatten());
 
-    const doctor = await prisma.doctorProfile.findUnique({
-      where: { user_id: parsed.data.doctor_id },
+    const doctor = await prisma.doctorProfile.findFirst({
+      where: { user_id: parsed.data.doctor_id, tenant_id: tenant.tenant.id },
       select: { user_id: true },
     });
     if (!doctor) return fail("Doctor inexistente", 404);
@@ -40,6 +40,7 @@ export async function GET(request: Request) {
       parsed.data.duration,
       limit,
       {
+        tenantId: tenant.tenant.id,
         preferredStart,
         maxSearchDays: 60,
       },
