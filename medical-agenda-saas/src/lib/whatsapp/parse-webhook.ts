@@ -62,6 +62,8 @@ export type ParsedStatus = z.infer<typeof statusSchema>;
 export type ExtractedMessage = {
   messageId: string;
   fromPhone: string;
+  phoneNumberId: string;
+  wabaId: string;
   contactName: string;
   text: string;
   timestamp: string;
@@ -72,6 +74,8 @@ export type ExtractedMessage = {
 export type ExtractedStatus = {
   messageId: string;
   status: "sent" | "delivered" | "read" | "failed";
+  phoneNumberId: string;
+  wabaId: string;
   recipientId?: string;
 };
 
@@ -112,6 +116,8 @@ export function extractMessages(payload: ParsedWebhookPayload): ExtractedMessage
         messages.push({
           messageId: msg.id,
           fromPhone: msg.from,
+          phoneNumberId: value.metadata.phone_number_id,
+          wabaId: entry.id,
           contactName: contact?.profile.name ?? msg.from,
           text,
           timestamp: msg.timestamp,
@@ -140,6 +146,8 @@ export function extractStatuses(payload: ParsedWebhookPayload): ExtractedStatus[
         statuses.push({
           messageId: s.id,
           status: s.status,
+          phoneNumberId: value.metadata.phone_number_id,
+          wabaId: entry.id,
           recipientId: s.recipient_id,
         });
       }

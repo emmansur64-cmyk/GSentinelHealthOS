@@ -163,7 +163,7 @@ export async function stopProcessingWorker(): Promise<void> {
 // ─── Job Handler ─────────────────────────────────────────────────────────────
 
 async function processJob(job: Job<ProcessingJobData>): Promise<void> {
-  const { messageId, phone, text, payload, receivedAt, intakeCompletedAt } = job.data;
+  const { messageId, tenantId, phone, text, payload, receivedAt, intakeCompletedAt } = job.data;
 
   await runWithObservabilityContext(
     { traceId: createTraceId(), messageId, userPhone: phone },
@@ -180,7 +180,7 @@ async function processJob(job: Job<ProcessingJobData>): Promise<void> {
     async (tx) => {
       // 1. Adquirir lock exclusivo por usuario (basado en hash del teléfono)
       // pg_advisory_xact_lock se libera automáticamente al terminar la transacción
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wa_user:${phone}`}))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wa_user:${tenantId}:${phone}`}))`;
 
       // 2. Verificar que el mensaje aún está en processing
       const current = await tx.incomingMessage.findUnique({
@@ -197,7 +197,7 @@ async function processJob(job: Job<ProcessingJobData>): Promise<void> {
       }
 
       // 3. Rate limiting
-      const allowed = await checkRateLimit(phone);
+      const allowed = await checkRateLimit(phone, tenantId);
       if (!allowed) {
         return {
           reply: "Estas enviando muchos mensajes. Espera un minuto e intenta de nuevo.",
@@ -208,9 +208,9 @@ async function processJob(job: Job<ProcessingJobData>): Promise<void> {
 
       // 4. Obtener/crear contexto conversacional
       const state = await tx.conversationState.upsert({
-        where: { phone },
+        where: { tenant_id_phone: { tenant_id: tenantId, phone } },
         update: {},
-        create: { phone, context_json: {} },
+        create: { tenant_id: tenantId, phone, context_json: {} },
       });
       const context = (state.context_json ?? {}) as ConversationContext;
 
@@ -218,14 +218,14 @@ async function processJob(job: Job<ProcessingJobData>): Promise<void> {
       const processResult = await withSpan(
         "classify_intent",
         { component: "intent_parser" },
-        async () => handleMessage(tx, phone, text, context, payload),
+        async () => handleMessage(tx, tenantId, phone, text, context, payload),
       );
 
       enrichObservabilityContext({ intent: processResult.intent });
 
       // 6. Actualizar contexto
       await tx.conversationState.update({
-        where: { phone },
+        where: { tenant_id_phone: { tenant_id: tenantId, phone } },
         data: {
           last_intent: processResult.intent,
           context_json: processResult.newContext ?? context,
@@ -247,6 +247,7 @@ async function processJob(job: Job<ProcessingJobData>): Promise<void> {
   // 7. Encolar para response
   await enqueueResponse({
     messageId,
+    tenantId,
     phone,
     reply: result.reply,
     intent: result.intent,
@@ -282,6 +283,7 @@ Escribi lo que necesites!`;
 async function handleMessage(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
+  tenantId: string,
   phone: string,
   text: string,
   context: ConversationContext,
@@ -312,6 +314,7 @@ async function handleMessage(
 
   const metabrainReply = await generateWhatsAppMetaBrainReply({
     tx,
+    tenantId,
     phone,
     text,
     contactName: typeof payload.contactName === "string" ? payload.contactName : undefined,
@@ -388,10 +391,10 @@ async function handleMessage(
     case "query_appointment":
       // Consultar turnos del paciente
       const patient = await tx.patient.findFirst({
-        where: { phone },
+        where: { tenant_id: tenantId, phone },
         include: {
           appointments: {
-            where: { status: "planned", deleted_at: null },
+            where: { tenant_id: tenantId, status: "planned", deleted_at: null },
             orderBy: { datetime: "asc" },
             take: 5,
             include: { doctor: { include: { user: { select: { name: true } } } } },

@@ -93,7 +93,26 @@ function getRedisConfig(): RedisConfig {
   const urlRaw = process.env.REDIS_URL?.trim();
 
   if (urlRaw) {
-    return { host, port, url: urlRaw };
+    try {
+      const parsed = new URL(urlRaw);
+      if (parsed.protocol !== "redis:" && parsed.protocol !== "rediss:") {
+        throw new Error(`protocolo no soportado: ${parsed.protocol}`);
+      }
+      return { host, port, url: urlRaw };
+    } catch (error) {
+      logServer("error", "redis.config.invalid_url", {
+        redis_url: urlRaw,
+        message: error instanceof Error ? error.message : "invalid_redis_url",
+      });
+    }
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    logServer("warn", "redis.config.fallback_host_port", {
+      host,
+      port,
+      reason: "REDIS_URL_missing_or_invalid",
+    });
   }
 
   return { host, port };

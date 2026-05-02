@@ -131,6 +131,7 @@ export async function stopResponseWorker(): Promise<void> {
 async function processResponseJob(job: Job<ResponseJobData>): Promise<void> {
   const {
     messageId,
+    tenantId,
     phone,
     reply,
     intent,
@@ -158,7 +159,7 @@ async function processResponseJob(job: Job<ResponseJobData>): Promise<void> {
       const sendStarted = performance.now();
 
       // 1. Enviar mensaje vía WhatsApp API
-      await withSpan("send_message", { channel: "whatsapp" }, async () => sendWhatsAppMessage(phone, reply));
+      await withSpan("send_message", { channel: "whatsapp" }, async () => sendWhatsAppMessage(phone, reply, tenantId));
       observeStageLatency("send_message", performance.now() - sendStarted);
 
       // Registrar éxito en Circuit Breaker

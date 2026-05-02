@@ -34,6 +34,7 @@ export type IntakeJobData = {
 
 export type ProcessingJobData = {
   messageId: string;
+  tenantId: string;
   phone: string;
   text: string;
   payload: Record<string, unknown>;
@@ -43,6 +44,7 @@ export type ProcessingJobData = {
 
 export type ResponseJobData = {
   messageId: string;
+  tenantId: string;
   phone: string;
   reply: string;
   intent: string;

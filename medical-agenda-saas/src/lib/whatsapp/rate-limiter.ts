@@ -2,7 +2,7 @@
  * Rate limiter por teléfono usando Redis INCR + TTL.
  *
  * Algoritmo: Fixed Window Counter
- *   - Clave: rl:phone:{number}
+ *   - Clave: rl:phone:{tenantId}:{number}
  *   - En el primer mensaje del período → INCR crea la clave y se setea TTL
  *   - Los siguientes mensajes solo hacen INCR (atómico)
  *   - Al vencer el TTL Redis borra la clave automáticamente → ventana nueva
@@ -32,6 +32,23 @@ const WINDOW_DURATION_MS = WINDOW_SECONDS * 1_000;
 const KEY_PREFIX = "rl:phone:";
 const REDIS_OPERATION_TIMEOUT_MS = 1_200;
 
+function resolveRateLimitScope(phone: string, tenantId?: string): { phone: string; tenantId: string; redisKeyPart: string } {
+  if (tenantId) {
+    return { phone, tenantId, redisKeyPart: `${tenantId}:${phone}` };
+  }
+
+  const separatorIndex = phone.indexOf(":");
+  if (separatorIndex > 0) {
+    const parsedTenantId = phone.slice(0, separatorIndex);
+    const parsedPhone = phone.slice(separatorIndex + 1);
+    if (parsedTenantId && parsedPhone) {
+      return { phone: parsedPhone, tenantId: parsedTenantId, redisKeyPart: phone };
+    }
+  }
+
+  return { phone, tenantId: "default", redisKeyPart: phone };
+}
+
 async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -50,12 +67,13 @@ async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise
  * Verifica y actualiza rate limit por teléfono usando Redis.
  * Retorna true si el mensaje está permitido, false si excede el límite.
  */
-export async function checkRateLimit(phone: string): Promise<boolean> {
-  const key = `${KEY_PREFIX}${phone}`;
+export async function checkRateLimit(phone: string, tenantId?: string): Promise<boolean> {
+  const scope = resolveRateLimitScope(phone, tenantId);
+  const key = `${KEY_PREFIX}${scope.redisKeyPart}`;
 
   try {
     if (!isRedisAvailable()) {
-      return _checkRateLimitPrisma(phone);
+      return _checkRateLimitPrisma(scope.phone, scope.tenantId);
     }
 
     const redis = getRedisConnection();
@@ -70,7 +88,8 @@ export async function checkRateLimit(phone: string): Promise<boolean> {
 
     if (count > MAX_MESSAGES_PER_WINDOW) {
       logServer("warn", "rate_limit.exceeded", {
-        phone,
+        phone: scope.phone,
+        tenant_id: scope.tenantId,
         count,
         max: MAX_MESSAGES_PER_WINDOW,
         window_seconds: WINDOW_SECONDS,
@@ -82,10 +101,11 @@ export async function checkRateLimit(phone: string): Promise<boolean> {
   } catch (error) {
     // Redis no disponible → fallback a Prisma
     logServer("warn", "rate_limit.redis_fallback", {
-      phone,
+      phone: scope.phone,
+      tenant_id: scope.tenantId,
       error: error instanceof Error ? error.message : String(error),
     });
-    return _checkRateLimitPrisma(phone);
+    return _checkRateLimitPrisma(scope.phone, scope.tenantId);
   }
 }
 
@@ -93,11 +113,12 @@ export async function checkRateLimit(phone: string): Promise<boolean> {
  * Devuelve cuántos mensajes quedan disponibles en la ventana actual.
  * Útil para respuestas informativas al usuario.
  */
-export async function getRateLimitRemaining(phone: string): Promise<number> {
+export async function getRateLimitRemaining(phone: string, tenantId?: string): Promise<number> {
   if (!isRedisAvailable()) return MAX_MESSAGES_PER_WINDOW;
 
   const redis = getRedisConnection();
-  const key = `${KEY_PREFIX}${phone}`;
+  const scope = resolveRateLimitScope(phone, tenantId);
+  const key = `${KEY_PREFIX}${scope.redisKeyPart}`;
 
   try {
     const raw = await withTimeout(redis.get(key), REDIS_OPERATION_TIMEOUT_MS);
@@ -110,23 +131,23 @@ export async function getRateLimitRemaining(phone: string): Promise<number> {
 
 // ─── Fallback Prisma ─────────────────────────────────────────────────────────
 
-async function _checkRateLimitPrisma(phone: string): Promise<boolean> {
+async function _checkRateLimitPrisma(phone: string, tenantId = "default"): Promise<boolean> {
   const now = new Date();
   const windowStart = new Date(now.getTime() - WINDOW_DURATION_MS);
 
   try {
-    const existing = await prisma.rateLimit.findUnique({ where: { phone } });
+    const existing = await prisma.rateLimit.findUnique({ where: { tenant_id_phone: { tenant_id: tenantId, phone } } });
 
     if (!existing) {
       await prisma.rateLimit.create({
-        data: { phone, message_count: 1, window_start: now },
+        data: { tenant_id: tenantId, phone, message_count: 1, window_start: now },
       });
       return true;
     }
 
     if (existing.window_start < windowStart) {
       await prisma.rateLimit.update({
-        where: { phone },
+        where: { tenant_id_phone: { tenant_id: tenantId, phone } },
         data: { message_count: 1, window_start: now },
       });
       return true;
@@ -135,7 +156,7 @@ async function _checkRateLimitPrisma(phone: string): Promise<boolean> {
     if (existing.message_count >= MAX_MESSAGES_PER_WINDOW) return false;
 
     await prisma.rateLimit.update({
-      where: { phone },
+      where: { tenant_id_phone: { tenant_id: tenantId, phone } },
       data: { message_count: { increment: 1 } },
     });
     return true;

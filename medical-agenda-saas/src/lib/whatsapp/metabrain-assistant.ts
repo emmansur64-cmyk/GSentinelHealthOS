@@ -53,6 +53,7 @@ type WhatsAppMetaBrainInput = {
       findMany(args: unknown): Promise<Array<{ payload_json: unknown; received_at: Date; status: string }>>;
     };
   };
+  tenantId: string;
   phone: string;
   text: string;
   contactName?: string;
@@ -247,6 +248,7 @@ async function findPatient(input: WhatsAppMetaBrainInput): Promise<MetaBrainDeci
 
   const candidates = await input.tx.patient.findMany({
     where: {
+      tenant_id: input.tenantId,
       OR: variants.map((variant) => ({ phone: { contains: variant } })),
     },
     select: { id: true, name: true, phone: true, notes: true },
@@ -273,6 +275,7 @@ async function buildContext(input: WhatsAppMetaBrainInput): Promise<MetaBrainDec
   const currentAppointment = patient
     ? await input.tx.appointment.findFirst({
         where: {
+          tenant_id: input.tenantId,
           patient_id: patient.id,
           deleted_at: null,
           status: { notIn: ["cancelled", "no_show"] },
@@ -285,7 +288,7 @@ async function buildContext(input: WhatsAppMetaBrainInput): Promise<MetaBrainDec
 
   const recentHistory = patient
     ? await input.tx.appointment.findMany({
-        where: { patient_id: patient.id, deleted_at: null },
+        where: { tenant_id: input.tenantId, patient_id: patient.id, deleted_at: null },
         include: { doctor: { include: { user: { select: { name: true } } } } },
         orderBy: { datetime: "desc" },
         take: 5,
@@ -294,13 +297,13 @@ async function buildContext(input: WhatsAppMetaBrainInput): Promise<MetaBrainDec
 
   const [incoming, outgoing] = await Promise.all([
     input.tx.incomingMessage.findMany({
-      where: { from_phone: input.phone },
+      where: { tenant_id: input.tenantId, from_phone: input.phone },
       orderBy: { received_at: "desc" },
       take: 4,
       select: { payload_json: true, received_at: true, status: true },
     }),
     input.tx.outgoingMessage.findMany({
-      where: { phone: input.phone },
+      where: { tenant_id: input.tenantId, phone: input.phone },
       orderBy: { created_at: "desc" },
       take: 4,
       select: { message: true, created_at: true, status: true },
@@ -308,9 +311,11 @@ async function buildContext(input: WhatsAppMetaBrainInput): Promise<MetaBrainDec
   ]);
 
   const doctors = await input.tx.doctorProfile.findMany({
+    where: { tenant_id: input.tenantId },
     include: {
       user: { select: { name: true } },
       availabilityRule: {
+        where: { tenant_id: input.tenantId },
         select: {
           day_of_week: true,
           specific_date: true,
@@ -322,6 +327,7 @@ async function buildContext(input: WhatsAppMetaBrainInput): Promise<MetaBrainDec
       },
       appointments: {
         where: {
+          tenant_id: input.tenantId,
           deleted_at: null,
           status: { notIn: ["cancelled", "no_show"] },
           datetime: { gte: now, lte: agendaUntil },

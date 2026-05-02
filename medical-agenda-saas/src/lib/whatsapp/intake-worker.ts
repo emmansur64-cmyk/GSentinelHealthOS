@@ -177,6 +177,7 @@ async function processIntakeJob(job: Job<IntakeJobData>): Promise<void> {
     // 3. Encolar para processing
     await enqueueProcessing({
       messageId,
+      tenantId: message.tenant_id,
       phone: message.from_phone,
       text,
       payload,
