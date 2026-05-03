@@ -1,7 +1,16 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-cd "${1:-$HOME/GSentinelHealthOS}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if git -C "$SCRIPT_DIR" rev-parse --show-toplevel >/dev/null 2>&1; then
+	REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+else
+	REPO_ROOT="$DEFAULT_REPO_ROOT"
+fi
+
+cd "${1:-$REPO_ROOT}"
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
 BACKUP_DIR="/opt/backups/gsentinelhealthos/$STAMP"
