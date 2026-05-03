@@ -30,8 +30,35 @@ DATABASE_URL = os.getenv(
 # ============ REDIS ============
 REDIS_URL = os.getenv(
     "REDIS_URL",
-    "redis://localhost:6379"
+    ""
 )
+REDIS_SENTINELS = os.getenv("REDIS_SENTINELS", "")
+REDIS_SENTINEL_MASTER = os.getenv("REDIS_SENTINEL_MASTER", "mymaster")
+
+
+def create_redis_master_client(decode_responses: bool = True):
+    """Crea un cliente Redis usando Sentinel si está configurado, o conexión directa."""
+    if REDIS_SENTINELS:
+        from redis.asyncio.sentinel import Sentinel
+        sentinels = []
+        for entry in REDIS_SENTINELS.split(","):
+            entry = entry.strip()
+            if ":" in entry:
+                host, _, port_str = entry.rpartition(":")
+                sentinels.append((host.strip(), int(port_str.strip())))
+        if sentinels:
+            # socket_timeout solo aplica al handshake con los centinelas;
+            # master_for hereda socket_timeout=None (sin límite) para BRPOP blocking.
+            sentinel = Sentinel(sentinels, socket_timeout=1.0)
+            return sentinel.master_for(
+                REDIS_SENTINEL_MASTER,
+                socket_timeout=None,
+                decode_responses=decode_responses,
+            )
+    if not REDIS_URL:
+        raise RuntimeError("REDIS_URL no configurado")
+    from redis.asyncio import Redis
+    return Redis.from_url(REDIS_URL, decode_responses=decode_responses)
 
 # ============ API ============
 API_HOST = os.getenv("API_HOST", "0.0.0.0")

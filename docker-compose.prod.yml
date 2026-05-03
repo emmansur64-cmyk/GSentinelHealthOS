@@ -1,9 +1,19 @@
-version: '3.8'
-
 services:
+  # MODO ESTADO LOCAL (default):
+  # - DB en servicio "db"
+  # - Redis en servicio "redis-master"
+  # MODO ESTADO EXTERNO:
+  # - Definir DATABASE_URL y REDIS_URL en .env.prod apuntando a servicios externos.
+  # - Mantener estos servicios locales como fallback hasta completar ventana estable.
   db:
     image: postgres:15-alpine
     container_name: gs_db
+    mem_limit: 1g
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       POSTGRES_DB: gsentinel
       POSTGRES_USER: ${DB_USER}
@@ -11,7 +21,7 @@ services:
     command: ["postgres", "-c", "max_connections=50", "-c", "shared_buffers=128MB"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    restart: always
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d gsentinel"]
       interval: 10s
@@ -21,7 +31,15 @@ services:
   redis-master:
     image: redis:7-alpine
     container_name: gs_redis_master
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    mem_limit: 768m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # noeviction: Redis alzará error antes de descartar mensajes de cola críticos.
+    # maxmemory impide crecimiento ilimitado. Para cache usar allkeys-lru.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
     volumes:
       - redis_master_data:/data
     restart: unless-stopped
@@ -34,6 +52,12 @@ services:
   redis-replica:
     image: redis:7-alpine
     container_name: gs_redis_replica
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     command: ["redis-server", "--appendonly", "yes", "--replicaof", "redis-master", "6379"]
     volumes:
       - redis_replica_data:/data
@@ -50,6 +74,12 @@ services:
   redis-sentinel-1:
     image: redis:7-alpine
     container_name: gs_redis_sentinel_1
+    mem_limit: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     command:
       - /bin/sh
       - -lc
@@ -82,6 +112,12 @@ services:
   redis-sentinel-2:
     image: redis:7-alpine
     container_name: gs_redis_sentinel_2
+    mem_limit: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     command:
       - /bin/sh
       - -lc
@@ -114,6 +150,12 @@ services:
   redis-sentinel-3:
     image: redis:7-alpine
     container_name: gs_redis_sentinel_3
+    mem_limit: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     command:
       - /bin/sh
       - -lc
@@ -148,6 +190,12 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
     container_name: gs_api
+    mem_limit: 768m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       db:
         condition: service_healthy
@@ -156,23 +204,41 @@ services:
       redis-sentinel-1:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel
+      # Compatibilidad dual:
+      # - local: usa fallback a db/redis-master
+      # - externo: DATABASE_URL/REDIS_URL definidos en .env.prod
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
       REDIS_URL: redis://redis-master:6379
       REDIS_SENTINEL_MASTER: mymaster
       REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
       REDIS_QUEUE_PREFIX: "queue:"
       REDIS_STATE_PREFIX: "state:"
       REDIS_CACHE_PREFIX: "cache:"
-      BRAIN_API_KEY: ${BRAIN_API_KEY:-brain-secret-key-change-production}
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v21.0}
+      META_OAUTH_REDIRECT_URI: ${META_OAUTH_REDIRECT_URI:-}
+      META_EMBEDDED_SIGNUP_CONFIGURATION_ID: ${META_EMBEDDED_SIGNUP_CONFIGURATION_ID:-}
       ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
-      - "8000:8000"
-    restart: always
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - uploads_data:/data/uploads
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health/readiness').raise_for_status()"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/readiness"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
 
   brain:
@@ -180,6 +246,12 @@ services:
       context: .
       dockerfile: docker/brain.Dockerfile
     container_name: gs_brain
+    mem_limit: 1g
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       redis-master:
         condition: service_healthy
@@ -195,16 +267,72 @@ services:
       REDIS_STATE_PREFIX: "state:"
       REDIS_CACHE_PREFIX: "cache:"
       API_BASE_URL: http://api:8000
-      BRAIN_API_KEY: ${BRAIN_API_KEY:-brain-secret-key-change-production}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      # Sesiones WhatsApp: 24h por defecto, máximo recomendado 72h (259200)
+      BRAIN_STATE_TTL_SECONDS: ${BRAIN_STATE_TTL_SECONDS:-86400}
       ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    restart: always
+    volumes:
+      - uploads_data:/data/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/gateway.Dockerfile
+    container_name: sentinel-gateway
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      WHATSAPP_VERIFY_TOKEN: WABIZ_VERIFY_2026_GSENTINEL
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      WHATSAPP_PHONE_NUMBER_ID: "1093032243892458"
+      WHATSAPP_BUSINESS_ACCOUNT_ID: "967835399226590"
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
+      REDIS_URL: redis://sentinel-redis-master:6379
+      REDIS_SENTINELS: ""
+      ENV: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: >
+      sh -c "./scripts/preflight.sh &&
+             uvicorn whatsapp_gateway.app.main:app --host 0.0.0.0 --port 8002"
+    networks:
+      - sentinel-network
+    ports:
+      - "8002:8002"
+    volumes:
+      - uploads_data:/data/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
 
   booking_worker_0:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
     container_name: gs_booking_worker_0
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       db:
         condition: service_healthy
@@ -213,13 +341,16 @@ services:
       redis-sentinel-1:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
       REDIS_URL: redis://redis-master:6379
       REDIS_SENTINEL_MASTER: mymaster
       REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
       REDIS_QUEUE_PREFIX: "queue:"
       REDIS_STATE_PREFIX: "state:"
       REDIS_CACHE_PREFIX: "cache:"
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
       BOOKING_QUEUE_SHARDS: ${BOOKING_QUEUE_SHARDS:-2}
       BOOKING_WORKER_SHARD: 0
       BOOKING_QUEUE_RESULT_TTL_SECONDS: ${BOOKING_QUEUE_RESULT_TTL_SECONDS:-86400}
@@ -227,13 +358,24 @@ services:
       ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     command: python -m api.app.booking_queue_worker_main
-    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
 
   booking_worker_1:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
     container_name: gs_booking_worker_1
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       db:
         condition: service_healthy
@@ -242,13 +384,16 @@ services:
       redis-sentinel-1:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
       REDIS_URL: redis://redis-master:6379
       REDIS_SENTINEL_MASTER: mymaster
       REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
       REDIS_QUEUE_PREFIX: "queue:"
       REDIS_STATE_PREFIX: "state:"
       REDIS_CACHE_PREFIX: "cache:"
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
       BOOKING_QUEUE_SHARDS: ${BOOKING_QUEUE_SHARDS:-2}
       BOOKING_WORKER_SHARD: 1
       BOOKING_QUEUE_RESULT_TTL_SECONDS: ${BOOKING_QUEUE_RESULT_TTL_SECONDS:-86400}
@@ -256,13 +401,24 @@ services:
       ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     command: python -m api.app.booking_queue_worker_main
-    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
 
   outbox_scheduler:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
     container_name: gs_outbox_scheduler
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       db:
         condition: service_healthy
@@ -271,13 +427,16 @@ services:
       redis-sentinel-1:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
       REDIS_URL: redis://redis-master:6379
       REDIS_SENTINEL_MASTER: mymaster
       REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
       REDIS_QUEUE_PREFIX: "queue:"
       REDIS_STATE_PREFIX: "state:"
       REDIS_CACHE_PREFIX: "cache:"
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
       OUTBOX_PROCESS_LIMIT: ${OUTBOX_PROCESS_LIMIT:-200}
       OUTBOX_SCHEDULER_INTERVAL_SECONDS: ${OUTBOX_SCHEDULER_INTERVAL_SECONDS:-15}
       GOOGLE_CALENDAR_ENABLED: ${GOOGLE_CALENDAR_ENABLED:-false}
@@ -295,9 +454,22 @@ services:
       ENV: production
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     command: python scripts/run_outbox_scheduler.py
-    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f python || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_master_data:
   redis_replica_data:
+  # uploads: archivos de usuarios (imágenes médicas, PDFs, OCR).
+  # NUNCA guardar uploads dentro del contenedor. Usar este volumen o GCS.
+  uploads_data:
+
+networks:
+  sentinel-network:
+    name: gsentinelhealthos_sentinel-network
+    external: true

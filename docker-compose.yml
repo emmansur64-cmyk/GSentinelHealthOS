@@ -4,12 +4,18 @@ services:
   redis-master:
     image: redis:7-alpine
     container_name: sentinel-redis-master
+    mem_limit: 768m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_master_data:/data
       - ./broker/redis.conf:/usr/local/etc/redis/redis.conf:ro
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--bind", "0.0.0.0", "--protected-mode", "no"]
     networks:
       - sentinel-network
     restart: unless-stopped
@@ -22,6 +28,12 @@ services:
   redis-replica-1:
     image: redis:7-alpine
     container_name: sentinel-redis-replica-1
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - redis_replica1_data:/data
       - ./broker/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -41,6 +53,12 @@ services:
   redis-replica-2:
     image: redis:7-alpine
     container_name: sentinel-redis-replica-2
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - redis_replica2_data:/data
       - ./broker/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -60,11 +78,17 @@ services:
   redis-sentinel-1:
     image: redis:7-alpine
     container_name: sentinel-redis-sentinel-1
+    mem_limit: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     ports:
-      - "26379:26379"
+      - "127.0.0.1:26379:26379"
     volumes:
       - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
-    command: ["redis-server", "/usr/local/etc/redis/sentinel.conf", "--sentinel"]
+    command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && redis-server /tmp/sentinel.conf --sentinel"]
     depends_on:
       redis-master:
         condition: service_healthy
@@ -84,11 +108,17 @@ services:
   redis-sentinel-2:
     image: redis:7-alpine
     container_name: sentinel-redis-sentinel-2
+    mem_limit: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     ports:
-      - "26380:26379"
+      - "127.0.0.1:26380:26379"
     volumes:
       - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
-    command: ["redis-server", "/usr/local/etc/redis/sentinel.conf", "--sentinel"]
+    command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && redis-server /tmp/sentinel.conf --sentinel"]
     depends_on:
       redis-master:
         condition: service_healthy
@@ -108,11 +138,17 @@ services:
   redis-sentinel-3:
     image: redis:7-alpine
     container_name: sentinel-redis-sentinel-3
+    mem_limit: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     ports:
-      - "26381:26379"
+      - "127.0.0.1:26381:26379"
     volumes:
       - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
-    command: ["redis-server", "/usr/local/etc/redis/sentinel.conf", "--sentinel"]
+    command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && redis-server /tmp/sentinel.conf --sentinel"]
     depends_on:
       redis-master:
         condition: service_healthy
@@ -133,8 +169,14 @@ services:
   redis-cache:
     image: redis:7-alpine
     container_name: sentinel-redis-cache
+    mem_limit: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis_cache_data:/data
@@ -151,8 +193,14 @@ services:
   redis-metrics:
     image: redis:7-alpine
     container_name: sentinel-redis-metrics
+    mem_limit: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     ports:
-      - "6381:6379"
+      - "127.0.0.1:6381:6379"
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "volatile-lru"]
     volumes:
       - redis_metrics_data:/data
@@ -169,6 +217,12 @@ services:
   redis-monitor:
     image: redis:7-alpine
     container_name: sentinel-redis-monitor
+    mem_limit: 64m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     depends_on:
       redis-master:
         condition: service_healthy
@@ -198,12 +252,17 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: sentinel-postgres
+    mem_limit: 1g
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       POSTGRES_DB: sentinel_health
       POSTGRES_USER: sentinel
       POSTGRES_PASSWORD: sentinel_password
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -221,8 +280,15 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
     container_name: sentinel-api
+    mem_limit: 768m
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       DATABASE_URL: postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health
       REDIS_URL: redis://redis-master:6379
@@ -240,6 +306,13 @@ services:
       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v21.0}
+      META_OAUTH_REDIRECT_URI: ${META_OAUTH_REDIRECT_URI:-}
+      META_EMBEDDED_SIGNUP_CONFIGURATION_ID: ${META_EMBEDDED_SIGNUP_CONFIGURATION_ID:-}
       ENV: production
     depends_on:
       postgres:
@@ -251,6 +324,7 @@ services:
     volumes:
       - ./api:/app/api
       - ./brain:/app/brain
+      - ./MetaBrain:/app/MetaBrain
       - ./shared:/app/shared
     networks:
       - sentinel-network
@@ -261,6 +335,13 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
     container_name: sentinel-booking-worker-0
+    mem_limit: 512m
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       DATABASE_URL: postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health
       REDIS_URL: redis://redis-master:6379
@@ -271,6 +352,9 @@ services:
       REDIS_QUEUE_PREFIX: "queue:"
       REDIS_STATE_PREFIX: "state:"
       REDIS_CACHE_PREFIX: "cache:"
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
       BOOKING_QUEUE_SHARDS: 2
       BOOKING_WORKER_SHARD: 0
       BOOKING_QUEUE_RESULT_TTL_SECONDS: 86400
@@ -286,16 +370,26 @@ services:
     volumes:
       - ./api:/app/api
       - ./brain:/app/brain
+      - ./MetaBrain:/app/MetaBrain
       - ./shared:/app/shared
     networks:
       - sentinel-network
     command: python -m api.app.booking_queue_worker_main
+    healthcheck:
+      disable: true
 
   booking-worker-1:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
     container_name: sentinel-booking-worker-1
+    mem_limit: 512m
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       DATABASE_URL: postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health
       REDIS_URL: redis://redis-master:6379
@@ -306,6 +400,9 @@ services:
       REDIS_QUEUE_PREFIX: "queue:"
       REDIS_STATE_PREFIX: "state:"
       REDIS_CACHE_PREFIX: "cache:"
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
       BOOKING_QUEUE_SHARDS: 2
       BOOKING_WORKER_SHARD: 1
       BOOKING_QUEUE_RESULT_TTL_SECONDS: 86400
@@ -320,16 +417,27 @@ services:
         condition: service_healthy
     volumes:
       - ./api:/app/api
+      - ./brain:/app/brain
+      - ./MetaBrain:/app/MetaBrain
       - ./shared:/app/shared
     networks:
       - sentinel-network
     command: python -m api.app.booking_queue_worker_main
+    healthcheck:
+      disable: true
 
   outbox-scheduler:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
     container_name: sentinel-outbox-scheduler
+    mem_limit: 512m
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       DATABASE_URL: postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health
       REDIS_URL: redis://redis-master:6379
@@ -340,6 +448,9 @@ services:
       REDIS_QUEUE_PREFIX: "queue:"
       REDIS_STATE_PREFIX: "state:"
       REDIS_CACHE_PREFIX: "cache:"
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
       OUTBOX_PROCESS_LIMIT: 200
       OUTBOX_SCHEDULER_INTERVAL_SECONDS: 15
       ENV: production
@@ -353,19 +464,29 @@ services:
     volumes:
       - ./api:/app/api
       - ./brain:/app/brain
+      - ./MetaBrain:/app/MetaBrain
       - ./shared:/app/shared
       - ./scripts:/app/scripts
     networks:
       - sentinel-network
     command: python scripts/run_outbox_scheduler.py
+    healthcheck:
+      disable: true
 
   brain:
     build:
       context: .
       dockerfile: docker/brain.Dockerfile
     container_name: sentinel-brain
+    mem_limit: 1g
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     environment:
       DATABASE_URL: postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health
       REDIS_URL: redis://redis-master:6379
@@ -393,6 +514,7 @@ services:
       - postgres
     volumes:
       - ./brain:/app/brain
+      - ./MetaBrain:/app/MetaBrain
       - ./shared:/app/shared
     networks:
       - sentinel-network
@@ -411,8 +533,13 @@ services:
     # Reemplazar 'image' por 'build' cuando el servicio esté disponible localmente
     image: ${DIALOGUE_ENGINE_IMAGE:-sentinel-dialogue-engine:latest}
     container_name: sentinel-dialogue-engine
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
-      - "8010:8010"
+      - "127.0.0.1:8010:8010"
     environment:
       REDIS_URL: redis://redis-master:6379
       REDIS_CACHE_URL: redis://redis-cache:6379
@@ -433,8 +560,13 @@ services:
   inference-service:
     image: ${INFERENCE_SERVICE_IMAGE:-sentinel-inference-service:latest}
     container_name: sentinel-inference-service
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
-      - "8011:8011"
+      - "127.0.0.1:8011:8011"
     environment:
       INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY:-}
       ENV: production
@@ -450,8 +582,13 @@ services:
   decision-service:
     image: ${DECISION_SERVICE_IMAGE:-sentinel-decision-service:latest}
     container_name: sentinel-decision-service
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
-      - "8012:8012"
+      - "127.0.0.1:8012:8012"
     environment:
       INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY:-}
       ENV: production
@@ -467,8 +604,13 @@ services:
   nlg-service:
     image: ${NLG_SERVICE_IMAGE:-sentinel-nlg-service:latest}
     container_name: sentinel-nlg-service
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
-      - "8013:8013"
+      - "127.0.0.1:8013:8013"
     environment:
       INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY:-}
       ENV: production
@@ -486,25 +628,79 @@ services:
       context: .
       dockerfile: docker/gateway.Dockerfile
     container_name: sentinel-gateway
+    mem_limit: 512m
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "8002:8002"
+    env_file:
+      - .env
     environment:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
-      REDIS_URL: redis://redis-master:6379
-      REDIS_CACHE_URL: redis://redis-cache:6379
-      REDIS_METRICS_URL: redis://redis-metrics:6379
-      REDIS_SENTINEL_MASTER: mymaster
-      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION}
+      REDIS_URL: ${REDIS_URL}
       ENV: production
-    depends_on:
-      - redis-master
-      - redis-sentinel-1
     volumes:
       - ./whatsapp_gateway:/app/whatsapp_gateway
       - ./shared:/app/shared
     networks:
       - sentinel-network
-    command: uvicorn whatsapp_gateway.app.main:app --host 0.0.0.0 --port 8002 --reload
+    command: uvicorn whatsapp_gateway.app.main:app --host 0.0.0.0 --port 8002
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import httpx; httpx.get('http://localhost:8002/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # ============ FRONTEND (medical-agenda-saas) ============
+
+  frontend:
+    build:
+      context: ./medical-agenda-saas
+      dockerfile: Dockerfile
+    container_name: sentinel-frontend
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${FRONTEND_DATABASE_URL:-postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production-at-least-32-chars}
+      JWT_EXPIRES_IN_HOURS: ${JWT_EXPIRES_IN_HOURS:-24}
+      NEXT_TELEMETRY_DISABLED: "1"
+      BRAIN_API_URL: http://brain:8001
+      BRAIN_API_KEY: ${BRAIN_API_KEY:-change-me-brain-key}
+      BRAIN_TIMEOUT_MS: "5000"
+      REDIS_URL: redis://redis-master:6379
+      WHATSAPP_AUTO_BOOT_WORKERS: "false"
+      DOCUMENT_AI_ENABLED: ${DOCUMENT_AI_ENABLED:-false}
+      DOCUMENT_AI_PROVIDER: ${DOCUMENT_AI_PROVIDER:-groq}
+      DOCUMENT_AI_BASE_URL: ${DOCUMENT_AI_BASE_URL:-https://api.groq.com/openai/v1}
+    depends_on:
+      - postgres
+      - redis-master
+    networks:
+      - sentinel-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # ============ OPCIONAL: N8N ============
   
@@ -526,7 +722,8 @@ services:
 
 networks:
   sentinel-network:
-    driver: bridge
+    name: gsentinelhealthos_sentinel-network
+    external: true
 
 volumes:
   postgres_data:

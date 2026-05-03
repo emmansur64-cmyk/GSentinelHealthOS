@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from shared.config import (
     REDIS_URL,
@@ -17,6 +18,7 @@ from shared.config import (
     WHATSAPP_OUTGOING_RATE_LIMIT,
     WHATSAPP_OUTGOING_RATE_WINDOW_SECONDS,
     WHATSAPP_PROCESSED_TTL_SECONDS,
+    create_redis_master_client,
 )
 from shared.utils.resilience import CircuitBreakerConfig, CircuitBreakerRegistry, CircuitOpenError
 from shared.utils import setup_logger
@@ -37,11 +39,13 @@ class WhatsAppOutgoingConsumer:
         self,
         whatsapp_service,
         *,
+        account_resolver=None,
         redis_url: str = REDIS_URL,
         queue_name: str = "whatsapp:outgoing",
         redis_client: Redis | None = None,
     ) -> None:
         self.whatsapp_service = whatsapp_service
+        self.account_resolver = account_resolver
         self.redis_url = redis_url
         self.queue_name = queue_name
         self.dead_letter_queue = f"{queue_name}:dead"
@@ -57,8 +61,20 @@ class WhatsAppOutgoingConsumer:
 
     async def _ensure_client(self) -> Redis:
         if self.redis is None:
-            self.redis = Redis.from_url(self.redis_url, decode_responses=True)
+            self.redis = create_redis_master_client(decode_responses=True)
         return self.redis
+
+    async def _reset_redis_client(self) -> None:
+        if self.redis is None:
+            return
+        close_method = getattr(self.redis, "aclose", None)
+        try:
+            if close_method is not None:
+                await close_method()
+            else:
+                await self.redis.close()
+        finally:
+            self.redis = None
 
     async def process_once(self, timeout: int = 5) -> bool:
         redis_client = await self._ensure_client()
@@ -74,8 +90,11 @@ class WhatsAppOutgoingConsumer:
             logger.warning("Mensaje invalido en cola saliente: %s", raw_payload)
             return False
 
-        phone = message.get("phone")
-        text = message.get("text")
+        phone = message.get("to") or message.get("phone")
+        text = message.get("message") or message.get("text")
+        client_id = message.get("client_id") or message.get("tenant_id")
+        clinic_id = message.get("clinic_id")
+        phone_number_id = message.get("phone_number_id")
         if not phone or not text:
             logger.warning("Payload saliente incompleto: %s", message)
             return False
@@ -92,7 +111,11 @@ class WhatsAppOutgoingConsumer:
             await self._monitor_dlq(redis_client)
             return True
 
-        if not await self._allow_send_for_phone(redis_client, str(phone)):
+        rate_key_phone = str(phone)
+        if client_id:
+            rate_key_phone = f"{client_id}:{clinic_id or 'all'}:{phone}"
+
+        if not await self._allow_send_for_phone(redis_client, rate_key_phone):
             retries = int(message.get("_rate_retries", 0)) + 1
             message["_rate_retries"] = retries
             if retries > self.max_retries:
@@ -109,8 +132,58 @@ class WhatsAppOutgoingConsumer:
             await self._monitor_dlq(redis_client)
             return True
 
+        resolved_access_token = None
+        resolved_phone_number_id = phone_number_id
+        if self.account_resolver is not None:
+            account = None
+            if phone_number_id:
+                account = await self.account_resolver.get_by_phone_number_id(str(phone_number_id))
+            if account is None and client_id:
+                account = await self.account_resolver.get_by_client_id(str(client_id))
+            if account is None:
+                # Fallback seguro: nunca enviar con cuenta global si no se resolvió la cuenta del tenant.
+                await self._send_to_dlq(
+                    redis_client,
+                    message,
+                    reason="account_not_found_for_tenant",
+                )
+                logger.error(
+                    "whatsapp_account_not_found_for_outgoing_message",
+                    extra={"client_id": client_id, "clinic_id": clinic_id, "phone_number_id": phone_number_id},
+                )
+                await self._monitor_dlq(redis_client)
+                return True
+
+            resolved_access_token = account.access_token
+            resolved_phone_number_id = account.phone_number_id or resolved_phone_number_id
+            client_id = account.client_id or client_id
+            clinic_id = getattr(account, "clinic_id", None) or clinic_id
+
+            if not resolved_access_token:
+                await self._send_to_dlq(
+                    redis_client,
+                    message,
+                    reason="account_missing_access_token",
+                )
+                logger.error(
+                    "whatsapp_account_missing_access_token",
+                    extra={"client_id": client_id, "clinic_id": clinic_id, "phone_number_id": resolved_phone_number_id},
+                )
+                await self._monitor_dlq(redis_client)
+                return True
+
         async def _send_operation() -> bool:
-            sent_ok = await self.whatsapp_service.send_message(str(phone), str(text))
+            send_kwargs: dict[str, Any] = {}
+            if resolved_access_token:
+                send_kwargs["access_token"] = resolved_access_token
+            if resolved_phone_number_id:
+                send_kwargs["phone_number_id"] = resolved_phone_number_id
+
+            try:
+                sent_ok = await self.whatsapp_service.send_message(str(phone), str(text), **send_kwargs)
+            except TypeError:
+                # Compatibilidad con stubs/tests legacy que no aceptan kwargs.
+                sent_ok = await self.whatsapp_service.send_message(str(phone), str(text))
             if not sent_ok:
                 raise RuntimeError("send_message devolvió False")
             return True
@@ -139,7 +212,11 @@ class WhatsAppOutgoingConsumer:
 
         # Marcar procesado solo cuando efectivamente se envía.
         await redis_client.set(dedupe_key, "1", ex=self.processed_ttl_seconds, nx=True)
-        logger.info("Mensaje saliente procesado para %s", phone)
+        logger.info(
+            "Mensaje saliente procesado para %s",
+            phone,
+            extra={"client_id": client_id, "clinic_id": clinic_id, "phone_number_id": resolved_phone_number_id},
+        )
         await self._monitor_dlq(redis_client)
         return True
 
@@ -196,11 +273,22 @@ class WhatsAppOutgoingConsumer:
         self.running = True
         logger.info("Consumidor saliente de WhatsApp escuchando %s", self.queue_name)
         while self.running:
-            try:
-                await self.process_once(timeout=5)
-            except Exception as exc:
-                logger.exception("Error en consumidor saliente: %s", exc)
-                await asyncio.sleep(1)
+            for delay in (2, 5, 10):
+                try:
+                    await self.process_once(timeout=5)
+                    break
+                except RedisError as exc:
+                    await self._reset_redis_client()
+                    logger.error(
+                        "Redis no disponible en outgoing_consumer; reintento en %ss (%s)",
+                        delay,
+                        type(exc).__name__,
+                    )
+                    await asyncio.sleep(delay)
+                except Exception as exc:
+                    logger.exception("Error en consumidor saliente: %s", exc)
+                    await asyncio.sleep(1)
+                    break
 
     async def stop(self) -> None:
         self.running = False
