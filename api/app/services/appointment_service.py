@@ -48,7 +48,9 @@ class AppointmentService:
     async def create_appointment(
         self,
         appointment_data: AppointmentCreate,
-        created_by: str = "api"
+        created_by: str = "api",
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
     ) -> AppointmentResponse:
         """
         Crea una nueva cita con validación transaccional de conflictos.
@@ -68,16 +70,35 @@ class AppointmentService:
         
         # Flujo ACID con lock explícito para prevenir overbooking bajo concurrencia.
         try:
+            if created_by == "gateway" and clinic_id is None:
+                raise HTTPException(status_code=400, detail="clinic_id es obligatorio para turnos WhatsApp")
+
             await self.db.begin()
 
             # 1) Lock de doctor para serializar reservas por doctor.
-            doctor_stmt = select(Doctor).where(Doctor.id == appointment_data.doctor_id).with_for_update()
+            doctor_stmt = select(Doctor).where(Doctor.id == appointment_data.doctor_id)
+            if client_id is not None and hasattr(Doctor, "client_id"):
+                doctor_stmt = doctor_stmt.where(Doctor.client_id == client_id)
+            if clinic_id is not None:
+                doctor_stmt = doctor_stmt.where(Doctor.clinic_id == clinic_id)
+            doctor_stmt = doctor_stmt.with_for_update()
             doctor_result = await self.db.execute(doctor_stmt)
             doctor = doctor_result.scalars().first()
             if not doctor:
                 raise HTTPException(status_code=404, detail="Doctor o paciente no encontrado")
             if not cast(bool, doctor.is_active):
                 raise HTTPException(status_code=400, detail="El doctor no está activo")
+
+            patient_stmt = select(Patient).where(Patient.id == appointment_data.patient_id)
+            if client_id is not None and hasattr(Patient, "client_id"):
+                patient_stmt = patient_stmt.where(Patient.client_id == client_id)
+            if clinic_id is not None and hasattr(Patient, "clinic_id"):
+                patient_stmt = patient_stmt.where(Patient.clinic_id == clinic_id)
+            patient_stmt = patient_stmt.with_for_update()
+            patient_result = await self.db.execute(patient_stmt)
+            patient = patient_result.scalars().first()
+            if patient is None:
+                raise HTTPException(status_code=404, detail="Doctor o paciente no encontrado")
 
             # 2) Verificación del slot con FOR UPDATE sobre citas existentes del slot.
             slot_stmt = (
@@ -87,6 +108,8 @@ class AppointmentService:
                         Appointment.doctor_id == appointment_data.doctor_id,
                         Appointment.date_time == appointment_data.date_time,
                         Appointment.status != "cancelled",
+                        Appointment.client_id == client_id if client_id is not None else True,
+                        Appointment.clinic_id == clinic_id if clinic_id is not None else True,
                     )
                 )
                 .with_for_update()
@@ -101,12 +124,21 @@ class AppointmentService:
 
             # 3) Insert del turno dentro de la misma transacción.
             new_appointment = Appointment(
+                client_id=client_id,
+                clinic_id=clinic_id,
                 doctor_id=appointment_data.doctor_id,
                 patient_id=appointment_data.patient_id,
                 date_time=appointment_data.date_time,
                 reason=appointment_data.reason,
                 status=appointment_data.status,
                 created_by=created_by,
+                source="whatsapp_ai" if created_by == "gateway" else created_by,
+                specialty=getattr(doctor, "specialty", None),
+                patient_full_name=getattr(patient, "full_name", None) or getattr(patient, "name", None),
+                patient_dni=getattr(patient, "dni", None),
+                patient_phone=getattr(patient, "phone", None),
+                patient_email=getattr(patient, "email", None),
+                patient_age=getattr(patient, "age", None),
                 duration_minutes="30",
             )
             self.db.add(new_appointment)
@@ -225,9 +257,18 @@ class AppointmentService:
                 detail=f"Error al crear cita: {str(e)}"
             )
     
-    async def get_appointment(self, appointment_id: UUID) -> Optional[AppointmentResponse]:
+    async def get_appointment(
+        self,
+        appointment_id: UUID,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
+    ) -> Optional[AppointmentResponse]:
         """Obtiene una cita por ID."""
         stmt = select(Appointment).where(Appointment.id == appointment_id)
+        if client_id is not None and hasattr(Appointment, "client_id"):
+            stmt = stmt.where(Appointment.client_id == client_id)
+        if clinic_id is not None:
+            stmt = stmt.where(Appointment.clinic_id == clinic_id)
         result = await self.db.execute(stmt)
         appointment = result.scalars().first()
         
@@ -243,13 +284,19 @@ class AppointmentService:
         self,
         doctor_id: UUID,
         date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None
+        date_to: Optional[datetime] = None,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
     ) -> list[AppointmentResponse]:
         """Obtiene citas de un doctor en un rango de fechas."""
         stmt = select(Appointment).where(
             Appointment.doctor_id == doctor_id,
             Appointment.status != "cancelled"  # Excluye canceladas
         )
+        if client_id is not None and hasattr(Appointment, "client_id"):
+            stmt = stmt.where(Appointment.client_id == client_id)
+        if clinic_id is not None:
+            stmt = stmt.where(Appointment.clinic_id == clinic_id)
         
         if date_from and date_to:
             stmt = stmt.where(
@@ -269,9 +316,15 @@ class AppointmentService:
         self,
         patient_id: UUID,
         include_cancelled: bool = False,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
     ) -> list[AppointmentResponse]:
         """Obtiene citas de un paciente ordenadas por fecha."""
         stmt = select(Appointment).where(Appointment.patient_id == patient_id)
+        if client_id is not None and hasattr(Appointment, "client_id"):
+            stmt = stmt.where(Appointment.client_id == client_id)
+        if clinic_id is not None:
+            stmt = stmt.where(Appointment.clinic_id == clinic_id)
 
         if not include_cancelled:
             stmt = stmt.where(Appointment.status != "cancelled")
@@ -282,11 +335,20 @@ class AppointmentService:
 
         return [AppointmentResponse.model_validate(a) for a in appointments]
     
-    async def cancel_appointment(self, appointment_id: UUID) -> AppointmentResponse:
+    async def cancel_appointment(
+        self,
+        appointment_id: UUID,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
+    ) -> AppointmentResponse:
         """Cancela una cita."""
         try:
             await self.db.begin()
-            appointment = await self._get_appointment_by_id(appointment_id)
+            appointment = await self._get_appointment_by_id(
+                appointment_id,
+                client_id=client_id,
+                clinic_id=clinic_id,
+            )
 
             if cast(str, appointment.status) == "cancelled":
                 raise HTTPException(
@@ -327,9 +389,18 @@ class AppointmentService:
             await self.db.rollback()
             raise HTTPException(status_code=500, detail=f"Error al cancelar cita: {str(exc)}")
 
-    async def confirm_appointment(self, appointment_id: UUID) -> AppointmentResponse:
+    async def confirm_appointment(
+        self,
+        appointment_id: UUID,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
+    ) -> AppointmentResponse:
         """Confirma una cita (estado scheduled)."""
-        appointment = await self._get_appointment_by_id(appointment_id)
+        appointment = await self._get_appointment_by_id(
+            appointment_id,
+            client_id=client_id,
+            clinic_id=clinic_id,
+        )
         if cast(str, appointment.status) == "cancelled":
             raise HTTPException(status_code=400, detail="No se puede confirmar una cita cancelada")
 
@@ -343,11 +414,17 @@ class AppointmentService:
         self,
         appointment_id: UUID,
         new_date_time: datetime,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
     ) -> AppointmentResponse:
         """Reprograma una cita y valida conflictos de horario."""
         try:
             await self.db.begin()
-            appointment = await self._get_appointment_by_id(appointment_id)
+            appointment = await self._get_appointment_by_id(
+                appointment_id,
+                client_id=client_id,
+                clinic_id=clinic_id,
+            )
             doctor_id = cast(UUID, appointment.doctor_id)
 
             if new_date_time <= datetime.utcnow():
@@ -364,6 +441,8 @@ class AppointmentService:
                     Appointment.status != "cancelled",
                     Appointment.date_time >= time_start,
                     Appointment.date_time <= time_end,
+                    Appointment.client_id == client_id if client_id is not None else True,
+                    Appointment.clinic_id == clinic_id if clinic_id is not None else True,
                 )
             ).with_for_update()
             result = await self.db.execute(stmt)
@@ -411,7 +490,9 @@ class AppointmentService:
         self,
         doctor_id: UUID,
         appointment_time: datetime,
-        use_row_lock: bool = True
+        use_row_lock: bool = True,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
     ) -> None:
         """
         Verifica que NO haya conflicto de horario para el médico.
@@ -441,7 +522,9 @@ class AppointmentService:
                 Appointment.doctor_id == doctor_id,
                 Appointment.status != "cancelled",
                 Appointment.date_time >= time_start,
-                Appointment.date_time <= time_end
+                Appointment.date_time <= time_end,
+                Appointment.client_id == client_id if client_id is not None else True,
+                Appointment.clinic_id == clinic_id if clinic_id is not None else True,
             )
         )
         
@@ -463,21 +546,48 @@ class AppointmentService:
                         f"[Locked by AppointmentService._verify_no_slot_conflict]"
             )
     
-    async def _get_doctor(self, doctor_id: UUID) -> Optional[Doctor]:
+    async def _get_doctor(
+        self,
+        doctor_id: UUID,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
+    ) -> Optional[Doctor]:
         """Obtiene un doctor por ID (sin lanzar excepción)."""
         stmt = select(Doctor).where(Doctor.id == doctor_id)
+        if client_id is not None and hasattr(Doctor, "client_id"):
+            stmt = stmt.where(Doctor.client_id == client_id)
+        if clinic_id is not None:
+            stmt = stmt.where(Doctor.clinic_id == clinic_id)
         result = await self.db.execute(stmt)
         return result.scalars().first()
     
-    async def _get_patient(self, patient_id: UUID) -> Optional[Patient]:
+    async def _get_patient(
+        self,
+        patient_id: UUID,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
+    ) -> Optional[Patient]:
         """Obtiene un paciente por ID (sin lanzar excepción)."""
         stmt = select(Patient).where(Patient.id == patient_id)
+        if client_id is not None and hasattr(Patient, "client_id"):
+            stmt = stmt.where(Patient.client_id == client_id)
+        if clinic_id is not None:
+            stmt = stmt.where(Patient.clinic_id == clinic_id)
         result = await self.db.execute(stmt)
         return result.scalars().first()
     
-    async def _get_appointment_by_id(self, appointment_id: UUID) -> Appointment:
+    async def _get_appointment_by_id(
+        self,
+        appointment_id: UUID,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
+    ) -> Appointment:
         """Obtiene una cita por ID (lanza 404 si no existe)."""
         stmt = select(Appointment).where(Appointment.id == appointment_id)
+        if client_id is not None and hasattr(Appointment, "client_id"):
+            stmt = stmt.where(Appointment.client_id == client_id)
+        if clinic_id is not None:
+            stmt = stmt.where(Appointment.clinic_id == clinic_id)
         result = await self.db.execute(stmt)
         appointment = result.scalars().first()
         

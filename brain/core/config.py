@@ -30,7 +30,7 @@ class BrainSettings(BaseSettings):
         default="whatsapp:outgoing",
         alias="WHATSAPP_OUTGOING_QUEUE",
     )
-    state_ttl_seconds: int = Field(default=300, alias="BRAIN_STATE_TTL_SECONDS")
+    state_ttl_seconds: int = Field(default=86400, alias="BRAIN_STATE_TTL_SECONDS")  # 24h; configurable vía env
     default_appointment_reason: str = Field(
         default="Solicitud generada desde WhatsApp",
         alias="BRAIN_DEFAULT_APPOINTMENT_REASON",

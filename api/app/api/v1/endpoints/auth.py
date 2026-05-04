@@ -37,6 +37,8 @@ async def login_for_access_token(
             "username": user.username,
             "role": user.role.value,
             "doctor_id": str(user.doctor_id) if user.doctor_id else None,
+            "client_id": str(user.client_id) if getattr(user, "client_id", None) else None,
+            "clinic_id": str(user.clinic_id) if getattr(user, "clinic_id", None) else None,
             "scopes": ["appointment:read", "appointment:create", "user:read"],
         }
     )
@@ -75,4 +77,6 @@ async def get_session(user: UserAuth = Depends(get_current_user)) -> dict:
         "username": user.username,
         "role": user.role,
         "doctor_id": user.doctor_id,
+        "client_id": user.client_id,
+        "clinic_id": user.clinic_id,
     }

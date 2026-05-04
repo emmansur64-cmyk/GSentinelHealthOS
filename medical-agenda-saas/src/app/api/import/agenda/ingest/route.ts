@@ -74,7 +74,9 @@ const ingestSchema = z
 export async function POST(request: Request) {
   const authUser = await getAuthenticatedUser();
   if (!authUser) return fail("No autenticado", 401);
-  if (!hasRole(authUser, ["admin", "secretaria"])) return fail("Sin permisos", 403);
+  if (!hasRole(authUser, ["admin", "secretaria", "recepcionista", "receptionist", "clinic_owner", "clinic_admin"])) {
+    return fail("Sin permisos", 403);
+  }
   const tenant = await requireTenant(authUser);
   if (!tenant.ok) return tenant.response;
 

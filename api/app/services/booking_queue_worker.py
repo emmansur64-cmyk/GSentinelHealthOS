@@ -7,6 +7,7 @@ import inspect
 import json
 from datetime import datetime
 from typing import Any, Optional
+from uuid import UUID
 
 from fastapi import HTTPException
 from redis.asyncio import Redis
@@ -144,6 +145,8 @@ end
                     appointment = await service.create_appointment(
                         appointment_data=appointment_data,
                         created_by=created_by,
+                        client_id=UUID(event["client_id"]) if event.get("client_id") else None,
+                        clinic_id=UUID(event["clinic_id"]) if event.get("clinic_id") else None,
                     )
                     await self._save_result(
                         request_id=request_id,

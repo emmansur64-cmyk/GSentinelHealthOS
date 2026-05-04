@@ -4,7 +4,7 @@ import sharp from "sharp";
 
 import { ok, fail } from "@/lib/api-response";
 import { prisma } from "@/lib/prisma";
-import { getAuthenticatedUser } from "@/lib/server-auth";
+import { getAuthenticatedUser, hasRole } from "@/lib/server-auth";
 import { DOCUMENT_ANALYSIS_SCHEMA_VERSION, safeValidateDocumentAnalysis } from "@/lib/document-analysis-schema";
 import {
   analyzeImageDocumentWithAI,
@@ -15,11 +15,7 @@ import {
 import { buildAgendaImportGuidance } from "@/lib/metabrain";
 import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
 import { logServer } from "@/lib/server-logger";
-import {
-  analyzeMedicalImage,
-  detectMedicalImageInput,
-  type MedicalImagingAnalysis,
-} from "@/medical-imaging/imaging.service";
+import type { MedicalImagingAnalysis } from "@/medical-imaging/imaging.service";
 
 type CandidateAppointment = {
   datetime: string;
@@ -666,13 +662,30 @@ function parseIntegerEnv(value: string | undefined, defaultValue: number, min: n
 }
 
 function getAgendaImportGroqConfig() {
-  const apiKey = String(process.env.AGENDA_IMPORT_GROQ_API_KEY ?? "").trim();
+  const provider = String(
+    process.env.AGENDA_IMPORT_PROVIDER ?? process.env.DOCUMENT_AI_PROVIDER ?? "groq",
+  )
+    .trim()
+    .toLowerCase();
+  const apiKey = String(
+    process.env.AGENDA_IMPORT_GROQ_API_KEY ?? process.env.DOCUMENT_AI_API_KEY ?? "",
+  ).trim();
+  const explicitEnabled = process.env.AGENDA_IMPORT_GROQ_ENABLED;
+  const enabledDefault = provider === "groq" && apiKey.length > 0;
   return {
-    enabled: parseBooleanEnv(process.env.AGENDA_IMPORT_GROQ_ENABLED, false) && apiKey.length > 0,
+    enabled: parseBooleanEnv(explicitEnabled, enabledDefault) && apiKey.length > 0,
     requireSuccess: parseBooleanEnv(process.env.AGENDA_IMPORT_GROQ_REQUIRE_SUCCESS, false),
     apiKey,
-    baseUrl: String(process.env.AGENDA_IMPORT_GROQ_BASE_URL ?? "https://api.groq.com/openai/v1").trim(),
-    model: String(process.env.AGENDA_IMPORT_GROQ_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct").trim(),
+    baseUrl: String(
+      process.env.AGENDA_IMPORT_GROQ_BASE_URL ??
+        process.env.DOCUMENT_AI_BASE_URL ??
+        "https://api.groq.com/openai/v1",
+    ).trim(),
+    model: String(
+      process.env.AGENDA_IMPORT_GROQ_MODEL ??
+        process.env.DOCUMENT_AI_MODEL ??
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+    ).trim(),
     timeoutMs: parseIntegerEnv(process.env.AGENDA_IMPORT_GROQ_TIMEOUT_MS, 12_000, 3_000, 60_000),
     maxRetries: parseIntegerEnv(process.env.AGENDA_IMPORT_GROQ_MAX_RETRIES, 0, 0, 2),
   };
@@ -690,6 +703,44 @@ function getTesseractWorkerPath(): string | undefined {
   );
 
   return existsSync(workerPath) ? workerPath : undefined;
+}
+
+type MedicalInputDetection = {
+  isMedicalImage: boolean;
+  confidence: number;
+  reason: string;
+};
+
+async function detectMedicalImageInputSafe(file: File, mimeType: string): Promise<MedicalInputDetection> {
+  try {
+    const imagingService = await import("@/medical-imaging/imaging.service");
+    return imagingService.detectMedicalImageInput(file, mimeType);
+  } catch (error) {
+    logServer("warn", "medical_imaging.module_unavailable", {
+      endpoint: "/api/import/agenda/parse",
+      stage: "detect",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      isMedicalImage: false,
+      confidence: 0,
+      reason: "imaging_module_unavailable",
+    };
+  }
+}
+
+async function analyzeMedicalImageSafe(file: File, mimeType: string): Promise<MedicalImagingAnalysis | null> {
+  try {
+    const imagingService = await import("@/medical-imaging/imaging.service");
+    return await imagingService.analyzeMedicalImage(file, mimeType);
+  } catch (error) {
+    logServer("warn", "medical_imaging.analysis_failed", {
+      endpoint: "/api/import/agenda/parse",
+      stage: "analyze",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 async function getAgendaOcrWorker(): Promise<OcrWorker> {
@@ -782,6 +833,9 @@ async function extractTextFromPdf(file: File): Promise<string> {
 export async function POST(request: Request) {
   const authUser = await getAuthenticatedUser();
   if (!authUser) return fail("No autenticado", 401);
+  if (!hasRole(authUser, ["admin", "secretaria", "recepcionista", "receptionist", "clinic_owner", "clinic_admin"])) {
+    return fail("Sin permisos", 403);
+  }
 
   try {
     const formData = await request.formData();
@@ -807,24 +861,29 @@ export async function POST(request: Request) {
       rawText = await extractTextFromPdf(file);
       agendaImportSource = "pdf_text";
     } else {
-      const detection = detectMedicalImageInput(file, mimeType);
+      const detection = await detectMedicalImageInputSafe(file, mimeType);
       if (detection.isMedicalImage || dicomUpload) {
-        medicalImagingAnalysis = await analyzeMedicalImage(file, mimeType);
-        extractedWithAI = true;
-        agendaImportSource = "medical_imaging";
-        rawText = buildMedicalImagingNarrative(medicalImagingAnalysis, file.name);
-        logServer("info", "medical_imaging.structured_analysis", {
-          endpoint: "/api/import/agenda/parse",
-          mime_type: mimeType || "application/octet-stream",
-          detection_confidence: detection.confidence,
-          detection_reason: detection.reason,
-          study_type: medicalImagingAnalysis.type,
-          region: medicalImagingAnalysis.region,
-          confidence: medicalImagingAnalysis.confidence,
-          model_version: medicalImagingAnalysis.model_version,
-          pipeline: medicalImagingAnalysis.pipeline,
-        });
-      } else {
+        const imagingResult = await analyzeMedicalImageSafe(file, mimeType);
+        if (imagingResult) {
+          medicalImagingAnalysis = imagingResult;
+          extractedWithAI = true;
+          agendaImportSource = "medical_imaging";
+          rawText = buildMedicalImagingNarrative(medicalImagingAnalysis, file.name);
+          logServer("info", "medical_imaging.structured_analysis", {
+            endpoint: "/api/import/agenda/parse",
+            mime_type: mimeType || "application/octet-stream",
+            detection_confidence: detection.confidence,
+            detection_reason: detection.reason,
+            study_type: medicalImagingAnalysis.type,
+            region: medicalImagingAnalysis.region,
+            confidence: medicalImagingAnalysis.confidence,
+            model_version: medicalImagingAnalysis.model_version,
+            pipeline: medicalImagingAnalysis.pipeline,
+          });
+        }
+      }
+
+      if (!medicalImagingAnalysis) {
         const groqConfig = getAgendaImportGroqConfig();
         if (groqConfig.enabled && isVisionSupportedMimeType(mimeType)) {
           try {

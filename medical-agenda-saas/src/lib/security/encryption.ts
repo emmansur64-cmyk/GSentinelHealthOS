@@ -4,12 +4,12 @@ const PREFIX = "enc:v1:";
 const KEY_BYTES = 32;
 
 function getEncryptionKey() {
-  const raw = process.env.ENCRYPTION_KEY;
-  if (!raw) throw new Error("ENCRYPTION_KEY is required");
+  const raw = process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
+  if (!raw) throw new Error("WHATSAPP_TOKEN_ENCRYPTION_KEY or ENCRYPTION_KEY is required");
 
   const key = Buffer.from(raw, "base64");
   if (key.length !== KEY_BYTES) {
-    throw new Error("ENCRYPTION_KEY must be a base64-encoded 32-byte key");
+    throw new Error("WHATSAPP_TOKEN_ENCRYPTION_KEY must be a base64-encoded 32-byte key");
   }
 
   return key;

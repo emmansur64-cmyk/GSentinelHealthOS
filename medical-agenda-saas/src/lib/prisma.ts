@@ -51,6 +51,12 @@ const TENANT_SCOPED_MODELS = new Set([
   "ConversationState",
   "RateLimit",
   "FailedMessage",
+  "AiImageAnalysisLog",
+  "PlatformOAuthState",
+  "ConsentTemplate",
+  "PatientConsent",
+  "ClinicalRecord",
+  "PatientDataRequest",
 ]);
 
 const prismaWithTenantScope = prismaClient.$extends({

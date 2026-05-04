@@ -37,7 +37,7 @@ export type VisionDocumentExtraction = Omit<VisionDocumentExtractionRaw, "confid
 };
 
 export type DocumentAIConfigOverrides = {
-  provider?: "openai" | "groq";
+  provider?: "groq";
   baseUrl?: string;
   model?: string;
   apiKey?: string;
@@ -68,8 +68,7 @@ const DAY_ALIASES: Array<{ key: ScheduleKey; terms: string[] }> = [
   { key: "sabado", terms: ["sabado", "sábado", "sab"] },
   { key: "domingo", terms: ["domingo", "dom"] },
 ];
-const DEFAULT_DOCUMENT_AI_MODEL = "gpt-4.1";
-const DEFAULT_DOCUMENT_AI_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_DOCUMENT_AI_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 const DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const DOCUMENT_AI_PROMPT = [
   "Analiza la imagen de una planilla mensual de agenda medica.",
@@ -353,27 +352,16 @@ function parseInteger(value: string | undefined, defaultValue: number, min: numb
   return Math.max(min, Math.min(max, parsed));
 }
 
-function inferDocumentAIProvider(baseUrl: string, model: string, explicitProvider?: string): "openai" | "groq" {
-  if (explicitProvider === "groq" || explicitProvider === "openai") return explicitProvider;
-
-  const envProvider = String(process.env.DOCUMENT_AI_PROVIDER ?? "").trim().toLowerCase();
-  if (envProvider === "groq" || envProvider === "openai") return envProvider;
-
-  const normalizedBaseUrl = baseUrl.toLowerCase();
-  const normalizedModel = model.toLowerCase();
-  if (normalizedBaseUrl.includes("groq") || normalizedModel.includes("llama") || normalizedModel.includes("meta-llama")) {
-    return "groq";
-  }
-  return "openai";
+function inferDocumentAIProvider(): "groq" {
+  return "groq";
 }
 
 function buildDocumentAIConfig(overrides: DocumentAIConfigOverrides = {}) {
   const model = String(overrides.model ?? process.env.DOCUMENT_AI_MODEL ?? DEFAULT_DOCUMENT_AI_MODEL).trim() || DEFAULT_DOCUMENT_AI_MODEL;
   const envBaseUrl = String(overrides.baseUrl ?? process.env.DOCUMENT_AI_BASE_URL ?? "").trim();
-  const provisionalBaseUrl = envBaseUrl || DEFAULT_DOCUMENT_AI_BASE_URL;
-  const provider = inferDocumentAIProvider(provisionalBaseUrl, model, overrides.provider);
-  const baseUrl = envBaseUrl || (provider === "groq" ? DEFAULT_GROQ_BASE_URL : DEFAULT_DOCUMENT_AI_BASE_URL);
-  const apiKey = String(overrides.apiKey ?? process.env.DOCUMENT_AI_API_KEY ?? process.env.OPENAI_API_KEY ?? "").trim();
+  const provider = inferDocumentAIProvider();
+  const baseUrl = envBaseUrl || DEFAULT_GROQ_BASE_URL;
+  const apiKey = String(overrides.apiKey ?? process.env.DOCUMENT_AI_API_KEY ?? process.env.GROQ_API_KEY ?? "").trim();
 
   return {
     provider,
@@ -614,21 +602,6 @@ function readByAliases(source: Record<string, unknown>, aliases: string[]): unkn
   return undefined;
 }
 
-function buildOpenAIResponsesBody(model: string, dataUrl: string) {
-  return {
-    model,
-    input: [
-      {
-        role: "user",
-        content: [
-          { type: "input_text", text: DOCUMENT_AI_PROMPT },
-          { type: "input_image", image_url: dataUrl },
-        ],
-      },
-    ],
-  };
-}
-
 function buildChatCompletionsBody(model: string, dataUrl: string) {
   return {
     model,
@@ -690,9 +663,8 @@ export async function analyzeImageDocumentWithAI(file: File, overrides: Document
   }
 
   const dataUrl = await fileToDataUrl(file, overrides);
-  const isGroq = config.provider === "groq";
-  const url = isGroq ? `${config.baseUrl}/chat/completions` : `${config.baseUrl}/responses`;
-  const body = isGroq ? buildChatCompletionsBody(config.model, dataUrl) : buildOpenAIResponsesBody(config.model, dataUrl);
+  const url = `${config.baseUrl}/chat/completions`;
+  const body = buildChatCompletionsBody(config.model, dataUrl);
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt <= config.maxRetries; attempt += 1) {

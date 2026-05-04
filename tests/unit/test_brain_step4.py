@@ -86,10 +86,24 @@ class FakeAPIClient:
         self.doctors_by_specialty: dict[str, list[dict[str, str]]] = {}
         self.patient_appointments: list[dict[str, str]] = []
 
-    async def get_or_create_patient_by_phone(self, phone: str) -> dict[str, str]:
+    async def get_or_create_patient_by_phone(
+        self,
+        phone: str,
+        *,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ) -> dict[str, str]:
+        _ = client_id, clinic_id
         return {"id": "patient-123", "phone": phone}
 
-    async def list_doctors_by_specialty(self, specialty: str) -> list[dict[str, str]]:
+    async def list_doctors_by_specialty(
+        self,
+        specialty: str,
+        *,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ) -> list[dict[str, str]]:
+        _ = client_id, clinic_id
         if specialty in self.doctors_by_specialty:
             return self.doctors_by_specialty[specialty]
         return [{"id": "doctor-1", "name": "Dra. Rivera", "specialty": specialty}]
@@ -98,11 +112,25 @@ class FakeAPIClient:
         self.created_appointments.append(payload)
         return {"id": "appointment-999"}
 
-    async def get_patient_appointments(self, patient_id: str):
+    async def get_patient_appointments(
+        self,
+        patient_id: str,
+        *,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ):
+        _ = client_id, clinic_id
         assert patient_id == "patient-123"
         return list(self.patient_appointments)
 
-    async def cancel_appointment(self, appointment_id: str):
+    async def cancel_appointment(
+        self,
+        appointment_id: str,
+        *,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ):
+        _ = client_id, clinic_id
         self.cancelled_appointments.append(appointment_id)
         return {"id": appointment_id, "status": "cancelled", "date_time": "2026-04-12T15:30:00"}
 

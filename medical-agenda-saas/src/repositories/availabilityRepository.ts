@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getAvailabilityRulesForRangeResolved } from "@/lib/doctor-availability";
 
 export type AutoAssignDoctorCandidate = {
   user_id: string;
@@ -80,34 +81,7 @@ export async function getAvailabilityRulesForRange(input: {
   from: Date;
   to: Date;
 }): Promise<AvailabilityRuleRecord[]> {
-  if (input.doctorIds.length === 0) return [];
-
-  return prisma.availabilityRule.findMany({
-    where: {
-      tenant_id: input.tenantId,
-      doctor_id: {
-        in: input.doctorIds,
-      },
-      OR: [
-        { specific_date: null },
-        {
-          specific_date: {
-            gte: input.from,
-            lte: input.to,
-          },
-        },
-      ],
-    },
-    select: {
-      doctor_id: true,
-      day_of_week: true,
-      specific_date: true,
-      start_time: true,
-      end_time: true,
-      slot_duration: true,
-    },
-    orderBy: [{ doctor_id: "asc" }, { day_of_week: "asc" }, { start_time: "asc" }],
-  });
+  return getAvailabilityRulesForRangeResolved(input);
 }
 
 export async function getOccupiedIntervalsForRange(input: {

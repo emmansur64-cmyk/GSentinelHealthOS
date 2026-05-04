@@ -1,6 +1,7 @@
 import { fail } from "@/lib/api-response";
 import { encodeNoShowDatasetToCsv, encodeNoShowDatasetToParquet } from "@/lib/ai/datasetExport";
-import { getAuthenticatedUser } from "@/lib/server-auth";
+import { auditLog } from "@/lib/compliance/audit-log";
+import { requireRole, requireSessionWithTenant } from "@/lib/compliance/access";
 import { getNoShowDataset } from "@/services/predictionEngine";
 
 function buildDownloadFileName(format: "csv" | "parquet", from: Date, to: Date): string {
@@ -10,9 +11,10 @@ function buildDownloadFileName(format: "csv" | "parquet", from: Date, to: Date):
 }
 
 export async function GET(request: Request): Promise<Response> {
-  const authUser = await getAuthenticatedUser();
-  if (!authUser) return fail("No autenticado", 401);
-  if (String(authUser.role).toLowerCase() !== "admin") return fail("Sin permisos", 403);
+  const session = await requireSessionWithTenant();
+  if (!session.ok) return session.response;
+  const role = await requireRole(session.authUser, ["CLINIC_ADMIN", "AUDITOR"]);
+  if (!role.ok) return role.response;
 
   const url = new URL(request.url);
   const formatRaw = (url.searchParams.get("format") ?? "csv").trim().toLowerCase();
@@ -33,8 +35,23 @@ export async function GET(request: Request): Promise<Response> {
   const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.floor(limitRaw), 500), 150000) : 50000;
 
   try {
-    const rows = await getNoShowDataset({ from, to, limit });
+    const rows = await getNoShowDataset({ from, to, limit, tenantId: session.tenantId });
     const filename = buildDownloadFileName(format, from, to);
+
+    await auditLog({
+      tenantId: session.tenantId,
+      actorUserId: session.authUser.userId,
+      entityType: "prediction_dataset",
+      action: "EXPORT",
+      metadata: {
+        endpoint: "/api/admin/predictions/dataset/export",
+        format,
+        from: from.toISOString(),
+        to: to.toISOString(),
+        limit,
+        exported_rows: rows.length,
+      },
+    });
 
     if (format === "csv") {
       const csv = encodeNoShowDatasetToCsv(rows);

@@ -1,5 +1,6 @@
 import { fail, ok } from "@/lib/api-response";
 import { logAudit, requestMeta } from "@/lib/audit";
+import { auditLog } from "@/lib/compliance/audit-log";
 import { requireTenant } from "@/middleware/tenantMiddleware";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser, hasRole } from "@/lib/server-auth";
@@ -33,6 +34,17 @@ export async function GET(_request: Request, context: Params) {
   });
 
   if (!patient) return fail("Paciente no encontrado", 404);
+
+  await auditLog({
+    tenantId: tenant.tenant.id,
+    actorUserId: authUser.userId,
+    patientId: patient.id,
+    entityType: "patient",
+    entityId: patient.id,
+    action: "READ",
+    metadata: { endpoint: "/api/patients/:id" },
+  });
+
   return ok({
     ...patient,
     document: patient.document ?? "",

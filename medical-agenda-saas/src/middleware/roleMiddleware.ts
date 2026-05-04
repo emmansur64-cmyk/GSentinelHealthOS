@@ -1,9 +1,11 @@
-export type CanonicalRole = "super_admin" | "admin" | "medico" | "recepcionista";
+export type CanonicalRole = "super_admin" | "admin" | "medico" | "recepcionista" | "auditor" | "patient";
 
 export function normalizeRole(role: string): CanonicalRole {
   if (role === "super_admin") return "super_admin";
   if (role === "clinic_owner" || role === "clinic_admin") return "admin";
   if (role === "admin") return "admin";
+  if (role === "auditor") return "auditor";
+  if (role === "patient") return "patient";
   if (role === "doctor" || role === "medico") return "medico";
   return "recepcionista";
 }

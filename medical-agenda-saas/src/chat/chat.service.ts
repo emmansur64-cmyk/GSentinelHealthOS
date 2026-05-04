@@ -5,6 +5,7 @@ import { callGroqDoctorChat } from "@/lib/groq-doctor-chat";
 import { logFunctionalAudit } from "@/lib/audit-functional";
 import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
 import { logServer } from "@/lib/server-logger";
+import { getTenantIdFromContext } from "@/lib/tenant-context";
 import { incDoctorChatFallback } from "@/lib/observability/metrics";
 import { DOCTOR_CHAT_PARAMS } from "@/chat/doctor-chat-params";
 
@@ -71,12 +72,13 @@ function buildConversationId(
 }
 
 async function resolveClinicalContext(doctorId: string, context?: DoctorChatContextInput) {
+  const tenantId = getTenantIdFromContext() ?? "default";
   let appointmentId = context?.appointment_id?.trim() || undefined;
   let patientId = context?.patient_id?.trim() || undefined;
 
   const appointment = appointmentId
     ? await prisma.appointment.findFirst({
-        where: { id: appointmentId, doctor_id: doctorId, deleted_at: null },
+        where: { id: appointmentId, tenant_id: tenantId, doctor_id: doctorId, deleted_at: null },
         include: { patient: true },
       })
     : null;
@@ -87,15 +89,15 @@ async function resolveClinicalContext(doctorId: string, context?: DoctorChatCont
   }
 
   const patient = patientId
-    ? await prisma.patient.findUnique({
-        where: { id: patientId },
+    ? await prisma.patient.findFirst({
+        where: { id: patientId, tenant_id: tenantId },
         select: { id: true, name: true, phone: true, notes: true },
       })
     : null;
 
   const historyRows = patientId
     ? await prisma.appointment.findMany({
-        where: { patient_id: patientId, deleted_at: null },
+        where: { tenant_id: tenantId, patient_id: patientId, deleted_at: null },
         include: { doctor: { include: { user: { select: { name: true } } } } },
         orderBy: { datetime: "desc" },
         take: 8,
@@ -106,6 +108,7 @@ async function resolveClinicalContext(doctorId: string, context?: DoctorChatCont
   const conversationId = buildConversationId(doctorId, patient?.id ?? patientId, appointmentId, sessionId);
   const conversationHistory = await prisma.auditLog.findMany({
     where: {
+      tenant_id: tenantId,
       entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
       entity_id: conversationId,
     },
@@ -170,9 +173,11 @@ export async function getDoctorChatHistory(input: {
   doctorId: string;
   context?: DoctorChatContextInput;
 }) {
+  const tenantId = getTenantIdFromContext() ?? "default";
   const resolved = await resolveClinicalContext(input.doctorId, input.context);
   const rows = await prisma.auditLog.findMany({
     where: {
+      tenant_id: tenantId,
       entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
       entity_id: resolved.conversationId,
     },
@@ -210,8 +215,10 @@ function parseConversationId(conversationId: string): {
 }
 
 export async function listDoctorChatSessions(input: { doctorId: string }): Promise<{ sessions: ChatSessionEntry[] }> {
+  const tenantId = getTenantIdFromContext() ?? "default";
   const rows = await prisma.auditLog.findMany({
     where: {
+      tenant_id: tenantId,
       entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
       entity_id: {
         startsWith: `${DOCTOR_CHAT_PARAMS.conversationPrefix}:${input.doctorId}:`,
@@ -260,12 +267,30 @@ export async function clearDoctorChatHistory(input: {
   context?: DoctorChatContextInput;
   actorUserId?: string | null;
 }) {
+  const tenantId = getTenantIdFromContext() ?? "default";
   const resolved = await resolveClinicalContext(input.doctorId, input.context);
 
-  const deleted = await prisma.auditLog.deleteMany({
+  const existingCount = await prisma.auditLog.count({
     where: {
+      tenant_id: tenantId,
       entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
       entity_id: resolved.conversationId,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      tenant_id: tenantId,
+      user_id: input.actorUserId ?? input.doctorId,
+      action: "doctor_chat.clear_requested",
+      action_type: "UPDATE",
+      entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
+      entity_id: resolved.conversationId,
+      metadata_json: {
+        operation: "clear_requested",
+        preserved_history: true,
+        previous_message_count: existingCount,
+      },
     },
   });
 
@@ -276,23 +301,27 @@ export async function clearDoctorChatHistory(input: {
     entityType: DOCTOR_CHAT_PARAMS.auditEntityType,
     payloadBefore: {
       doctor_id: input.doctorId,
-      deleted_count: deleted.count,
+      deleted_count: 0,
+      previous_message_count: existingCount,
     },
     payloadAfter: {
-      cleared: true,
-      deleted_count: deleted.count,
+      cleared: false,
+      marker_written: true,
+      deleted_count: 0,
     },
   });
 
   logServer("info", "doctor_chat.cleared", {
     doctor_id: input.doctorId,
     conversation_id: resolved.conversationId,
-    deleted_count: deleted.count,
+    deleted_count: 0,
+    previous_message_count: existingCount,
   });
 
   return {
     conversation_id: resolved.conversationId,
-    deleted_count: deleted.count,
+    deleted_count: 0,
+    marker_written: true,
   };
 }
 

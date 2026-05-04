@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Clock3, UserRoundX, UsersRound } from "lucide-react";
+import { Activity, Clock3, MessageCircle, ShieldCheck, Unplug, UserRoundX, UsersRound } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { DSButton } from "@/components/design-system";
 import { EmptyStateIllustrated } from "@/components/ui/empty-state-illustrated";
@@ -22,6 +23,17 @@ async function fetchTodayStats() {
 
   const payload = await response.json();
   return payload?.data ?? payload;
+}
+
+async function fetchWhatsappConfig() {
+  const response = await fetch("/api/platform/whatsapp/config", {
+    headers: { Accept: "application/json" },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error?.message ?? "No se pudo cargar la configuración de WhatsApp");
+  }
+  return payload.data;
 }
 
 function MetricSkeleton() {
@@ -73,6 +85,184 @@ function MetricCard({ title, value, icon: Icon, tone }) {
           <p className={`mt-2 text-3xl font-semibold leading-none ${styles.value}`}>{value}</p>
         </div>
         <Icon className={`h-6 w-6 ${styles.icon}`} />
+      </div>
+    </article>
+  );
+}
+
+const whatsappStatusLabels = {
+  NOT_CONFIGURED: "No configurado",
+  PENDING_AUTHORIZATION: "Pendiente de autorización",
+  CONNECTED: "Conectado",
+  AUTHORIZATION_ERROR: "Error de autorización",
+  TOKEN_EXPIRED: "Token vencido / requiere reconexión",
+  DISCONNECTED: "No configurado",
+};
+
+function maskDate(value) {
+  return value ? new Date(value).toLocaleString() : "-";
+}
+
+function WhatsAppBusinessConfigCard() {
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ["platform", "whatsapp-config"],
+    queryFn: fetchWhatsappConfig,
+    staleTime: 20_000,
+  });
+  const [phone, setPhone] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  useEffect(() => {
+    if (data?.whatsappPhoneNumber) setPhone(data.whatsappPhoneNumber);
+  }, [data?.whatsappPhoneNumber]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const whatsapp = params.get("whatsapp");
+    if (whatsapp === "connected") setMessage({ type: "success", text: "WhatsApp Business conectado correctamente." });
+    if (whatsapp === "error") setMessage({ type: "error", text: "No se pudo autorizar la conexión con Meta." });
+  }, []);
+
+  async function postJson(url, body) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.ok === false) throw new Error(payload.error?.message ?? "No se pudo completar la operación");
+    return payload.data;
+  }
+
+  async function savePhone() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await postJson("/api/platform/whatsapp/register-number", { whatsappPhoneNumber: phone });
+      setMessage({ type: "success", text: "Número guardado. Ahora podés autorizar la conexión con Meta." });
+      await refetch();
+    } catch (caught) {
+      setMessage({ type: "error", text: caught instanceof Error ? caught.message : "No se pudo guardar el número" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function connectMeta() {
+    setConnecting(true);
+    setMessage(null);
+    try {
+      const result = await postJson("/api/platform/whatsapp/meta/oauth/start");
+      if (!result?.url) throw new Error("Meta OAuth no devolvió URL de autorización");
+      window.location.assign(result.url);
+    } catch (caught) {
+      setMessage({ type: "error", text: caught instanceof Error ? caught.message : "No se pudo iniciar la autorización" });
+      setConnecting(false);
+    }
+  }
+
+  async function disconnectWhatsapp() {
+    if (!window.confirm("¿Desconectar WhatsApp Business de esta clínica?")) return;
+    setDisconnecting(true);
+    setMessage(null);
+    try {
+      await postJson("/api/platform/whatsapp/disconnect");
+      setMessage({ type: "success", text: "WhatsApp Business desconectado." });
+      await refetch();
+    } catch (caught) {
+      setMessage({ type: "error", text: caught instanceof Error ? caught.message : "No se pudo desconectar WhatsApp" });
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  const status = data?.connectionStatus ?? "NOT_CONFIGURED";
+  const statusTone = status === "CONNECTED" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : status === "AUTHORIZATION_ERROR" || status === "TOKEN_EXPIRED" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-amber-200 bg-amber-50 text-amber-700";
+
+  return (
+    <article className="surface-card p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+            <MessageCircle className="h-4 w-4 text-emerald-600" />
+            Configuración de WhatsApp Business
+          </p>
+          <h3 className="mt-1 text-xl font-semibold text-slate-900">Número oficial de la clínica</h3>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500">
+            Conecte el número oficial de la clínica para que el sistema pueda operar con WhatsApp Cloud API autorizado por Meta.
+          </p>
+        </div>
+        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusTone}`}>
+          {whatsappStatusLabels[status] ?? status}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+        <div className="space-y-3">
+          <label className="block text-sm font-semibold text-slate-700" htmlFor="whatsapp-phone">
+            Número WhatsApp Business
+          </label>
+          <input
+            id="whatsapp-phone"
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+            placeholder="+549261XXXXXXX"
+            className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+          />
+          <div className="flex flex-wrap gap-2">
+            <DSButton type="button" variant="secondary" onClick={savePhone} loading={saving}>
+              Guardar número
+            </DSButton>
+            <DSButton type="button" onClick={connectMeta} loading={connecting}>
+              <ShieldCheck className="h-4 w-4" />
+              {status === "CONNECTED" || status === "TOKEN_EXPIRED" ? "Reautorizar conexión" : "Conectar con Meta"}
+            </DSButton>
+            <DSButton type="button" variant="danger" onClick={disconnectWhatsapp} loading={disconnecting}>
+              <Unplug className="h-4 w-4" />
+              Desconectar WhatsApp
+            </DSButton>
+          </div>
+          {message ? (
+            <p className={`text-sm font-medium ${message.type === "success" ? "text-emerald-700" : "text-rose-700"}`}>{message.text}</p>
+          ) : null}
+          {isError ? <p className="text-sm font-medium text-rose-700">{error instanceof Error ? error.message : "No se pudo cargar WhatsApp"}</p> : null}
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          {isLoading ? (
+            <p className="text-sm text-slate-500">Cargando configuración...</p>
+          ) : (
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Número registrado</dt>
+                <dd className="mt-1 font-medium text-slate-900">{data?.whatsappPhoneNumber ?? "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Estado</dt>
+                <dd className="mt-1 font-medium text-slate-900">{whatsappStatusLabels[status] ?? status}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Última autorización</dt>
+                <dd className="mt-1 font-medium text-slate-900">{maskDate(data?.lastAuthorizedAt)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Última verificación</dt>
+                <dd className="mt-1 font-medium text-slate-900">{maskDate(data?.lastVerifiedAt)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Business Account ID</dt>
+                <dd className="mt-1 font-medium text-slate-900">{data?.whatsappBusinessAccountIdMasked ?? "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phone Number ID</dt>
+                <dd className="mt-1 font-medium text-slate-900">{data?.whatsappPhoneNumberIdMasked ?? "-"}</dd>
+              </div>
+            </dl>
+          )}
+        </div>
       </div>
     </article>
   );
@@ -144,6 +334,8 @@ export default function Dashboard() {
           </>
         )}
       </div>
+
+      <WhatsAppBusinessConfigCard />
 
       {noActivity ? (
         <div className="surface-card">

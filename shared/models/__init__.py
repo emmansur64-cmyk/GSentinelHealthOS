@@ -5,7 +5,7 @@ import enum
 import uuid
 from typing import List, Optional
 
-from sqlalchemy import String, DateTime, ForeignKey, Text
+from sqlalchemy import String, DateTime, ForeignKey, Text, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
@@ -26,6 +26,8 @@ class Doctor(Base):
     __tablename__ = "doctors"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    clinic_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     specialty: Mapped[str] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
@@ -48,9 +50,14 @@ class Patient(Base):
     __tablename__ = "patients"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    clinic_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    dni: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
     phone: Mapped[Optional[str]] = mapped_column(String(20), unique=True, index=True)
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True)
+    age: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     date_of_birth: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     medical_history: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -68,8 +75,18 @@ class Appointment(Base):
     __tablename__ = "appointments"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    clinic_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     date_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     reason: Mapped[Optional[str]] = mapped_column(Text)
+    specialty: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    whatsapp_conversation_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    patient_full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    patient_dni: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    patient_phone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    patient_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    patient_age: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default=AppointmentStatus.SCHEDULED.value)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

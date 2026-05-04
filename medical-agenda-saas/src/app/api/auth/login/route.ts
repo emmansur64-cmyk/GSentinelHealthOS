@@ -8,6 +8,7 @@ import { logAudit, requestMeta } from "@/lib/audit";
 import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
 import { prisma } from "@/lib/prisma";
 import { consumeRateLimit } from "@/lib/rate-limit";
+import { pickPreferredLoginCandidate } from "@/lib/auth-login-selection";
 import { canLoginWithClinicStatus } from "@/lib/super-admin-policy";
 import { isTenantLegacyFallbackStrict } from "@/lib/tenant-legacy-policy";
 import { loginSchema } from "@/lib/validators";
@@ -242,6 +243,7 @@ async function resolveTenantId(tenantRaw?: string): Promise<string> {
 async function resolveUserForLogin(identifierRaw: string, tenantId: string | null): Promise<LoginResolvedUser | null> {
   const identifier = identifierRaw.trim();
   const lowerIdentifier = identifier.toLowerCase();
+  const hasRequestedTenant = Boolean(tenantId);
 
   // Ruta nueva (Prisma schema): users.email + users.password_hash
   try {
@@ -277,7 +279,13 @@ async function resolveUserForLogin(identifierRaw: string, tenantId: string | nul
       LEFT JOIN tenants t ON t.id = u.tenant_id
       WHERE (LOWER(u.email) = ${lowerIdentifier} OR u.name = ${identifier})
         ${tenantFilter}
-      ORDER BY CASE WHEN u.role::text = 'super_admin' THEN 0 ELSE 1 END, u.created_at DESC
+      ORDER BY
+        CASE
+          WHEN ${hasRequestedTenant} = TRUE AND u.tenant_id = ${tenantId} THEN 0
+          WHEN u.role::text = 'super_admin' THEN 1
+          ELSE 2
+        END,
+        u.created_at DESC
       LIMIT 3
     `);
 
@@ -286,7 +294,7 @@ async function resolveUserForLogin(identifierRaw: string, tenantId: string | nul
       throw new EmailRequiresClinicError(await getAvailableTenantsForIdentifier(identifier));
     }
 
-    const modernUser = modernRows[0];
+    const modernUser = pickPreferredLoginCandidate(modernRows, tenantId);
 
     if (modernUser?.password_hash) {
       return {
@@ -332,7 +340,13 @@ async function resolveUserForLogin(identifierRaw: string, tenantId: string | nul
         LEFT JOIN tenants t ON t.id = u.tenant_id
         WHERE (LOWER(u.email) = ${lowerIdentifier} OR u.name = ${identifier})
           ${tenantFilter}
-        ORDER BY CASE WHEN u.role::text = 'super_admin' THEN 0 ELSE 1 END, u.created_at DESC
+        ORDER BY
+          CASE
+            WHEN ${hasRequestedTenant} = TRUE AND u.tenant_id = ${tenantId} THEN 0
+            WHEN u.role::text = 'super_admin' THEN 1
+            ELSE 2
+          END,
+          u.created_at DESC
         LIMIT 3
       `);
 
@@ -341,7 +355,7 @@ async function resolveUserForLogin(identifierRaw: string, tenantId: string | nul
         throw new EmailRequiresClinicError(await getAvailableTenantsForIdentifier(identifier));
       }
 
-      const compatibleUser = compatibleRows[0];
+      const compatibleUser = pickPreferredLoginCandidate(compatibleRows, tenantId);
       if (compatibleUser?.password_hash) {
         return {
           id: compatibleUser.id,

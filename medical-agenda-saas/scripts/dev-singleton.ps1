@@ -27,6 +27,54 @@ function Get-NextDevProcesses {
         Sort-Object ProcessId
 }
 
+function Get-ExcludedTcpPortRanges {
+    $output = netsh interface ipv4 show excludedportrange protocol=tcp 2>$null
+    foreach ($line in $output) {
+        if ($line -match '^\s*(\d+)\s+(\d+)\s*$') {
+            [pscustomobject]@{
+                Start = [int]$matches[1]
+                End = [int]$matches[2]
+            }
+        }
+    }
+}
+
+function Test-PortExcluded {
+    param([int]$CandidatePort)
+
+    foreach ($range in Get-ExcludedTcpPortRanges) {
+        if ($CandidatePort -ge $range.Start -and $CandidatePort -le $range.End) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Test-PortListening {
+    param([int]$CandidatePort)
+
+    $connection = Get-NetTCPConnection -LocalPort $CandidatePort -ErrorAction SilentlyContinue |
+        Where-Object { $_.State -eq 'Listen' } |
+        Select-Object -First 1
+
+    return $null -ne $connection
+}
+
+function Resolve-DevPort {
+    param([int]$RequestedPort)
+
+    $candidate = $RequestedPort
+    while ($candidate -lt 65535) {
+        if (-not (Test-PortExcluded -CandidatePort $candidate) -and -not (Test-PortListening -CandidatePort $candidate)) {
+            return $candidate
+        }
+        $candidate++
+    }
+
+    throw "No se encontro un puerto TCP disponible para Next.js."
+}
+
 $existing = @(Get-NextDevProcesses)
 
 if ($existing.Count -gt 0 -and -not $ForceRestart) {
@@ -53,9 +101,15 @@ if (-not (Test-Path $nextCmd)) {
     throw "No se encontro next.cmd en $nextCmd. Ejecuta 'npm install' en el proyecto."
 }
 
+$resolvedPort = Resolve-DevPort -RequestedPort $Port
+if ($resolvedPort -ne $Port) {
+    Write-Host "Puerto $Port no disponible para Next.js (ocupado o reservado por Windows)." -ForegroundColor Yellow
+    Write-Host "Usando puerto disponible $resolvedPort." -ForegroundColor Yellow
+}
+
 Push-Location $projectPath
 try {
-    & $nextCmd dev --port $Port
+    & $nextCmd dev --port $resolvedPort
     exit $LASTEXITCODE
 }
 finally {

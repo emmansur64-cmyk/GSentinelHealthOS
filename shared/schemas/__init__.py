@@ -46,9 +46,22 @@ class PatientUpdate(BaseModel):
 
 class PatientResponse(PatientBase):
     id: uuid.UUID
+    full_name: Optional[str] = None
+    dni: Optional[str] = None
+    age: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+class WhatsAppPatientUpsert(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    full_name: str = Field(..., min_length=3, max_length=255)
+    dni: str = Field(..., pattern=r"^\d{7,9}$")
+    phone: str = Field(..., pattern=r"^\+?[1-9]\d{7,14}$")
+    email: Optional[EmailStr] = None
+    age: int = Field(..., ge=0, le=120)
 
 
 # ============ DOCTOR SCHEMAS ============

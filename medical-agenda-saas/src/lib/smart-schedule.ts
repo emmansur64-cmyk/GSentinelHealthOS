@@ -44,9 +44,9 @@ function endOfDay(date: Date): Date {
 
 function isSameCalendarDay(left: Date, right: Date): boolean {
   return (
-    left.getFullYear() === right.getFullYear() &&
-    left.getMonth() === right.getMonth() &&
-    left.getDate() === right.getDate()
+    left.getUTCFullYear() === right.getUTCFullYear() &&
+    left.getUTCMonth() === right.getUTCMonth() &&
+    left.getUTCDate() === right.getUTCDate()
   );
 }
 
@@ -176,10 +176,8 @@ export async function detectAvailableGaps(
     day.setDate(preferredStart.getDate() + dayOffset);
     day.setHours(0, 0, 0, 0);
 
-    const dayRules = [
-      ...(rulesByDay.get(day.getDay()) ?? []),
-      ...specificDateRules.filter((rule) => rule.specific_date && isSameCalendarDay(rule.specific_date, day)),
-    ];
+    const specificForDay = specificDateRules.filter((rule) => rule.specific_date && isSameCalendarDay(rule.specific_date, day));
+    const dayRules = specificForDay.length > 0 ? specificForDay : (rulesByDay.get(day.getDay()) ?? []);
     if (dayRules.length === 0) continue;
 
     const busy = await getDayBusyIntervals(doctor_id, day, tenantId, options?.excludeAppointmentId);

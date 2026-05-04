@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "debian-openssl-1.1.x"]
 }
 
 datasource db {
@@ -17,6 +18,8 @@ enum Role {
   medico
   secretaria
   doctor
+  auditor
+  patient
 }
 
 enum ClinicMemberRole {
@@ -55,6 +58,71 @@ enum AppointmentSource {
   phone
 }
 
+enum AiImageAnalysisStatus {
+  SUCCESS
+  FAILED
+}
+
+enum ConsentAppliesTo {
+  AI_ASSISTANT
+  TELEMEDICINE
+  WHATSAPP
+  GENERAL
+}
+
+enum ConsentChannel {
+  WEB
+  WHATSAPP
+  ADMIN
+}
+
+enum ClinicalRecordType {
+  CONSULTATION
+  AI_TRIAGE
+  NOTE
+  PRESCRIPTION
+  ATTACHMENT
+  WHATSAPP_SUMMARY
+}
+
+enum ClinicalRecordSource {
+  MANUAL
+  AI
+  WHATSAPP
+  SYSTEM
+}
+
+enum ClinicalRecordStatus {
+  DRAFT
+  SIGNED
+  VOIDED
+}
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  EXPORT
+  LOGIN
+  CONSENT_ACCEPT
+  CONSENT_REVOKE
+  AI_ACCESS
+  SECURITY_DENIED
+}
+
+enum DataRequestType {
+  EXPORT
+  RECTIFICATION
+}
+
+enum DataRequestStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+}
+
 model User {
   id               String    @id @default(uuid())
   tenant_id        String    @default("default")
@@ -80,8 +148,14 @@ model User {
   sessions                   Session[]
   activityLogs               ActivityLog[]
   auditLogs                  AuditLog[]
+  aiImageAnalysisLogs        AiImageAnalysisLog[]
   adminAuditLogs             AdminAuditLog[]
   createdSystemNotifications SystemNotification[]
+  consentAcceptances         PatientConsent[]   @relation("ConsentAcceptedBy")
+  clinicalRecordsCreated     ClinicalRecord[]   @relation("ClinicalRecordCreatedBy")
+  clinicalRecordsSigned      ClinicalRecord[]   @relation("ClinicalRecordSignedBy")
+  clinicalRecordsVoided      ClinicalRecord[]   @relation("ClinicalRecordVoidedBy")
+  patientDataRequests        PatientDataRequest[]
 
   @@unique([tenant_id, email])
   @@index([tenant_id, role])
@@ -106,6 +180,8 @@ model Tenant {
   users               User[]
   clinicMembers       ClinicMember[]
   doctorProfiles      DoctorProfile[]
+  doctorAvailabilityMonths DoctorAvailabilityMonth[]
+  doctorAvailabilitySlots  DoctorAvailabilitySlot[]
   agendaSettings      AgendaSettings[]
   patients            Patient[]
   appointments        Appointment[]
@@ -113,6 +189,7 @@ model Tenant {
   sessions            Session[]
   activityLogs        ActivityLog[]
   auditLogs           AuditLog[]
+  aiImageAnalysisLogs AiImageAnalysisLog[]
   adminAuditLogs      AdminAuditLog[]
   systemNotifications SystemNotification[]
   incomingMessages    IncomingMessage[]
@@ -121,6 +198,10 @@ model Tenant {
   conversationStates  ConversationState[]
   rateLimits          RateLimit[]
   failedMessages      FailedMessage[]
+  consentTemplates    ConsentTemplate[]
+  patientConsents     PatientConsent[]
+  clinicalRecords     ClinicalRecord[]
+  patientDataRequests PatientDataRequest[]
 
   @@map("tenants")
 }
@@ -134,13 +215,18 @@ model ClinicWhatsappAccount {
   phoneNumberId        String?  @map("phone_number_id")
   displayPhoneNumber   String?  @map("display_phone_number")
   accessTokenEncrypted String?  @map("access_token")
+  refreshTokenEncrypted String? @map("refresh_token")
   tokenType            String?  @map("token_type")
   expiresAt            DateTime? @map("expires_at")
+  registeredPhoneNumber String? @map("whatsapp_phone_number")
   appSecret            String?  @map("app_secret")
   verifyToken          String?  @map("verify_token")
+  webhookVerifyTokenHash String? @map("webhook_verify_token_hash")
   status               String   @default("pending")
   webhookVerified      Boolean  @default(false) @map("webhook_verified")
   isActive             Boolean  @default(true) @map("is_active")
+  lastAuthorizedAt     DateTime? @map("last_authorized_at")
+  lastVerifiedAt       DateTime? @map("last_verified_at")
   lastWebhookAt        DateTime? @map("last_webhook_at")
   lastErrorAt          DateTime? @map("last_error_at")
   lastError            String?  @map("last_error_message")
@@ -157,6 +243,21 @@ model ClinicWhatsappAccount {
   @@index([wabaId])
   @@index([status])
   @@map("clinic_whatsapp_accounts")
+}
+
+model PlatformOAuthState {
+  id         String    @id @default(uuid())
+  tenant_id  String
+  user_id    String
+  state_hash String    @unique
+  purpose    String
+  expires_at DateTime
+  consumed_at DateTime?
+  created_at DateTime  @default(now())
+
+  @@index([tenant_id, user_id, purpose])
+  @@index([expires_at])
+  @@map("platform_oauth_states")
 }
 
 model AdminAuditLog {
@@ -248,11 +349,58 @@ model DoctorProfile {
   user             User               @relation(fields: [user_id], references: [id], onDelete: Cascade)
   appointments     Appointment[]
   availabilityRule AvailabilityRule[]
+  availabilityMonths DoctorAvailabilityMonth[]
+  availabilitySlots  DoctorAvailabilitySlot[]
+  clinicalRecords    ClinicalRecord[]
 
   @@unique([tenant_id, matricula])
   @@unique([tenant_id, ai_tag])
   @@index([tenant_id, specialty])
   @@map("doctor_profiles")
+}
+
+model DoctorAvailabilityMonth {
+  id         String   @id @default(uuid())
+  tenant_id  String   @default("default")
+  doctor_id  String
+  year       Int
+  month      Int
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  doctor DoctorProfile @relation(fields: [doctor_id], references: [user_id], onDelete: Cascade)
+  slots  DoctorAvailabilitySlot[]
+
+  @@unique([tenant_id, doctor_id, year, month])
+  @@index([tenant_id, year, month])
+  @@index([doctor_id, year, month])
+  @@map("doctor_availability_months")
+}
+
+model DoctorAvailabilitySlot {
+  id                    String   @id @default(uuid())
+  availability_month_id String
+  tenant_id             String   @default("default")
+  doctor_id             String
+  date                  DateTime
+  day_of_week           Int
+  start_time            String
+  end_time              String
+  is_available          Boolean  @default(true)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  availabilityMonth DoctorAvailabilityMonth @relation(fields: [availability_month_id], references: [id], onDelete: Cascade)
+  tenant            Tenant                  @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  doctor            DoctorProfile           @relation(fields: [doctor_id], references: [user_id], onDelete: Cascade)
+
+  @@unique([availability_month_id, date, start_time, end_time])
+  @@index([tenant_id, doctor_id, date])
+  @@index([tenant_id, date])
+  @@index([doctor_id, date])
+  @@index([availability_month_id, date])
+  @@map("doctor_availability_slots")
 }
 
 model Patient {
@@ -267,6 +415,10 @@ model Patient {
   updated_at   DateTime      @updatedAt
   tenant       Tenant        @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
   appointments Appointment[]
+  consents      PatientConsent[]
+  clinicalRecords ClinicalRecord[]
+  dataRequests  PatientDataRequest[]
+  auditLogs     AuditLog[]
 
   @@unique([tenant_id, document])
   @@index([tenant_id, created_at])
@@ -292,6 +444,7 @@ model Appointment {
   tenant  Tenant        @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
   patient Patient       @relation(fields: [patient_id], references: [id], onDelete: Restrict)
   doctor  DoctorProfile @relation(fields: [doctor_id], references: [user_id], onDelete: Restrict)
+  clinicalRecords ClinicalRecord[]
 
   @@unique([tenant_id, idempotency_key])
   @@index([tenant_id, doctor_id, datetime])
@@ -366,20 +519,154 @@ model AuditLog {
   tenant_id      String   @default("default")
   user_id        String?
   action         String
+  action_type    AuditAction?
   entity_id      String?
   entity_type    String
+  patient_id     String?
+  ip_address     String?
+  user_agent     String?
+  metadata_json  Json?
   payload_before Json?
   payload_after  Json?
   created_at     DateTime @default(now())
+  hash           String?
+  previous_hash  String?
 
   tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
   user   User?  @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  patient Patient? @relation(fields: [patient_id], references: [id], onDelete: SetNull)
 
   @@index([tenant_id, created_at])
   @@index([created_at])
   @@index([entity_type, entity_id])
   @@index([action])
+  @@index([action_type, created_at])
+  @@index([patient_id, created_at])
   @@map("audit_logs")
+}
+
+model ConsentTemplate {
+  id         String           @id @default(uuid())
+  tenant_id  String           @default("default")
+  version    Int
+  title      String
+  body       String
+  applies_to ConsentAppliesTo
+  active     Boolean          @default(true)
+  created_at DateTime         @default(now())
+  updated_at DateTime         @updatedAt
+
+  tenant    Tenant           @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  consents  PatientConsent[]
+
+  @@unique([tenant_id, applies_to, version])
+  @@index([tenant_id, applies_to, active])
+  @@map("consent_templates")
+}
+
+model PatientConsent {
+  id                  String         @id @default(uuid())
+  tenant_id           String         @default("default")
+  patient_id          String
+  consent_template_id String
+  accepted_at         DateTime       @default(now())
+  revoked_at          DateTime?
+  ip_address          String?
+  user_agent          String?
+  accepted_by_user_id String?
+  channel             ConsentChannel
+  evidence_hash       String
+  created_at          DateTime       @default(now())
+
+  tenant            Tenant          @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  patient           Patient         @relation(fields: [patient_id], references: [id], onDelete: Restrict)
+  consentTemplate   ConsentTemplate @relation(fields: [consent_template_id], references: [id], onDelete: Restrict)
+  acceptedByUser    User?           @relation("ConsentAcceptedBy", fields: [accepted_by_user_id], references: [id], onDelete: SetNull)
+
+  @@index([tenant_id, patient_id, accepted_at])
+  @@index([tenant_id, patient_id, revoked_at])
+  @@index([consent_template_id])
+  @@map("patient_consents")
+}
+
+model ClinicalRecord {
+  id                 String               @id @default(uuid())
+  tenant_id          String               @default("default")
+  patient_id         String
+  doctor_id          String?
+  appointment_id     String?
+  type               ClinicalRecordType
+  title              String
+  content            String
+  source             ClinicalRecordSource
+  status             ClinicalRecordStatus @default(DRAFT)
+  signed_at          DateTime?
+  signed_by_user_id  String?
+  created_by_user_id String
+  created_at         DateTime             @default(now())
+  updated_at         DateTime             @updatedAt
+  voided_at          DateTime?
+  voided_reason      String?
+  voided_by_user_id  String?
+  hash               String
+  previous_hash      String?
+
+  tenant         Tenant       @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  patient        Patient      @relation(fields: [patient_id], references: [id], onDelete: Restrict)
+  doctor         DoctorProfile? @relation(fields: [doctor_id], references: [user_id], onDelete: SetNull)
+  appointment    Appointment? @relation(fields: [appointment_id], references: [id], onDelete: SetNull)
+  signedByUser   User?        @relation("ClinicalRecordSignedBy", fields: [signed_by_user_id], references: [id], onDelete: SetNull)
+  createdByUser  User         @relation("ClinicalRecordCreatedBy", fields: [created_by_user_id], references: [id], onDelete: Restrict)
+  voidedByUser   User?        @relation("ClinicalRecordVoidedBy", fields: [voided_by_user_id], references: [id], onDelete: SetNull)
+
+  @@index([tenant_id, patient_id, created_at])
+  @@index([tenant_id, appointment_id])
+  @@index([tenant_id, status, created_at])
+  @@index([tenant_id, doctor_id, created_at])
+  @@map("clinical_records")
+}
+
+model PatientDataRequest {
+  id                    String            @id @default(uuid())
+  tenant_id             String            @default("default")
+  patient_id            String
+  requested_by_user_id  String?
+  request_type          DataRequestType
+  status                DataRequestStatus @default(OPEN)
+  note                  String?
+  requested_at          DateTime          @default(now())
+  completed_at          DateTime?
+
+  tenant           Tenant  @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  patient          Patient @relation(fields: [patient_id], references: [id], onDelete: Restrict)
+  requestedByUser  User?   @relation(fields: [requested_by_user_id], references: [id], onDelete: SetNull)
+
+  @@index([tenant_id, patient_id, request_type, requested_at])
+  @@index([tenant_id, status, requested_at])
+  @@map("patient_data_requests")
+}
+
+model AiImageAnalysisLog {
+  id                  String                @id @default(uuid())
+  tenant_id           String                @default("default")
+  user_id             String?
+  role                Role?
+  source              String
+  image_mime_type     String
+  image_size_bytes    Int
+  image_type_detected String?
+  confidence          String?
+  created_at          DateTime              @default(now())
+  error_code          String?
+  status              AiImageAnalysisStatus
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id], onDelete: Restrict)
+  user   User?  @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([tenant_id, created_at])
+  @@index([tenant_id, user_id, created_at])
+  @@index([status])
+  @@map("ai_image_analysis_logs")
 }
 
 // ── WhatsApp Integration ────────────────────────────────────────────────────

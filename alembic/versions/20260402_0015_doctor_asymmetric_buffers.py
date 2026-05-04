@@ -20,6 +20,8 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
+    if not inspector.has_table("doctors"):
+        return
     doc_columns = {col["name"] for col in inspector.get_columns("doctors")}
     
     with op.batch_alter_table("doctors") as batch_op:
@@ -59,6 +61,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if not inspector.has_table("doctors"):
+        return
     if bind.dialect.name == "postgresql":
         op.execute("ALTER TABLE doctors DROP CONSTRAINT IF EXISTS ck_doctors_buffer_before_non_negative")
         op.execute("ALTER TABLE doctors DROP CONSTRAINT IF EXISTS ck_doctors_buffer_after_non_negative")

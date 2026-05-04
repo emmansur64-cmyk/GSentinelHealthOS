@@ -161,11 +161,12 @@ export type RetryResult = {
  */
 export async function retryFailedMessage(
   failedMessageId: string,
+  tenantId: string,
   userId: string,
 ): Promise<RetryResult> {
   // 1. Obtener mensaje fallido
   const failed = await prisma.failedMessage.findFirst({
-    where: { id: failedMessageId },
+    where: { id: failedMessageId, tenant_id: tenantId },
   });
 
   if (!failed) {
@@ -183,7 +184,7 @@ export async function retryFailedMessage(
   try {
     // 2. Marcar como retrying
     await prisma.failedMessage.updateMany({
-      where: { id: failedMessageId },
+      where: { id: failedMessageId, tenant_id: tenantId },
       data: {
         status: "retrying",
         retry_count: { increment: 1 },
@@ -226,7 +227,7 @@ export async function retryFailedMessage(
   } catch (error) {
     // Revertir estado
     await prisma.failedMessage.updateMany({
-      where: { id: failedMessageId },
+      where: { id: failedMessageId, tenant_id: tenantId },
       data: { status: "pending" },
     }).catch(() => { /* best effort */ });
 
@@ -249,11 +250,12 @@ export async function retryFailedMessage(
  */
 export async function resolveFailedMessage(
   failedMessageId: string,
+  tenantId: string,
   userId: string,
   notes?: string,
 ): Promise<void> {
   await prisma.failedMessage.updateMany({
-    where: { id: failedMessageId },
+    where: { id: failedMessageId, tenant_id: tenantId },
     data: {
       status: "resolved",
       resolved_at: new Date(),
@@ -273,11 +275,12 @@ export async function resolveFailedMessage(
  */
 export async function discardFailedMessage(
   failedMessageId: string,
+  tenantId: string,
   userId: string,
   reason: string,
 ): Promise<void> {
   await prisma.failedMessage.updateMany({
-    where: { id: failedMessageId },
+    where: { id: failedMessageId, tenant_id: tenantId },
     data: {
       status: "discarded",
       resolved_at: new Date(),
@@ -340,11 +343,15 @@ export type FailedMessageSummary = {
  * Lista mensajes fallidos para el dashboard.
  */
 export async function listFailedMessages(options: {
+  tenantId: string;
   status?: string;
   limit?: number;
   offset?: number;
 }): Promise<{ items: FailedMessageSummary[]; total: number }> {
-  const where = options.status ? { status: options.status as never } : {};
+  const where = {
+    tenant_id: options.tenantId,
+    ...(options.status ? { status: options.status as never } : {}),
+  };
 
   const [items, total] = await Promise.all([
     prisma.failedMessage.findMany({
@@ -372,16 +379,16 @@ export async function listFailedMessages(options: {
 /**
  * Obtiene detalles completos de un mensaje fallido.
  */
-export async function getFailedMessageDetail(id: string) {
+export async function getFailedMessageDetail(id: string, tenantId: string) {
   return prisma.failedMessage.findFirst({
-    where: { id },
+    where: { id, tenant_id: tenantId },
   });
 }
 
 /**
  * Estadísticas para el dashboard.
  */
-export async function getFailedMessageStats(): Promise<{
+export async function getFailedMessageStats(tenantId: string): Promise<{
   pending: number;
   retrying: number;
   resolved: number;
@@ -389,10 +396,10 @@ export async function getFailedMessageStats(): Promise<{
   total: number;
 }> {
   const [pending, retrying, resolved, discarded] = await Promise.all([
-    prisma.failedMessage.count({ where: { status: "pending" } }),
-    prisma.failedMessage.count({ where: { status: "retrying" } }),
-    prisma.failedMessage.count({ where: { status: "resolved" } }),
-    prisma.failedMessage.count({ where: { status: "discarded" } }),
+    prisma.failedMessage.count({ where: { tenant_id: tenantId, status: "pending" } }),
+    prisma.failedMessage.count({ where: { tenant_id: tenantId, status: "retrying" } }),
+    prisma.failedMessage.count({ where: { tenant_id: tenantId, status: "resolved" } }),
+    prisma.failedMessage.count({ where: { tenant_id: tenantId, status: "discarded" } }),
   ]);
 
   return {

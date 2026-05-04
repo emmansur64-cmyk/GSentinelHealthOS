@@ -27,7 +27,7 @@ def _load_dotenv_if_available() -> None:
 
     project_root = Path(__file__).resolve().parents[1]
     load_dotenv(project_root / ".env", override=False)
-    load_dotenv(project_root / ".env.local", override=True)
+    load_dotenv(project_root / ".env.local", override=False)
 
 
 _load_dotenv_if_available()

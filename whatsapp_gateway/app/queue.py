@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from redis.asyncio import Redis
 
-from shared.config import REDIS_URL, WHATSAPP_PROCESSED_TTL_SECONDS
+from shared.config import REDIS_URL, WHATSAPP_PROCESSED_TTL_SECONDS, create_redis_master_client
 
 
 class WhatsAppQueueProducer:
@@ -18,7 +18,7 @@ class WhatsAppQueueProducer:
 
     async def _client(self) -> Redis:
         if self._redis is None:
-            self._redis = Redis.from_url(self.redis_url, decode_responses=True)
+            self._redis = create_redis_master_client(decode_responses=True)
         return self._redis
 
     async def publish(self, message: Dict[str, Any]) -> bool:

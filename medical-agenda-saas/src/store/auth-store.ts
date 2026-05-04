@@ -9,7 +9,18 @@ type SessionUser = {
   tenant_id?: string;
   name: string;
   email: string;
-  role: "super_admin" | "clinic_owner" | "clinic_admin" | "admin" | "secretaria" | "receptionist" | "recepcionista" | "doctor" | "medico";
+  role:
+    | "super_admin"
+    | "clinic_owner"
+    | "clinic_admin"
+    | "admin"
+    | "secretaria"
+    | "receptionist"
+    | "recepcionista"
+    | "doctor"
+    | "medico"
+    | "auditor"
+    | "patient";
 };
 
 type AuthState = {

@@ -3,7 +3,6 @@
  * Acceso: secretaria, admin
  */
 import { fail, ok } from "@/lib/api-response";
-import { logAudit, requestMeta } from "@/lib/audit";
 import { requireTenant } from "@/middleware/tenantMiddleware";
 import { getAuthenticatedUser, hasRole } from "@/lib/server-auth";
 import {
@@ -28,8 +27,8 @@ export async function GET(request: Request) {
 
   try {
     const [messages, stats] = await Promise.all([
-      listFailedMessages({ status, limit, offset }),
-      getFailedMessageStats(),
+      listFailedMessages({ tenantId: tenant.tenant.id, status, limit, offset }),
+      getFailedMessageStats(tenant.tenant.id),
     ]);
 
     return ok({

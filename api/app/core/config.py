@@ -149,6 +149,16 @@ class Settings(BaseSettings):
         alias="HEALTH_PROVIDERS_UNKNOWN_IS_DEGRADED"
     )
 
+    # === META / WHATSAPP EMBEDDED SIGNUP ===
+    meta_app_id: str = Field(default="", alias="META_APP_ID")
+    meta_app_secret: str = Field(default="", alias="META_APP_SECRET")
+    meta_graph_api_version: str = Field(default="v21.0", alias="META_GRAPH_API_VERSION")
+    meta_oauth_redirect_uri: str = Field(default="", alias="META_OAUTH_REDIRECT_URI")
+    meta_embedded_signup_configuration_id: str = Field(
+        default="",
+        alias="META_EMBEDDED_SIGNUP_CONFIGURATION_ID",
+    )
+
     @property
     def origins_list(self) -> List[str]:
         """Convierte la cadena de orígenes en una lista."""

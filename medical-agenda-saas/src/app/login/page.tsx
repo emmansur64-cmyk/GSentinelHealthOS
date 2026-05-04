@@ -91,8 +91,16 @@ export default function LoginPage() {
       setAvailableTenants([]);
       setUser(payload.data);
       toast.success("Sesion iniciada");
-      router.push(getDashboardRouteByRole(payload.data.role));
+      const targetRoute = getDashboardRouteByRole(payload.data.role);
+      router.replace(targetRoute);
       router.refresh();
+
+      // Fallback defensivo: asegura navegacion completa aunque el router cliente falle.
+      setTimeout(() => {
+        if (window.location.pathname === "/login") {
+          window.location.assign(targetRoute);
+        }
+      }, 250);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Error de red al iniciar sesion");
     } finally {

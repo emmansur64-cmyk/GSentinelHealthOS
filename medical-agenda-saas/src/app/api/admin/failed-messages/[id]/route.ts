@@ -28,7 +28,7 @@ export async function GET(_request: Request, context: Params) {
 
   const { id } = await context.params;
 
-  const detail = await getFailedMessageDetail(id);
+  const detail = await getFailedMessageDetail(id, tenant.tenant.id);
   if (!detail) {
     return fail("Mensaje no encontrado", 404);
   }
@@ -66,7 +66,7 @@ export async function POST(request: Request, context: Params) {
 
     switch (action) {
       case "retry": {
-        const result = await retryFailedMessage(id, authUser.userId);
+        const result = await retryFailedMessage(id, tenant.tenant.id, authUser.userId);
 
         await logAudit({
           userId: authUser.userId,
@@ -87,7 +87,7 @@ export async function POST(request: Request, context: Params) {
       }
 
       case "resolve": {
-        await resolveFailedMessage(id, authUser.userId, reason);
+        await resolveFailedMessage(id, tenant.tenant.id, authUser.userId, reason);
 
         await logAudit({
           userId: authUser.userId,
@@ -108,7 +108,7 @@ export async function POST(request: Request, context: Params) {
           return fail("Se requiere una razón para descartar", 400);
         }
 
-        await discardFailedMessage(id, authUser.userId, reason);
+        await discardFailedMessage(id, tenant.tenant.id, authUser.userId, reason);
 
         await logAudit({
           userId: authUser.userId,

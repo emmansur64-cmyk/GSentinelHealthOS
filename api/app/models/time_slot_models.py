@@ -59,6 +59,7 @@ class TimeSlot(Base):
 
     # Identifiers
     slot_id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    clinic_id = Column(PGUUID(as_uuid=True), nullable=True, index=True)
     doctor_id = Column(PGUUID(as_uuid=True), ForeignKey("doctors.doctor_id", ondelete="CASCADE"), nullable=False, index=True)
     
     # Slot timing
@@ -112,6 +113,7 @@ class SlotAuditLog(Base):
 
     # Identifiers
     audit_id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    clinic_id = Column(PGUUID(as_uuid=True), nullable=True, index=True)
     slot_id = Column(PGUUID(as_uuid=True), ForeignKey("time_slots.slot_id", ondelete="CASCADE"), nullable=False)
     doctor_id = Column(PGUUID(as_uuid=True), ForeignKey("doctors.doctor_id", ondelete="CASCADE"), nullable=False)
     
@@ -152,6 +154,7 @@ class DoctorScheduleConfig(Base):
 
     # Identifiers
     config_id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    clinic_id = Column(PGUUID(as_uuid=True), nullable=True, index=True)
     doctor_id = Column(PGUUID(as_uuid=True), ForeignKey("doctors.doctor_id", ondelete="CASCADE"), nullable=False)
     
     # Day schedule (0=Monday, 6=Sunday)
@@ -210,6 +213,7 @@ class AppointmentV2(Base):
 
     # Identifiers
     appointment_id = Column(PGUUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    clinic_id = Column(PGUUID(as_uuid=True), nullable=True, index=True)
     slot_id = Column(PGUUID(as_uuid=True), ForeignKey("time_slots.slot_id", ondelete="RESTRICT"), nullable=False, unique=True)
     doctor_id = Column(PGUUID(as_uuid=True), ForeignKey("doctors.doctor_id", ondelete="CASCADE"), nullable=False)
     patient_id = Column(PGUUID(as_uuid=True), ForeignKey("patients.patient_id", ondelete="CASCADE"), nullable=False)

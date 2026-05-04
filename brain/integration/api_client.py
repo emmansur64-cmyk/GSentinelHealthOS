@@ -39,8 +39,13 @@ class APIClient:
         self.internal_api_key = internal_api_key
         self.client = httpx.AsyncClient(base_url=base_url)
 
-    def _headers(self) -> Dict[str, str]:
-        return {"X-Internal-Key": self.internal_api_key}
+    def _headers(self, *, client_id: str | None = None, clinic_id: str | None = None) -> Dict[str, str]:
+        headers = {"X-Internal-Key": self.internal_api_key}
+        if client_id:
+            headers["X-Client-Id"] = client_id
+        if clinic_id:
+            headers["X-Clinic-Id"] = clinic_id
+        return headers
 
     @staticmethod
     def _sanitize_endpoint(endpoint: str) -> str:
@@ -97,6 +102,8 @@ class APIClient:
         self,
         endpoint: str,
         params: Optional[Dict] = None,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
         *,
         raise_on_error: bool = False,
     ) -> Optional[Any]:
@@ -106,7 +113,7 @@ class APIClient:
             response = await self.client.get(
                 endpoint,
                 params=params,
-                headers=self._headers(),
+                headers=self._headers(client_id=client_id, clinic_id=clinic_id),
             )
             response.raise_for_status()
             logger.info(f"✓ GET {endpoint_label} - {response.status_code}")
@@ -127,6 +134,8 @@ class APIClient:
         self,
         endpoint: str,
         data: Dict,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
         *,
         raise_on_error: bool = False,
     ) -> Optional[Any]:
@@ -136,7 +145,7 @@ class APIClient:
             response = await self.client.post(
                 endpoint,
                 json=data,
-                headers=self._headers(),
+                headers=self._headers(client_id=client_id, clinic_id=clinic_id),
             )
             response.raise_for_status()
             logger.info(f"✓ POST {endpoint_label} - {response.status_code}")
@@ -153,11 +162,21 @@ class APIClient:
                 raise APIClientError(str(e)) from e
             return None
     
-    async def put(self, endpoint: str, data: Dict) -> Optional[Any]:
+    async def put(
+        self,
+        endpoint: str,
+        data: Dict,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ) -> Optional[Any]:
         """PUT request"""
         try:
             endpoint_label = self._sanitize_endpoint(endpoint)
-            response = await self.client.put(endpoint, json=data, headers=self._headers())
+            response = await self.client.put(
+                endpoint,
+                json=data,
+                headers=self._headers(client_id=client_id, clinic_id=clinic_id),
+            )
             response.raise_for_status()
             logger.info(f"✓ PUT {endpoint_label} - {response.status_code}")
             return response.json()
@@ -165,11 +184,19 @@ class APIClient:
             logger.error(f"Error PUT {self._sanitize_endpoint(endpoint)}: {str(e)}")
             return None
     
-    async def delete(self, endpoint: str) -> bool:
+    async def delete(
+        self,
+        endpoint: str,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ) -> bool:
         """DELETE request"""
         try:
             endpoint_label = self._sanitize_endpoint(endpoint)
-            response = await self.client.delete(endpoint, headers=self._headers())
+            response = await self.client.delete(
+                endpoint,
+                headers=self._headers(client_id=client_id, clinic_id=clinic_id),
+            )
             response.raise_for_status()
             logger.info(f"✓ DELETE {endpoint_label} - {response.status_code}")
             return True
@@ -177,11 +204,31 @@ class APIClient:
             logger.error(f"Error DELETE {self._sanitize_endpoint(endpoint)}: {str(e)}")
             return False
 
-    async def get_or_create_patient_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
-        return await self.get(f"/api/v1/patients/by-phone/{phone}")
+    async def get_or_create_patient_by_phone(
+        self,
+        phone: str,
+        *,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ) -> Optional[Dict[str, Any]]:
+        return await self.get(
+            f"/api/v1/patients/by-phone/{phone}",
+            client_id=client_id,
+            clinic_id=clinic_id,
+        )
 
-    async def list_doctors_by_specialty(self, specialty: str) -> list[Dict[str, Any]]:
-        response = await self.get(f"/api/v1/doctors/specialty/{specialty}")
+    async def list_doctors_by_specialty(
+        self,
+        specialty: str,
+        *,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ) -> list[Dict[str, Any]]:
+        response = await self.get(
+            f"/api/v1/doctors/specialty/{specialty}",
+            client_id=client_id,
+            clinic_id=clinic_id,
+        )
         if isinstance(response, list):
             return response
         return []
@@ -193,6 +240,8 @@ class APIClient:
         doctor_id: str,
         appointment_at: datetime,
         reason: str,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
     ) -> Dict[str, Any]:
         response = await self.post(
             "/api/v1/appointments",
@@ -203,23 +252,91 @@ class APIClient:
                 "reason": reason,
                 "status": "scheduled",
             },
+            client_id=client_id,
+            clinic_id=clinic_id,
             raise_on_error=True,
         )
         if not isinstance(response, dict):
             raise APIClientError("La API devolvio una respuesta invalida al crear la cita")
         return response
 
-    async def get_patient_appointments(self, patient_id: str) -> list[Dict[str, Any]]:
-        response = await self.get(f"/api/v1/appointments/patient/{patient_id}")
+    async def get_patient_appointments(
+        self,
+        patient_id: str,
+        *,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ) -> list[Dict[str, Any]]:
+        response = await self.get(
+            f"/api/v1/appointments/patient/{patient_id}",
+            client_id=client_id,
+            clinic_id=clinic_id,
+        )
         if isinstance(response, list):
             return response
         return []
 
-    async def cancel_appointment(self, appointment_id: str) -> Dict[str, Any]:
+    async def get_doctor_appointments(
+        self,
+        doctor_id: str,
+        *,
+        date_from: datetime,
+        date_to: datetime,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ) -> list[Dict[str, Any]]:
+        response = await self.get(
+            f"/api/v1/appointments/doctor/{doctor_id}",
+            params={
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+            },
+            client_id=client_id,
+            clinic_id=clinic_id,
+        )
+        if isinstance(response, list):
+            return response
+        return []
+
+    async def upsert_whatsapp_patient(
+        self,
+        *,
+        full_name: str,
+        dni: str,
+        phone: str,
+        email: str | None,
+        age: int,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ) -> Dict[str, Any]:
+        response = await self.post(
+            "/api/v1/patients/whatsapp-upsert",
+            {
+                "full_name": full_name,
+                "dni": dni,
+                "phone": phone,
+                "email": email,
+                "age": age,
+            },
+            client_id=client_id,
+            clinic_id=clinic_id,
+            raise_on_error=True,
+        )
+        if not isinstance(response, dict):
+            raise APIClientError("Respuesta invalida al upsert de paciente WhatsApp")
+        return response
+
+    async def cancel_appointment(
+        self,
+        appointment_id: str,
+        *,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
+    ) -> Dict[str, Any]:
         try:
             response = await self.client.delete(
                 f"/api/v1/appointments/{appointment_id}",
-                headers=self._headers(),
+                headers=self._headers(client_id=client_id, clinic_id=clinic_id),
             )
             response.raise_for_status()
             payload = response.json()

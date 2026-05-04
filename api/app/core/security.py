@@ -79,6 +79,8 @@ class TokenData(BaseModel):
     role: Optional[str] = None
     username: Optional[str] = None
     doctor_id: Optional[str] = None
+    client_id: Optional[str] = None
+    clinic_id: Optional[str] = None
     type: str = "user"  # "user" o "service"
 
 
@@ -94,6 +96,8 @@ class UserAuth(BaseModel):
     username: str
     role: str = "doctor"
     doctor_id: Optional[str] = None
+    client_id: Optional[str] = None
+    clinic_id: Optional[str] = None
     email: str
     scopes: list[str]
     is_internal: bool = False
@@ -183,6 +187,8 @@ def verify_jwt_token(token: str) -> TokenData:
         role: Optional[str] = payload.get("role")
         username: Optional[str] = payload.get("username")
         doctor_id: Optional[str] = payload.get("doctor_id")
+        client_id: Optional[str] = payload.get("client_id")
+        clinic_id: Optional[str] = payload.get("clinic_id")
         
         if subject is None:
             raise HTTPException(
@@ -197,6 +203,8 @@ def verify_jwt_token(token: str) -> TokenData:
             role=role,
             username=username,
             doctor_id=doctor_id,
+            client_id=client_id,
+            clinic_id=clinic_id,
             type=payload.get("type", "user"),
         )
     
@@ -277,6 +285,8 @@ async def get_current_user(
         username=token_data.username or token_data.subject,
         role=token_data.role or "doctor",
         doctor_id=token_data.doctor_id,
+        client_id=token_data.client_id,
+        clinic_id=token_data.clinic_id,
         email=token_data.subject,
         scopes=token_data.scopes,
         is_internal=False
@@ -340,6 +350,8 @@ async def validate_hybrid_auth(
                 "username": token_data.username,
                 "role": token_data.role,
                 "doctor_id": token_data.doctor_id,
+                "client_id": token_data.client_id,
+                "clinic_id": token_data.clinic_id,
                 "scopes": token_data.scopes,
                 "is_internal": False
             }

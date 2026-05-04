@@ -14,6 +14,7 @@ type TokenResponse = GraphError & {
   access_token?: string;
   token_type?: string;
   expires_in?: number;
+  refresh_token?: string;
 };
 
 type BusinessesResponse = GraphError & {
@@ -37,11 +38,20 @@ type PhoneNumbersResponse = GraphError & {
 export function getMetaOAuthConfig() {
   const appId = process.env.META_APP_ID?.trim();
   const appSecret = process.env.META_APP_SECRET?.trim();
-  const redirectUri = process.env.META_REDIRECT_URI?.trim();
-  const apiVersion = process.env.META_GRAPH_VERSION?.trim() || DEFAULT_GRAPH_VERSION;
+  const redirectUri = (process.env.META_OAUTH_REDIRECT_URI || process.env.META_REDIRECT_URI)?.trim();
+  const apiVersion = (process.env.META_GRAPH_API_VERSION || process.env.META_GRAPH_VERSION)?.trim() || DEFAULT_GRAPH_VERSION;
+  const encryptionKey = process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
 
-  if (!appId || !appSecret || !redirectUri) {
-    return { ok: false as const, missing: ["META_APP_ID", "META_APP_SECRET", "META_REDIRECT_URI"].filter((key) => !process.env[key]) };
+  if (!appId || !appSecret || !redirectUri || !encryptionKey) {
+    return {
+      ok: false as const,
+      missing: [
+        !appId ? "META_APP_ID" : null,
+        !appSecret ? "META_APP_SECRET" : null,
+        !redirectUri ? "META_OAUTH_REDIRECT_URI" : null,
+        !encryptionKey ? "WHATSAPP_TOKEN_ENCRYPTION_KEY" : null,
+      ].filter((key): key is string => Boolean(key)),
+    };
   }
 
   return { ok: true as const, appId, appSecret, redirectUri, apiVersion };
@@ -94,14 +104,20 @@ export async function exchangeCodeForToken(input: {
   return {
     accessToken: data.access_token,
     encryptedAccessToken: encryptText(data.access_token),
+    encryptedRefreshToken: data.refresh_token ? encryptText(data.refresh_token) : null,
     tokenType: data.token_type ?? "bearer",
     expiresAt: data.expires_in ? new Date(Date.now() + data.expires_in * 1000) : null,
   };
 }
 
+function normalizePhone(value: string | null | undefined) {
+  return String(value ?? "").replace(/[^\d+]/g, "");
+}
+
 export async function discoverWhatsAppAccount(input: {
   accessToken: string;
   apiVersion: string;
+  expectedPhoneNumber?: string | null;
 }) {
   const meResponse = await fetch(`https://graph.facebook.com/${input.apiVersion}/me?fields=businesses`, {
     headers: { Authorization: `Bearer ${input.accessToken}` },
@@ -121,7 +137,10 @@ export async function discoverWhatsAppAccount(input: {
     headers: { Authorization: `Bearer ${input.accessToken}` },
   });
   const phones = await readGraphJson<PhoneNumbersResponse>(phoneResponse);
-  const phone = phones.data?.[0];
+  const expected = normalizePhone(input.expectedPhoneNumber);
+  const phone = expected
+    ? phones.data?.find((item) => normalizePhone(item.display_phone_number ?? item.verified_name).endsWith(expected.replace(/^\+/, "")))
+    : phones.data?.[0];
   if (!phone?.id) throw new Error("No WhatsApp phone number found for selected WABA");
 
   return {

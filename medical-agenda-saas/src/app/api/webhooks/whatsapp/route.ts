@@ -18,7 +18,6 @@ import { observeRequest, observeStageLatency } from "@/lib/observability/metrics
 
 let workersBootPromise: Promise<void> | null = null;
 const QUEUE_ENQUEUE_TIMEOUT_MS = 1500;
-const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID?.trim() || "default";
 
 function shouldAutoBootWorkers(): boolean {
   const raw = (process.env.WHATSAPP_AUTO_BOOT_WORKERS ?? "").trim().toLowerCase();
@@ -67,7 +66,7 @@ async function dispatchIncomingMessage(messageId: string): Promise<"queued" | "i
   }
 }
 
-async function resolveTenantFromPhoneNumber(phoneNumberId: string): Promise<{ tenantId: string; accountId: string | null }> {
+async function resolveTenantFromPhoneNumber(phoneNumberId: string): Promise<{ tenantId: string; accountId: string | null } | null> {
   try {
     const account = await prisma.clinicWhatsappAccount.findFirst({
       where: {
@@ -88,12 +87,11 @@ async function resolveTenantFromPhoneNumber(phoneNumberId: string): Promise<{ te
     logServerError("webhook.tenant_resolution.error", error, { phone_number_id: phoneNumberId });
   }
 
-  logServer("warn", "webhook.tenant_resolution.fallback_global", {
+  logServer("warn", "webhook.tenant_resolution.denied_unknown_phone_number", {
     phone_number_id: phoneNumberId,
-    tenant_id: DEFAULT_TENANT_ID,
   });
 
-  return { tenantId: DEFAULT_TENANT_ID, accountId: null };
+  return null;
 }
 
 // ── GET /api/webhooks/whatsapp ─ Verificación inicial de Meta ─────────────
@@ -202,6 +200,13 @@ export async function POST(request: Request) {
       }
 
       const resolvedTenant = await resolveTenantFromPhoneNumber(msg.phoneNumberId);
+      if (!resolvedTenant) {
+        logServer("warn", "webhook.message.rejected_unknown_tenant", {
+          message_id: msg.messageId,
+          phone_number_id: msg.phoneNumberId,
+        });
+        continue;
+      }
 
       await prisma.incomingMessage.create({
         data: {

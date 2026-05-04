@@ -72,6 +72,22 @@ export async function verifySlotCoverageInRules(
   const startHHmm = `${String(input.slotStart.getHours()).padStart(2, "0")}:${String(input.slotStart.getMinutes()).padStart(2, "0")}`;
   const endHHmm = `${String(input.slotEnd.getHours()).padStart(2, "0")}:${String(input.slotEnd.getMinutes()).padStart(2, "0")}`;
 
+  const monthlySlot = await tx.doctorAvailabilitySlot.findFirst({
+    where: {
+      doctor_id: input.doctorId,
+      tenant_id: input.tenantId,
+      is_available: true,
+      date: dayDate,
+      start_time: { lte: startHHmm },
+      end_time: { gte: endHHmm },
+    },
+    select: { id: true },
+  });
+
+  if (monthlySlot) {
+    return true;
+  }
+
   const coveringRule = await tx.availabilityRule.findFirst({
     where: {
       doctor_id: input.doctorId,

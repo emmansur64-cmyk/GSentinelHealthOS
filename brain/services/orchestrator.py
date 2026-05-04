@@ -10,9 +10,12 @@ from brain.core.decision_core import process_input as _decision_core_process
 from brain.core.state_manager import StateManager
 from brain.decision_engine import triage_engine
 from brain.integration.api_client import APIClient, APIClientError
+from brain.services.appointment_scheduler_service import AppointmentSchedulerService
+from brain.services.whatsapp_appointment_intake_service import WhatsAppAppointmentIntakeService
 from brain.ml import no_show as no_show_engine
 from MetaBrain.nlu_engine import NLUEngine
 from brain.ml.no_show_predictor import predictor as no_show_predictor
+from brain.orchestration.orchestrator import _contains_security_keyword, _SAFE_REDIRECT
 from shared.utils import setup_logger
 
 logger = setup_logger(__name__)
@@ -32,10 +35,21 @@ class BrainOrchestrator:
         self.api_client = api_client
         self.nlu_engine = nlu_engine
         self.no_show_predictor = no_show_predictor
+        self.scheduler_service = AppointmentSchedulerService(
+            api_client=api_client,
+            state_manager=state_manager,
+        )
+        self.whatsapp_intake_service = WhatsAppAppointmentIntakeService(
+            state_manager=state_manager,
+            api_client=api_client,
+            scheduler=self.scheduler_service,
+        )
 
     async def handle_message(self, message: dict[str, Any]) -> dict[str, Any]:
         phone = self._resolve_phone(message)
         text = (message.get("text") or "").strip()
+        tenant_client_id = message.get("client_id")
+        tenant_clinic_id = message.get("clinic_id")
 
         if not phone:
             raise ValueError("El mensaje entrante no contiene telefono")
@@ -43,10 +57,23 @@ class BrainOrchestrator:
         if not text:
             return self._response(phone, "Necesito que me escribas un mensaje para poder ayudarte.")
 
-        current_state = await self.state_manager.get_state(phone)
+        # ── Filtro server-side anti-jailbreak / anti-exfiltración ─────────────
+        if _contains_security_keyword(text):
+            logger.warning(
+                "[SECURITY] Mensaje bloqueado por keyword en phone=%s: %.80s",
+                phone, text,
+            )
+            return self._response(phone, _SAFE_REDIRECT)
+        # ─────────────────────────────────────────────────────────────────────
+
+        current_state = await self.state_manager.get_state(phone, clinic_id=tenant_clinic_id)
         
         # Obtener paciente para inferir el doctor_id (lecciones del médico)
-        patient = await self.api_client.get_or_create_patient_by_phone(phone)
+        patient = await self.api_client.get_or_create_patient_by_phone(
+            phone,
+            client_id=tenant_client_id,
+            clinic_id=tenant_clinic_id,
+        )
         if not patient:
             logger.error("No se pudo resolver el shadow profile para %s", phone)
             return self._response(
@@ -57,7 +84,11 @@ class BrainOrchestrator:
         # Intentar obtener doctor_id del appointment más reciente del paciente
         doctor_id = None
         try:
-            appointments = await self.api_client.get_patient_appointments(patient.get("id", ""))
+            appointments = await self.api_client.get_patient_appointments(
+                patient.get("id", ""),
+                client_id=tenant_client_id,
+                clinic_id=tenant_clinic_id,
+            )
             if appointments and isinstance(appointments, list):
                 # Usar el primer appointment (más reciente) como referencia del doctor
                 latest_appointment = appointments[0]
@@ -78,15 +109,31 @@ class BrainOrchestrator:
         
         intent = analysis["intent"]
 
+        intake_result = await self.whatsapp_intake_service.process(
+            phone=phone,
+            text=text,
+            clinic_id=tenant_clinic_id,
+            client_id=tenant_client_id,
+            phone_number_id=str(message.get("phone_number_id") or "") or None,
+            current_state=current_state,
+            inferred_intent=intent,
+        )
+        if intake_result is not None:
+            return self._response(phone, intake_result.text, metadata=intake_result.metadata)
+
         if intent == "SYSTEM_RESET":
             await self.state_manager.incr_metric("system_reset_total")
-            await self.state_manager.clear_state(phone)
+            await self.state_manager.clear_state(phone, clinic_id=tenant_clinic_id)
             return self._response(
                 phone,
                 "Entendido. Cancelamos el flujo actual. Cuando quieras, empezamos de nuevo.",
             )
 
         context = self._merge_context(current_state.get("context", {}), analysis["entities"], patient)
+        if tenant_client_id:
+            context["client_id"] = tenant_client_id
+        if tenant_clinic_id:
+            context["clinic_id"] = tenant_clinic_id
         step = current_state.get("step", "idle")
 
         if step == "awaiting_cancellation_selection":
@@ -96,7 +143,7 @@ class BrainOrchestrator:
             return await self._handle_doctor_selection(phone, text, context)
 
         if step == "awaiting_specialty" and context.get("specialty") is None:
-            await self.state_manager.set_state(phone, {"step": "awaiting_specialty", "context": context})
+            await self.state_manager.set_state(phone, {"step": "awaiting_specialty", "context": context}, clinic_id=tenant_clinic_id)
             return self._response(phone, "Necesito la especialidad medica para continuar. Por ejemplo: cardiologia o pediatria.")
 
         if step in {"awaiting_specialty", "awaiting_datetime"} or intent == "book_appointment":
@@ -136,7 +183,7 @@ class BrainOrchestrator:
         await self.state_manager.incr_metric("triage_evaluated_total")
 
         if triage_out["triage_level"] in {"rojo", "naranja"}:
-            await self.state_manager.clear_state(phone)
+            await self.state_manager.clear_state(phone, clinic_id=tenant_clinic_id)
             return self._response(
                 phone,
                 f"⚠️ Triage {triage_out['triage_level'].upper()}: {triage_out['action']}",
@@ -152,7 +199,7 @@ class BrainOrchestrator:
                 metadata=triage_out,
             )
 
-        await self.state_manager.clear_state(phone)
+        await self.state_manager.clear_state(phone, clinic_id=tenant_clinic_id)
         return self._response(
             phone,
             "Soy GSentinel Brain. Puedo ayudarte a agendar una cita medica. Escribe, por ejemplo: 'Quiero un turno con cardiologia manana a las 10'.",
@@ -170,18 +217,30 @@ class BrainOrchestrator:
         selected_doctor_name = context.get("selected_doctor_name")
 
         if specialty is None:
-            await self.state_manager.set_state(phone, {"step": "awaiting_specialty", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_specialty", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             return self._response(phone, "Claro. ¿Para que especialidad buscas turno?")
 
         if context.get("ambiguous_date"):
-            await self.state_manager.set_state(phone, {"step": "awaiting_datetime", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_datetime", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             return self._response(
                 phone,
                 f"Cuando dices '{context.get('date_hint')}', necesito confirmacion. Indicame una fecha concreta como 12/04 o '12 de abril a las 15:30'.",
             )
 
         if appointment_at is None:
-            await self.state_manager.set_state(phone, {"step": "awaiting_datetime", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_datetime", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             if context.get("missing_time") and context.get("date_hint"):
                 return self._response(
                     phone,
@@ -193,7 +252,11 @@ class BrainOrchestrator:
             )
 
         if appointment_at <= datetime.utcnow():
-            await self.state_manager.set_state(phone, {"step": "awaiting_datetime", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_datetime", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             return self._response(phone, "La fecha y hora deben estar en el futuro. Indicame otro horario.")
 
         if selected_doctor_id:
@@ -215,9 +278,17 @@ class BrainOrchestrator:
                 },
             )
 
-        doctors = await self.api_client.list_doctors_by_specialty(specialty)
+        doctors = await self.api_client.list_doctors_by_specialty(
+            specialty,
+            client_id=context.get("client_id"),
+            clinic_id=context.get("clinic_id"),
+        )
         if not doctors:
-            await self.state_manager.set_state(phone, {"step": "awaiting_specialty", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_specialty", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             return self._response(
                 phone,
                 f"No encontre doctores disponibles para {specialty}. Puedes indicarme otra especialidad.",
@@ -233,7 +304,11 @@ class BrainOrchestrator:
                 for doctor in doctors
             ]
             context["doctor_options"] = options
-            await self.state_manager.set_state(phone, {"step": "awaiting_doctor_selection", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_doctor_selection", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             return self._response(phone, self._build_doctor_selection_prompt(options, specialty))
 
         # ── Predicción de no-show antes de confirmar el slot ─────────────────
@@ -255,7 +330,11 @@ class BrainOrchestrator:
         options = context.get("doctor_options") or []
         selected = self._resolve_option_from_text(text, options)
         if selected is None:
-            await self.state_manager.set_state(phone, {"step": "awaiting_doctor_selection", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_doctor_selection", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             return self._response(phone, self._build_doctor_selection_prompt(options, context.get("specialty")))
 
         context["selected_doctor_id"] = selected["id"]
@@ -263,7 +342,11 @@ class BrainOrchestrator:
         context.pop("doctor_options", None)
         appointment_at = self._deserialize_datetime(context.get("appointment_at"))
         if appointment_at is None:
-            await self.state_manager.set_state(phone, {"step": "awaiting_datetime", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_datetime", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             return self._response(
                 phone,
                 f"Perfecto, trabajaré con {selected.get('name')}. Ahora dime fecha y hora de la cita.",
@@ -276,9 +359,13 @@ class BrainOrchestrator:
         phone: str,
         context: dict[str, Any],
     ) -> dict[str, Any]:
-        appointments = await self.api_client.get_patient_appointments(context["patient_id"])
+        appointments = await self.api_client.get_patient_appointments(
+            context["patient_id"],
+            client_id=context.get("client_id"),
+            clinic_id=context.get("clinic_id"),
+        )
         if not appointments:
-            await self.state_manager.clear_state(phone)
+            await self.state_manager.clear_state(phone, clinic_id=context.get("clinic_id"))
             return self._response(phone, "No encontre citas activas para cancelar.")
 
         if len(appointments) == 1:
@@ -292,7 +379,11 @@ class BrainOrchestrator:
             for index, appointment in enumerate(appointments, start=1)
         ]
         context["cancellable_appointments"] = options
-        await self.state_manager.set_state(phone, {"step": "awaiting_cancellation_selection", "context": context})
+        await self.state_manager.set_state(
+            phone,
+            {"step": "awaiting_cancellation_selection", "context": context},
+            clinic_id=context.get("clinic_id"),
+        )
         prompt = "Estas son tus citas activas. Responde con el numero o el ID de la que quieres cancelar:\n"
         prompt += "\n".join(option["label"] for option in options)
         return self._response(phone, prompt)
@@ -306,7 +397,11 @@ class BrainOrchestrator:
         options = context.get("cancellable_appointments") or []
         selected = self._resolve_option_from_text(text, options)
         if selected is None:
-            await self.state_manager.set_state(phone, {"step": "awaiting_cancellation_selection", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_cancellation_selection", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             prompt = "No pude identificar la cita a cancelar. Responde con el numero o el ID exacto.\n"
             prompt += "\n".join(option["label"] for option in options)
             return self._response(phone, prompt)
@@ -320,12 +415,20 @@ class BrainOrchestrator:
         appointment: dict[str, Any],
     ) -> dict[str, Any]:
         try:
-            cancelled = await self.api_client.cancel_appointment(appointment["id"])
+            cancelled = await self.api_client.cancel_appointment(
+                appointment["id"],
+                client_id=context.get("client_id"),
+                clinic_id=context.get("clinic_id"),
+            )
         except APIClientError as exc:
-            await self.state_manager.set_state(phone, {"step": "awaiting_cancellation_selection", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_cancellation_selection", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             return self._response(phone, f"No pude cancelar la cita: {exc}. Intenta nuevamente.")
 
-        await self.state_manager.clear_state(phone)
+        await self.state_manager.clear_state(phone, clinic_id=context.get("clinic_id"))
         date_label = self._format_datetime(cancelled.get("date_time"))
         return self._response(
             phone,
@@ -341,13 +444,21 @@ class BrainOrchestrator:
     ) -> dict[str, Any]:
         appointment_at = self._deserialize_datetime(context.get("appointment_at"))
         if appointment_at is None:
-            await self.state_manager.set_state(phone, {"step": "awaiting_datetime", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_datetime", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             return self._response(phone, "Necesito fecha y hora para confirmar la cita.")
 
         # Prediccion no-show en worker Brain (ONNX + fallback deterministico)
         no_show_probability = 0.0
         try:
-            patient_history = await self.api_client.get_patient_appointments(context["patient_id"])
+            patient_history = await self.api_client.get_patient_appointments(
+                context["patient_id"],
+                client_id=context.get("client_id"),
+                clinic_id=context.get("clinic_id"),
+            )
             previous_cancellations = sum(
                 1
                 for appt in patient_history
@@ -374,7 +485,9 @@ class BrainOrchestrator:
             try:
                 no_show_probability = no_show_engine.predict({
                     "patient_history": await self.api_client.get_patient_appointments(
-                        context.get("patient_id", "")
+                        context.get("patient_id", ""),
+                        client_id=context.get("client_id"),
+                        clinic_id=context.get("clinic_id"),
                     ) or [],
                     "age": context.get("age") if isinstance(context.get("age"), int) else None,
                     "previous_cancellations": context.get("previous_cancellations") or 0,
@@ -394,15 +507,21 @@ class BrainOrchestrator:
                 doctor_id=doctor["id"],
                 appointment_at=appointment_at,
                 reason=reason,
+                client_id=context.get("client_id"),
+                clinic_id=context.get("clinic_id"),
             )
         except APIClientError as exc:
-            await self.state_manager.set_state(phone, {"step": "awaiting_datetime", "context": context})
+            await self.state_manager.set_state(
+                phone,
+                {"step": "awaiting_datetime", "context": context},
+                clinic_id=context.get("clinic_id"),
+            )
             return self._response(
                 phone,
                 f"No pude confirmar la cita: {exc}. Indica otro horario o intenta mas tarde.",
             )
 
-        await self.state_manager.clear_state(phone)
+        await self.state_manager.clear_state(phone, clinic_id=context.get("clinic_id"))
         doctor_name = doctor.get("name", "el doctor asignado")
         specialty = doctor.get("specialty") or context.get("specialty")
         date_label = appointment_at.strftime("%d/%m/%Y a las %H:%M")
@@ -436,7 +555,9 @@ class BrainOrchestrator:
         context = dict(context)  # copia defensiva
         try:
             patient_history = await self.api_client.get_patient_appointments(
-                context.get("patient_id", "")
+                context.get("patient_id", ""),
+                client_id=context.get("client_id"),
+                clinic_id=context.get("clinic_id"),
             )
             age = context.get("age")
             if not isinstance(age, int):
@@ -471,7 +592,9 @@ class BrainOrchestrator:
                     "Indicame una nueva fecha y hora."
                 )
                 await self.state_manager.set_state(
-                    phone, {"step": "awaiting_datetime", "context": context}
+                    phone,
+                    {"step": "awaiting_datetime", "context": context},
+                    clinic_id=context.get("clinic_id"),
                 )
         except Exception as exc:
             logger.warning("No se pudo calcular no-show en _evaluate_no_show: %s", exc)

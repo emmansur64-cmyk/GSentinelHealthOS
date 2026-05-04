@@ -63,6 +63,8 @@ class BookingQueueService:
         appointment_data: AppointmentCreate,
         created_by: str,
         idempotency_key: str,
+        client_id: str | None = None,
+        clinic_id: str | None = None,
     ) -> dict[str, Any]:
         slot_key = self.build_slot_key(appointment_data.doctor_id, appointment_data.date_time)
         shard = self._shard_for_slot(slot_key)
@@ -90,6 +92,8 @@ class BookingQueueService:
                 "reason": appointment_data.reason or "",
                 "status": appointment_data.status,
                 "created_by": created_by,
+                "client_id": client_id,
+                "clinic_id": clinic_id,
                 "slot_key": slot_key,
                 "idempotency_key": idempotency_key,
             }

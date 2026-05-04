@@ -51,7 +51,13 @@ class BrainWorker:
 
     async def _ensure_runtime(self) -> None:
         if self.redis is None:
-            self.redis = Redis.from_url(self.redis_url, decode_responses=True)
+            self.redis = Redis.from_url(
+                self.redis_url,
+                decode_responses=True,
+                socket_keepalive=True,
+                retry_on_timeout=True,
+                health_check_interval=30,
+            )
 
         if self.state_manager is None:
             self.state_manager = StateManager(client=self.redis)
@@ -87,18 +93,19 @@ class BrainWorker:
             return False
 
         phone = message.get("phone") or message.get("from")
+        clinic_id = message.get("clinic_id")
         if not phone:
             logger.warning("Mensaje sin telefono, se descarta")
             return False
 
-        if await state_manager.is_bot_paused(phone):
+        if await state_manager.is_bot_paused(phone, clinic_id=clinic_id):
             logger.info(
                 "Ignorando mensaje de %s: Bot PAUSADO por medico.",
                 mask_phone(phone),
             )
             return False
 
-        async with state_manager.conversation_lock(phone) as locked:
+        async with state_manager.conversation_lock(phone, clinic_id=clinic_id) as locked:
             if not locked:
                 await state_manager.incr_metric("lock_contention_total")
                 response = {
@@ -119,6 +126,17 @@ class BrainWorker:
                         "text": "No pude procesar tu mensaje ahora mismo. Intenta nuevamente en unos minutos.",
                     }
                 await state_manager.incr_metric("messages_processed_total")
+
+        incoming_client_id = message.get("client_id")
+        incoming_clinic_id = message.get("clinic_id")
+        if incoming_client_id:
+            response.setdefault("client_id", incoming_client_id)
+            response.setdefault("to", response.get("phone"))
+            response.setdefault("message", response.get("text"))
+            if incoming_clinic_id:
+                response.setdefault("clinic_id", incoming_clinic_id)
+            if message.get("phone_number_id"):
+                response.setdefault("phone_number_id", message.get("phone_number_id"))
 
         await redis_client.execute_command(
             "LPUSH",

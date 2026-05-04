@@ -15,9 +15,14 @@ class Patient(Base):
     __tablename__ = "patients"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id"), nullable=True, index=True)
+    clinic_id = Column(UUID(as_uuid=True), ForeignKey("clinics.id"), nullable=True, index=True)
     name = Column(String(100), nullable=False)
+    full_name = Column(String(255), nullable=True)
+    dni = Column(String(20), nullable=True, index=True)
     phone = Column(String(20), nullable=False, unique=True, index=True)  # E.164 format
     email = Column(String(255), nullable=True, unique=True, index=True)
+    age = Column(Integer, nullable=True)
     
     # Auditoría
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow())
@@ -33,8 +38,11 @@ class Doctor(Base):
     __tablename__ = "doctors"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id"), nullable=True, index=True)
+    clinic_id = Column(UUID(as_uuid=True), ForeignKey("clinics.id"), nullable=True, index=True)
     name = Column(String(100), nullable=False)
     specialization = Column(String(100), nullable=False)
+    status = Column(String(20), nullable=False, default="active", index=True)
     email = Column(String(255), nullable=False, unique=True, index=True)
     phone = Column(String(20), nullable=True)  # Teléfono del doctor
     buffer_before_minutes = Column(Integer, nullable=False, default=0)
@@ -50,6 +58,15 @@ class Doctor(Base):
     # Relaciones
     appointments = relationship("Appointment", back_populates="doctor", cascade="all, delete-orphan")
 
+    @property
+    def specialty(self) -> str:
+        """Alias de compatibilidad para código que usa `specialty`."""
+        return self.specialization
+
+    @specialty.setter
+    def specialty(self, value: str) -> None:
+        self.specialization = value
+
 
 class Appointment(Base):
     """Modelo de cita médica con control de conflictos."""
@@ -64,6 +81,8 @@ class Appointment(Base):
     )
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id"), nullable=True, index=True)
+    clinic_id = Column(UUID(as_uuid=True), ForeignKey("clinics.id"), nullable=True, index=True)
     
     # Relaciones
     doctor_id = Column(UUID(as_uuid=True), ForeignKey("doctors.id"), nullable=False, index=True)
@@ -72,6 +91,14 @@ class Appointment(Base):
     # Datos de cita
     date_time = Column(DateTime, nullable=False, index=True)  # Hora exacta
     reason = Column(Text, nullable=True)
+    specialty = Column(String(120), nullable=True, index=True)
+    source = Column(String(50), nullable=True, index=True)
+    whatsapp_conversation_id = Column(String(120), nullable=True, index=True)
+    patient_full_name = Column(String(255), nullable=True)
+    patient_dni = Column(String(20), nullable=True)
+    patient_phone = Column(String(30), nullable=True)
+    patient_email = Column(String(255), nullable=True)
+    patient_age = Column(Integer, nullable=True)
     
     # Estado
     status = Column(String(20), nullable=False, default="scheduled")  # scheduled, completed, cancelled
@@ -94,6 +121,15 @@ class Appointment(Base):
     # Relaciones
     doctor = relationship("Doctor", back_populates="appointments")
     patient = relationship("Patient", back_populates="appointments")
+
+    @property
+    def appointment_datetime(self):
+        """Alias de compatibilidad con nomenclatura slot-based."""
+        return self.date_time
+
+    @appointment_datetime.setter
+    def appointment_datetime(self, value) -> None:
+        self.date_time = value
 
 
 class IdempotencyRecord(Base):
@@ -122,6 +158,8 @@ class NotificationOutbox(Base):
     __tablename__ = "notification_outbox"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id"), nullable=True, index=True)
+    clinic_id = Column(UUID(as_uuid=True), ForeignKey("clinics.id"), nullable=True, index=True)
     event_type = Column(String(100), nullable=False, index=True)
     aggregate_type = Column(String(50), nullable=False, default="appointment")
     aggregate_id = Column(UUID(as_uuid=True), nullable=False, index=True)
@@ -141,6 +179,8 @@ class GoogleOutbox(Base):
     __tablename__ = "google_outbox"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id"), nullable=True, index=True)
+    clinic_id = Column(UUID(as_uuid=True), ForeignKey("clinics.id"), nullable=True, index=True)
     appointment_id = Column(UUID(as_uuid=True), ForeignKey("appointments.id", ondelete="CASCADE"), nullable=False, index=True)
     action = Column(String(20), nullable=False, index=True)
     payload = Column(JSON, nullable=False)
@@ -183,6 +223,8 @@ class BotLesson(Base):
     __tablename__ = "bot_knowledge_base"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id"), nullable=True, index=True)
+    clinic_id = Column(UUID(as_uuid=True), ForeignKey("clinics.id"), nullable=True, index=True)
     
     # Patrón que el usuario dijo mal
     pattern = Column(String(200), nullable=False, index=True)

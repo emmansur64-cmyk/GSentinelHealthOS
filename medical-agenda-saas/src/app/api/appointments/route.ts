@@ -2,6 +2,7 @@ import { AppointmentStatus, Prisma } from "@prisma/client";
 
 import { fail, ok } from "@/lib/api-response";
 import { logAudit, requestMeta } from "@/lib/audit";
+import { auditLog } from "@/lib/compliance/audit-log";
 import { logFunctionalAudit } from "@/lib/audit-functional";
 import { lockDoctorSchedule } from "@/lib/db-locks";
 import { prisma } from "@/lib/prisma";
@@ -69,6 +70,22 @@ export async function GET(request: Request) {
     where,
     include: appointmentInclude,
     orderBy: { datetime: "asc" },
+  });
+
+  await auditLog({
+    tenantId: tenant.tenant.id,
+    actorUserId: authUser.userId,
+    entityType: "appointment",
+    action: "READ",
+    metadata: {
+      endpoint: "/api/appointments",
+      result_count: appointments.length,
+      filters: {
+        doctor_id: doctorId,
+        patient_id: patientId,
+        status,
+      },
+    },
   });
 
   return ok(appointments.map((appointment) => serializeAppointment(appointment)));

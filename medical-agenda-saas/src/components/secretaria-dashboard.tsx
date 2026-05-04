@@ -9,7 +9,7 @@ import interactionPlugin from "@fullcalendar/interaction";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type { DateSelectArg, DatesSetArg, EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core";
 import { isSameDay } from "date-fns";
-import { AlertTriangle, CalendarCheck2, Clock3, LoaderCircle, Pencil, Plus, Trash2, UserRound, UserX2, UsersRound } from "lucide-react";
+import { AlertTriangle, CalendarCheck2, Clipboard, Clock3, ImagePlus, LoaderCircle, Pencil, Plus, Trash2, UserRound, UserX2, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { formatMedicalImageAnalysisReport, type AiImageAnalysisResult } from "@/lib/ai-image-analysis-format";
 import { fetchJsonWithRetry } from "@/lib/http-client";
 
 type Doctor = {
@@ -432,6 +433,11 @@ export function SecretariaDashboard() {
   const [processingManualFile, setProcessingManualFile] = useState(false);
   const [parsedManualSheet, setParsedManualSheet] = useState<ParsedMedicalSheet | null>(null);
   const manualUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [analysisFile, setAnalysisFile] = useState<File | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<AiImageAnalysisResult | null>(null);
+  const [analysisPreviewUrl, setAnalysisPreviewUrl] = useState<string | null>(null);
+  const analysisInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadCoreData = useCallback(async () => {
     setLoading(true);
@@ -477,6 +483,17 @@ export function SecretariaDashboard() {
   useEffect(() => {
     void loadAppointments();
   }, [loadAppointments]);
+
+  useEffect(() => {
+    if (!analysisFile || !analysisFile.type.startsWith("image/")) {
+      setAnalysisPreviewUrl(null);
+      return;
+    }
+
+    const url = URL.createObjectURL(analysisFile);
+    setAnalysisPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [analysisFile]);
 
   const calendarEvents = useMemo<EventInput[]>(
     () =>
@@ -567,6 +584,69 @@ export function SecretariaDashboard() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const analyzeSecretaryImage = async () => {
+    if (!analysisFile) {
+      toast.error("Selecciona una imagen o PDF para analizar");
+      return;
+    }
+
+    setAnalysisLoading(true);
+    try {
+      const formData = new FormData();
+      formData.set("file", analysisFile);
+      formData.set("source", "secretary_panel");
+
+      const response = await fetch("/api/ai/image-analysis", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        data?: AiImageAnalysisResult;
+        error?: { message?: string };
+      };
+
+      if (!response.ok || payload.ok === false || !payload.data) {
+        throw new Error(payload.error?.message ?? "No se pudo analizar la imagen. Verificá el formato o intentá nuevamente.");
+      }
+
+      setAnalysisResult(payload.data);
+      toast.success("Análisis asistido generado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo analizar la imagen. Verificá el formato o intentá nuevamente.");
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
+
+  const copyAnalysisReport = async () => {
+    if (!analysisResult) return;
+    await navigator.clipboard.writeText(formatMedicalImageAnalysisReport(analysisResult));
+    toast.success("Informe copiado");
+  };
+
+  const attachAnalysisToOpenAppointment = () => {
+    if (!analysisResult || !editForm.id) return;
+    const report = formatMedicalImageAnalysisReport(analysisResult);
+    setEditForm((prev) => ({
+      ...prev,
+      notes: [prev.notes.trim(), report].filter(Boolean).join("\n\n"),
+    }));
+    setEditOpen(true);
+    toast.success("Informe agregado al turno abierto. Revisá y guardá los cambios.");
+  };
+
+  const attachAnalysisToOpenPatient = () => {
+    if (!analysisResult || !patientForm.id) return;
+    const report = formatMedicalImageAnalysisReport(analysisResult);
+    setPatientForm((prev) => ({
+      ...prev,
+      notes: [prev.notes.trim(), report].filter(Boolean).join("\n\n"),
+    }));
+    setPatientOpen(true);
+    toast.success("Informe agregado al paciente abierto. Revisá y guardá los cambios.");
   };
 
   const openDoctorCreate = () => {
@@ -1367,6 +1447,108 @@ export function SecretariaDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ImagePlus className="h-4 w-4 text-sky-600" />
+            Análisis asistido de imagen
+          </CardTitle>
+          <Badge variant="outline">Revisión médica obligatoria</Badge>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            Informe preliminar generado por IA. Requiere validación de un profesional médico.
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[0.8fr_1.2fr]">
+            <div className="space-y-3 rounded-md border p-3">
+              <Input
+                ref={analysisInputRef}
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                className="hidden"
+                onChange={(event) => {
+                  setAnalysisFile(event.target.files?.[0] ?? null);
+                  setAnalysisResult(null);
+                }}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={() => analysisInputRef.current?.click()}>
+                  <ImagePlus className="h-4 w-4" />
+                  Subir imagen
+                </Button>
+                <Button type="button" disabled={!analysisFile || analysisLoading} onClick={() => void analyzeSecretaryImage()}>
+                  {analysisLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                  Analizar
+                </Button>
+              </div>
+              {analysisFile ? (
+                <div className="grid gap-2 text-sm text-slate-700">
+                  <p className="truncate">Archivo: {analysisFile.name}</p>
+                  {analysisPreviewUrl ? (
+                    <Image
+                      src={analysisPreviewUrl}
+                      alt="Vista previa de imagen adjunta"
+                      width={260}
+                      height={170}
+                      unoptimized
+                      className="max-h-44 rounded-md border object-contain"
+                    />
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">Formatos admitidos: jpg, jpeg, png, webp y pdf.</p>
+              )}
+            </div>
+
+            <div className="rounded-md border bg-slate-50 p-3">
+              {analysisLoading ? (
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                  Analizando...
+                </div>
+              ) : !analysisResult ? (
+                <p className="text-sm text-slate-500">El resultado estructurado aparecerá acá.</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid gap-2 text-sm md:grid-cols-3">
+                    <div className="rounded-md border bg-white p-2">
+                      <p className="text-xs text-slate-500">Tipo probable</p>
+                      <p className="font-semibold text-slate-900">{analysisResult.imageType}</p>
+                    </div>
+                    <div className="rounded-md border bg-white p-2">
+                      <p className="text-xs text-slate-500">Calidad</p>
+                      <p className="font-semibold text-slate-900">{analysisResult.quality.status}</p>
+                    </div>
+                    <div className="rounded-md border bg-white p-2">
+                      <p className="text-xs text-slate-500">Confianza</p>
+                      <p className="font-semibold text-slate-900">{analysisResult.confidence}</p>
+                    </div>
+                  </div>
+
+                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-md border bg-white p-3 text-xs text-slate-800">
+                    {formatMedicalImageAnalysisReport(analysisResult)}
+                  </pre>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" onClick={() => void copyAnalysisReport()}>
+                      <Clipboard className="h-4 w-4" />
+                      Copiar informe
+                    </Button>
+                    <Button type="button" variant="outline" disabled={!editForm.id} onClick={attachAnalysisToOpenAppointment}>
+                      Adjuntar al turno abierto
+                    </Button>
+                    <Button type="button" variant="outline" disabled={!patientForm.id} onClick={attachAnalysisToOpenPatient}>
+                      Adjuntar al paciente abierto
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

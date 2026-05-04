@@ -11,7 +11,8 @@ from .models import (
 	BotLesson,
 	Base,
 )
-from .user import User, UserRole
+from .multitenancy import Client, ClientWhatsAppAccount
+from .user import Clinic, ClinicMember, ClinicMemberRole, User, UserRole
 
 __all__ = [
 	"Patient",
@@ -22,6 +23,11 @@ __all__ = [
 	"GoogleOutbox",
 	"GoogleCalendarChannel",
 	"BotLesson",
+	"Client",
+	"ClientWhatsAppAccount",
+	"Clinic",
+	"ClinicMember",
+	"ClinicMemberRole",
 	"User",
 	"UserRole",
 	"Base",

@@ -502,6 +502,7 @@ export async function getNoShowDataset(input?: {
   from?: Date;
   to?: Date;
   limit?: number;
+  tenantId?: string;
 }): Promise<Array<{
   appointment_id: string;
   doctor_id: string;
@@ -518,7 +519,41 @@ export async function getNoShowDataset(input?: {
   const to = input?.to ?? new Date();
   const limit = Math.max(100, Math.min(input?.limit ?? 25000, 100000));
 
-  const rows = await prisma.$queryRaw<Array<{
+  const rows = input?.tenantId
+    ? await prisma.$queryRaw<Array<{
+        appointment_id: string;
+        doctor_id: string;
+        patient_id: string;
+        specialty: string;
+        status: string;
+        day_of_week: number;
+        hour_of_day: number;
+        lead_time_days: number;
+        created_at: Date;
+        datetime: Date;
+      }>>`
+    SELECT
+      a.id AS appointment_id,
+      a.doctor_id,
+      a.patient_id,
+      d.specialty,
+      a.status::text AS status,
+      EXTRACT(DOW FROM a.datetime)::int AS day_of_week,
+      EXTRACT(HOUR FROM a.datetime)::int AS hour_of_day,
+      GREATEST(EXTRACT(EPOCH FROM (a.datetime - a.created_at)) / 86400.0, 0)::double precision AS lead_time_days,
+      a.created_at,
+      a.datetime
+    FROM appointments a
+    INNER JOIN doctor_profiles d ON d.user_id = a.doctor_id
+    WHERE a.deleted_at IS NULL
+      AND a.tenant_id = ${input.tenantId}
+      AND a.datetime >= ${from}
+      AND a.datetime <= ${to}
+      AND a.status IN ('completed', 'no_show', 'cancelled', 'confirmed', 'scheduled')
+    ORDER BY a.datetime DESC
+    LIMIT ${limit}
+  `
+    : await prisma.$queryRaw<Array<{
     appointment_id: string;
     doctor_id: string;
     patient_id: string;
@@ -810,6 +845,7 @@ export async function runPredictionMetricsRecalculation(): Promise<{
 export async function getDoctorScoreSnapshot(input?: {
   specialty?: string;
   limit?: number;
+  tenantId?: string;
 }): Promise<Array<{
   doctor_id: string;
   doctor_name: string;
@@ -821,7 +857,31 @@ export async function getDoctorScoreSnapshot(input?: {
 
   const limit = Math.max(1, Math.min(input?.limit ?? 20, 100));
 
-  const rows = await prisma.$queryRaw<Array<{
+  const rows = input?.tenantId
+    ? await prisma.$queryRaw<Array<{
+        doctor_id: string;
+        doctor_name: string;
+        specialty: string;
+        no_show_rate: number;
+        sample_size: number;
+      }>>`
+    SELECT
+      d.user_id AS doctor_id,
+      u.name AS doctor_name,
+      d.specialty,
+      COALESCE(s.no_show_rate, 0.18) AS no_show_rate,
+      COALESCE(s.sample_size, 0)::int AS sample_size
+    FROM doctor_profiles d
+    INNER JOIN users u ON u.id = d.user_id
+    LEFT JOIN prediction_entity_scores s
+      ON s.entity_type = 'doctor'
+      AND s.entity_id = d.user_id
+    WHERE d.tenant_id = ${input.tenantId}
+      AND (${input?.specialty ?? null}::text IS NULL OR d.specialty ILIKE ${`%${input?.specialty ?? ""}%`})
+    ORDER BY COALESCE(s.no_show_rate, 0.18) ASC, COALESCE(s.sample_size, 0) DESC, u.name ASC
+    LIMIT ${limit}
+  `
+    : await prisma.$queryRaw<Array<{
     doctor_id: string;
     doctor_name: string;
     specialty: string;

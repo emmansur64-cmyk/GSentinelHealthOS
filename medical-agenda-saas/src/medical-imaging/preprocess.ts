@@ -4,6 +4,7 @@ import * as ort from "onnxruntime-node";
 import sharp from "sharp";
 
 import type { ImagingModelConfig } from "@/medical-imaging/model.loader";
+import { renderDicomToPng } from "@/medical-imaging/dicom-renderer.service";
 
 function normalize(value: number, mean: number, std: number): number {
   const scaled = value / 255;
@@ -11,7 +12,8 @@ function normalize(value: number, mean: number, std: number): number {
 }
 
 export async function buildOnnxInputTensor(file: File, config: ImagingModelConfig): Promise<ort.Tensor> {
-  const bytes = Buffer.from(await file.arrayBuffer());
+  const renderedDicom = await renderDicomToPng(file);
+  const bytes = renderedDicom?.buffer ?? Buffer.from(await file.arrayBuffer());
   const resized = await sharp(bytes)
     .resize(config.input_size, config.input_size, { fit: "fill" })
     .removeAlpha()

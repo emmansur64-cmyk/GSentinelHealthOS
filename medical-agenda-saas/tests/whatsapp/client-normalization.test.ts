@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeWhatsAppRecipient } from "@/lib/whatsapp/client";
+import { normalizeWhatsAppRecipient } from "../../src/lib/whatsapp/client";
 
 describe("normalizeWhatsAppRecipient", () => {
   it("normalizes Argentina mobile 9 to Meta test recipient format", () => {

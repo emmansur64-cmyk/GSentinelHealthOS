@@ -10,6 +10,7 @@ from api.app.schemas import AppointmentCreate, AppointmentResponse
 from api.app.services import AppointmentService, BookingQueueService
 from api.app.dependencies.appointment import get_appointment_service
 from api.app.dependencies.auth import RoleChecker, enforce_doctor_ownership
+from api.app.dependencies.tenant import TenantContext, get_tenant_context_optional
 from api.app.eventing.realtime_notifications import broadcast_realtime_event
 from api.app.core import (
     validate_hybrid_auth,
@@ -40,6 +41,7 @@ async def create_appointment(
     request: Request,
     appointment_data: AppointmentCreate,
     appointment_service: AppointmentService = Depends(get_appointment_service),
+    tenant: TenantContext = Depends(get_tenant_context_optional),
     x_internal_key: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None)
 ) -> AppointmentResponse:
@@ -70,7 +72,9 @@ async def create_appointment(
     # Crear cita (con transacción de slots + outbox)
     created = await appointment_service.create_appointment(
         appointment_data=appointment_data,
-        created_by=created_by
+        created_by=created_by,
+        client_id=tenant.client_id,
+        clinic_id=tenant.clinic_id,
     )
 
     await broadcast_realtime_event(
@@ -81,7 +85,7 @@ async def create_appointment(
             "patient_id": str(created.patient_id),
             "status": created.status,
             "date_time": created.date_time.isoformat() if created.date_time else None,
-            "source": created.source,
+            "source": "gateway" if created_by == "gateway" else "dashboard",
         },
     )
 
@@ -97,6 +101,7 @@ async def create_appointment(
 async def enqueue_appointment(
     request: Request,
     appointment_data: AppointmentCreate,
+    tenant: TenantContext = Depends(get_tenant_context_optional),
     x_internal_key: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
     idempotency_key: str = Header(..., alias="Idempotency-Key"),
@@ -113,6 +118,8 @@ async def enqueue_appointment(
         appointment_data=appointment_data,
         created_by=created_by,
         idempotency_key=idempotency_key,
+        client_id=str(tenant.client_id) if tenant.client_id else None,
+        clinic_id=str(tenant.clinic_id) if tenant.clinic_id else None,
     )
 
 
@@ -149,6 +156,7 @@ async def get_patient_appointments(
     patient_id: UUID,
     include_cancelled: bool = Query(False),
     appointment_service: AppointmentService = Depends(get_appointment_service),
+    tenant: TenantContext = Depends(get_tenant_context_optional),
     x_internal_key: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None)
 ) -> List[AppointmentResponse]:
@@ -163,6 +171,8 @@ async def get_patient_appointments(
     return await appointment_service.get_patient_appointments(
         patient_id=patient_id,
         include_cancelled=include_cancelled,
+        client_id=tenant.client_id,
+        clinic_id=tenant.clinic_id,
     )
 
 
@@ -175,6 +185,7 @@ async def get_appointment(
     request: Request,
     appointment_id: UUID,
     appointment_service: AppointmentService = Depends(get_appointment_service),
+    tenant: TenantContext = Depends(get_tenant_context_optional),
     x_internal_key: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None)
 ) -> AppointmentResponse:
@@ -187,7 +198,11 @@ async def get_appointment(
         authorization=authorization
     )
     
-    return await appointment_service.get_appointment(appointment_id)
+    return await appointment_service.get_appointment(
+        appointment_id,
+        client_id=tenant.client_id,
+        clinic_id=tenant.clinic_id,
+    )
 
 
 @router.get(
@@ -201,6 +216,7 @@ async def get_doctor_appointments(
     date_from: Optional[datetime] = Query(None, description="Fecha desde (ISO 8601)"),
     date_to: Optional[datetime] = Query(None, description="Fecha hasta (ISO 8601)"),
     appointment_service: AppointmentService = Depends(get_appointment_service),
+    tenant: TenantContext = Depends(get_tenant_context_optional),
     x_internal_key: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None)
 ) -> List[AppointmentResponse]:
@@ -232,7 +248,9 @@ async def get_doctor_appointments(
     return await appointment_service.get_doctor_appointments(
         doctor_id=doctor_id,
         date_from=date_from,
-        date_to=date_to
+        date_to=date_to,
+        client_id=tenant.client_id,
+        clinic_id=tenant.clinic_id,
     )
 
 
@@ -246,6 +264,7 @@ async def cancel_appointment(
     request: Request,
     appointment_id: UUID,
     appointment_service: AppointmentService = Depends(get_appointment_service),
+    tenant: TenantContext = Depends(get_tenant_context_optional),
     x_internal_key: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None)
 ) -> AppointmentResponse:
@@ -260,7 +279,11 @@ async def cancel_appointment(
         authorization=authorization
     )
     
-    cancelled = await appointment_service.cancel_appointment(appointment_id)
+    cancelled = await appointment_service.cancel_appointment(
+        appointment_id,
+        client_id=tenant.client_id,
+        clinic_id=tenant.clinic_id,
+    )
 
     await broadcast_realtime_event(
         "cancel",
@@ -286,11 +309,16 @@ async def confirm_appointment(
     request: Request,
     appointment_id: UUID,
     appointment_service: AppointmentService = Depends(get_appointment_service),
+    tenant: TenantContext = Depends(get_tenant_context_optional),
     x_internal_key: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
 ) -> AppointmentResponse:
     await validate_hybrid_auth(request=request, x_internal_key=x_internal_key, authorization=authorization)
-    return await appointment_service.confirm_appointment(appointment_id)
+    return await appointment_service.confirm_appointment(
+        appointment_id,
+        client_id=tenant.client_id,
+        clinic_id=tenant.clinic_id,
+    )
 
 
 @router.post(
@@ -304,6 +332,7 @@ async def reschedule_appointment(
     appointment_id: UUID,
     payload: RescheduleAppointmentRequest,
     appointment_service: AppointmentService = Depends(get_appointment_service),
+    tenant: TenantContext = Depends(get_tenant_context_optional),
     x_internal_key: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
 ) -> AppointmentResponse:
@@ -311,6 +340,8 @@ async def reschedule_appointment(
     return await appointment_service.reschedule_appointment(
         appointment_id=appointment_id,
         new_date_time=payload.new_date_time,
+        client_id=tenant.client_id,
+        clinic_id=tenant.clinic_id,
     )
 
 
@@ -326,6 +357,7 @@ async def validate_slot_gateway(
     doctor_id: UUID,
     appointment_time: datetime,
     appointment_service: AppointmentService = Depends(get_appointment_service),
+    tenant: TenantContext = Depends(get_tenant_context_optional),
     x_internal_key: str = Header(...),  # Requerido y no opcional
 ) -> Dict[str, Any]:
     """
@@ -339,7 +371,9 @@ async def validate_slot_gateway(
         # Intenta verificar el slot (lanzará excepción si hay conflicto)
         await appointment_service._verify_no_slot_conflict(
             doctor_id=doctor_id,
-            appointment_time=appointment_time
+            appointment_time=appointment_time,
+            client_id=tenant.client_id,
+            clinic_id=tenant.clinic_id,
         )
         
         return {
@@ -370,6 +404,7 @@ async def get_my_appointments(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     appointment_service: AppointmentService = Depends(get_appointment_service),
+    tenant: TenantContext = Depends(get_tenant_context_optional),
     current_user = Depends(RoleChecker(["doctor", "admin", "receptionist"]))
 ) -> List[AppointmentResponse]:
     """
@@ -397,6 +432,8 @@ async def get_my_appointments(
     return await appointment_service.get_doctor_appointments(
         doctor_id=doctor_id,
         date_from=start_date,
-        date_to=end_date
+        date_to=end_date,
+        client_id=tenant.client_id,
+        clinic_id=tenant.clinic_id,
     )
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from datetime import datetime
+import os
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -25,12 +26,20 @@ from api.app.schemas.time_slot_schemas_simple import (
 )
 from brain.core.state_manager import StateManager
 from shared.config import REDIS_URL
-from api.app.models import Appointment, BotLesson, GoogleOutbox
+from shared.security.secrets import (
+    MissingSecretEncryptionKeyError,
+    SecretEncryptionError,
+    decrypt_secret,
+    encrypt_secret,
+    is_secret_encryption_key_configured,
+)
+from api.app.models import Appointment, BotLesson, Client, ClientWhatsAppAccount, Clinic, GoogleOutbox
 from api.app.models.time_slot_simple import SpecialtyPriorityPolicy
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 _role_guard = RoleChecker(["admin", "receptionist"])
 _doctor_role_guard = RoleChecker(["admin", "doctor"])
+_admin_guard = RoleChecker(["admin"])
 
 
 class ToggleBotPauseRequest(BaseModel):
@@ -65,6 +74,142 @@ class GoogleCalendarResilienceAdminResponse(BaseModel):
     metrics: dict
     breaker: dict
     rate_limiter: dict
+
+
+class AdminClientCreateRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=120)
+    slug: str = Field(..., min_length=2, max_length=120)
+    status: str = Field(default="active", min_length=2, max_length=20)
+
+
+class AdminClientPatchRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    slug: str | None = Field(default=None, min_length=2, max_length=120)
+    status: str | None = Field(default=None, min_length=2, max_length=20)
+
+
+class AdminClientResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminClientWhatsAppCreateRequest(BaseModel):
+    clinic_id: uuid.UUID | None = None
+    provider: str = Field(default="meta", min_length=2, max_length=32)
+    phone_number: str | None = Field(default=None, max_length=32)
+    phone_number_id: str = Field(..., min_length=2, max_length=80)
+    business_account_id: str | None = Field(default=None, max_length=80)
+    meta_business_id: str | None = Field(default=None, max_length=80)
+    waba_id: str | None = Field(default=None, max_length=80)
+    display_phone_number: str | None = Field(default=None, max_length=32)
+    access_token: str | None = None
+    app_secret: str | None = None
+    verify_token: str | None = Field(default=None, max_length=255)
+    webhook_enabled: bool = True
+    status: str = Field(default="active", min_length=2, max_length=20)
+
+
+class AdminClientWhatsAppPatchRequest(BaseModel):
+    clinic_id: uuid.UUID | None = None
+    provider: str | None = Field(default=None, min_length=2, max_length=32)
+    phone_number: str | None = Field(default=None, max_length=32)
+    phone_number_id: str | None = Field(default=None, min_length=2, max_length=80)
+    business_account_id: str | None = Field(default=None, max_length=80)
+    meta_business_id: str | None = Field(default=None, max_length=80)
+    waba_id: str | None = Field(default=None, max_length=80)
+    display_phone_number: str | None = Field(default=None, max_length=32)
+    access_token: str | None = None
+    app_secret: str | None = None
+    verify_token: str | None = Field(default=None, max_length=255)
+    webhook_enabled: bool | None = None
+    status: str | None = Field(default=None, min_length=2, max_length=20)
+
+
+class AdminClientWhatsAppResponse(BaseModel):
+    id: uuid.UUID
+    client_id: uuid.UUID
+    clinic_id: uuid.UUID | None
+    provider: str
+    phone_number: str | None
+    phone_number_id: str
+    business_account_id: str | None
+    meta_business_id: str | None
+    waba_id: str | None
+    display_phone_number: str | None
+    verify_token_masked: str | None
+    access_token_masked: str | None
+    app_secret_masked: str | None
+    webhook_enabled: bool
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+def _normalize_slug(value: str) -> str:
+    return value.strip().lower().replace(" ", "-")
+
+
+def _mask_secret(value: str | None) -> str | None:
+    if not value:
+        return None
+    if len(value) <= 8:
+        return "*" * len(value)
+    return f"{value[:4]}{'*' * (len(value) - 8)}{value[-4:]}"
+
+
+def _mask_encrypted_secret(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        return _mask_secret(decrypt_secret(value))
+    except Exception:
+        return "****"
+
+
+def _ensure_token_write_allowed(has_sensitive_update: bool) -> None:
+    if not has_sensitive_update:
+        return
+    if is_secret_encryption_key_configured():
+        return
+
+    if os.getenv("ENV", "development").strip().lower() == "production":
+        raise HTTPException(
+            status_code=503,
+            detail="SECRET_ENCRYPTION_KEY faltante en producción; escritura de tokens bloqueada",
+        )
+
+    raise HTTPException(
+        status_code=400,
+        detail="SECRET_ENCRYPTION_KEY faltante; configurela para guardar tokens",
+    )
+
+
+def _to_admin_whatsapp_response(account: ClientWhatsAppAccount) -> AdminClientWhatsAppResponse:
+    return AdminClientWhatsAppResponse(
+        id=account.id,
+        client_id=account.client_id,
+        clinic_id=account.clinic_id,
+        provider=account.provider,
+        phone_number=account.phone_number,
+        phone_number_id=account.phone_number_id,
+        business_account_id=account.business_account_id,
+        meta_business_id=account.meta_business_id,
+        waba_id=account.waba_id,
+        display_phone_number=account.display_phone_number,
+        verify_token_masked=_mask_secret(account.verify_token),
+        access_token_masked=_mask_encrypted_secret(account.access_token_encrypted),
+        app_secret_masked=_mask_encrypted_secret(account.app_secret_encrypted),
+        webhook_enabled=account.webhook_enabled,
+        status=account.status,
+        created_at=account.created_at,
+        updated_at=account.updated_at,
+    )
 
 
 @router.post("/bot/toggle-pause", dependencies=[Depends(_role_guard)])
@@ -354,3 +499,246 @@ async def google_calendar_resilience_admin() -> GoogleCalendarResilienceAdminRes
         breaker=snapshot.get("breaker", {}),
         rate_limiter=snapshot.get("rate_limiter", {}),
     )
+
+
+@router.post(
+    "/clients",
+    dependencies=[Depends(_admin_guard)],
+    response_model=AdminClientResponse,
+    status_code=201,
+)
+async def create_client(
+    payload: AdminClientCreateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AdminClientResponse:
+    client = Client(
+        name=payload.name.strip(),
+        slug=_normalize_slug(payload.slug),
+        status=payload.status.strip().lower(),
+    )
+    db.add(client)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Client slug already exists") from exc
+
+    await db.refresh(client)
+    return AdminClientResponse.model_validate(client)
+
+
+@router.get(
+    "/clients",
+    dependencies=[Depends(_admin_guard)],
+    response_model=list[AdminClientResponse],
+)
+async def list_clients(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+) -> list[AdminClientResponse]:
+    rows = list((await db.execute(select(Client).order_by(Client.created_at.desc()).offset(skip).limit(limit))).scalars().all())
+    return [AdminClientResponse.model_validate(row) for row in rows]
+
+
+@router.get(
+    "/clients/{client_id}",
+    dependencies=[Depends(_admin_guard)],
+    response_model=AdminClientResponse,
+)
+async def get_client(
+    client_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> AdminClientResponse:
+    row = await db.get(Client, client_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+    return AdminClientResponse.model_validate(row)
+
+
+@router.patch(
+    "/clients/{client_id}",
+    dependencies=[Depends(_admin_guard)],
+    response_model=AdminClientResponse,
+)
+async def patch_client(
+    client_id: uuid.UUID,
+    payload: AdminClientPatchRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AdminClientResponse:
+    row = await db.get(Client, client_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    if payload.name is not None:
+        row.name = payload.name.strip()
+    if payload.slug is not None:
+        row.slug = _normalize_slug(payload.slug)
+    if payload.status is not None:
+        row.status = payload.status.strip().lower()
+
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Client slug already exists") from exc
+
+    await db.refresh(row)
+    return AdminClientResponse.model_validate(row)
+
+
+@router.post(
+    "/clients/{client_id}/whatsapp",
+    dependencies=[Depends(_admin_guard)],
+    response_model=AdminClientWhatsAppResponse,
+    status_code=201,
+)
+async def create_client_whatsapp_account(
+    client_id: uuid.UUID,
+    payload: AdminClientWhatsAppCreateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AdminClientWhatsAppResponse:
+    client_row = await db.get(Client, client_id)
+    if client_row is None:
+        raise HTTPException(status_code=404, detail="Client not found")
+    if payload.clinic_id is not None:
+        clinic_row = await db.get(Clinic, payload.clinic_id)
+        if clinic_row is None or clinic_row.client_id != client_id:
+            raise HTTPException(status_code=400, detail="clinic_id does not belong to client")
+
+    existing_stmt = select(ClientWhatsAppAccount).where(ClientWhatsAppAccount.client_id == client_id)
+    if payload.clinic_id is not None:
+        existing_stmt = existing_stmt.where(ClientWhatsAppAccount.clinic_id == payload.clinic_id)
+    existing = (await db.execute(existing_stmt.order_by(ClientWhatsAppAccount.created_at.desc()))).scalars().first()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="WhatsApp account already exists for this scope")
+
+    has_sensitive_update = bool(payload.access_token or payload.app_secret)
+    _ensure_token_write_allowed(has_sensitive_update)
+
+    try:
+        access_token_encrypted = encrypt_secret(payload.access_token) if payload.access_token else None
+        app_secret_encrypted = encrypt_secret(payload.app_secret) if payload.app_secret else None
+    except MissingSecretEncryptionKeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SecretEncryptionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    account = ClientWhatsAppAccount(
+        client_id=client_id,
+        clinic_id=payload.clinic_id,
+        provider=payload.provider.strip().lower(),
+        phone_number=payload.phone_number,
+        phone_number_id=payload.phone_number_id.strip(),
+        business_account_id=payload.business_account_id,
+        meta_business_id=payload.meta_business_id,
+        waba_id=payload.waba_id,
+        display_phone_number=payload.display_phone_number,
+        access_token_encrypted=access_token_encrypted,
+        app_secret_encrypted=app_secret_encrypted,
+        verify_token=payload.verify_token,
+        webhook_enabled=payload.webhook_enabled,
+        status=payload.status.strip().lower(),
+    )
+
+    db.add(account)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="phone_number_id already in use") from exc
+
+    await db.refresh(account)
+    return _to_admin_whatsapp_response(account)
+
+
+@router.get(
+    "/clients/{client_id}/whatsapp",
+    dependencies=[Depends(_admin_guard)],
+    response_model=AdminClientWhatsAppResponse,
+)
+async def get_client_whatsapp_account(
+    client_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> AdminClientWhatsAppResponse:
+    row = (
+        await db.execute(
+            select(ClientWhatsAppAccount)
+            .where(ClientWhatsAppAccount.client_id == client_id)
+            .order_by(ClientWhatsAppAccount.updated_at.desc())
+        )
+    ).scalars().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Client WhatsApp account not found")
+
+    return _to_admin_whatsapp_response(row)
+
+
+@router.patch(
+    "/clients/{client_id}/whatsapp",
+    dependencies=[Depends(_admin_guard)],
+    response_model=AdminClientWhatsAppResponse,
+)
+async def patch_client_whatsapp_account(
+    client_id: uuid.UUID,
+    payload: AdminClientWhatsAppPatchRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AdminClientWhatsAppResponse:
+    row = (
+        await db.execute(
+            select(ClientWhatsAppAccount)
+            .where(ClientWhatsAppAccount.client_id == client_id)
+            .order_by(ClientWhatsAppAccount.updated_at.desc())
+        )
+    ).scalars().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Client WhatsApp account not found")
+    if payload.clinic_id is not None:
+        clinic_row = await db.get(Clinic, payload.clinic_id)
+        if clinic_row is None or clinic_row.client_id != client_id:
+            raise HTTPException(status_code=400, detail="clinic_id does not belong to client")
+
+    has_sensitive_update = bool(payload.access_token or payload.app_secret)
+    _ensure_token_write_allowed(has_sensitive_update)
+
+    if payload.provider is not None:
+        row.provider = payload.provider.strip().lower()
+    if payload.clinic_id is not None:
+        row.clinic_id = payload.clinic_id
+    if payload.phone_number is not None:
+        row.phone_number = payload.phone_number
+    if payload.phone_number_id is not None:
+        row.phone_number_id = payload.phone_number_id.strip()
+    if payload.business_account_id is not None:
+        row.business_account_id = payload.business_account_id
+    if payload.meta_business_id is not None:
+        row.meta_business_id = payload.meta_business_id
+    if payload.waba_id is not None:
+        row.waba_id = payload.waba_id
+    if payload.display_phone_number is not None:
+        row.display_phone_number = payload.display_phone_number
+    if payload.verify_token is not None:
+        row.verify_token = payload.verify_token
+    if payload.webhook_enabled is not None:
+        row.webhook_enabled = payload.webhook_enabled
+    if payload.status is not None:
+        row.status = payload.status.strip().lower()
+
+    try:
+        if payload.access_token is not None:
+            row.access_token_encrypted = encrypt_secret(payload.access_token)
+        if payload.app_secret is not None:
+            row.app_secret_encrypted = encrypt_secret(payload.app_secret)
+    except MissingSecretEncryptionKeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SecretEncryptionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="phone_number_id already in use") from exc
+
+    await db.refresh(row)
+    return _to_admin_whatsapp_response(row)

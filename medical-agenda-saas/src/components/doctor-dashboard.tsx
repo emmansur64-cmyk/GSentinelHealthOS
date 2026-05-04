@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { CalendarClock, LoaderCircle, Menu, MessageSquare, MessageSquarePlus, RefreshCcw, Send, Sparkles, Stethoscope, Trash2, X } from "lucide-react";
+import { CalendarClock, Clipboard, ImagePlus, LoaderCircle, Menu, MessageSquare, MessageSquarePlus, RefreshCcw, Send, Sparkles, Stethoscope, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Textarea } from "@/components/ui/textarea";
 import { DOCTOR_CHAT_PARAMS } from "@/chat/doctor-chat-params";
+import { formatMedicalImageAnalysisReport, type AiImageAnalysisResult } from "@/lib/ai-image-analysis-format";
 import { fetchJsonWithRetry } from "@/lib/http-client";
 
 type Appointment = {
@@ -109,6 +110,10 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [chatImageFile, setChatImageFile] = useState<File | null>(null);
+  const [chatImageLoading, setChatImageLoading] = useState(false);
+  const [chatImagePreviewUrl, setChatImagePreviewUrl] = useState<string | null>(null);
+  const chatImageInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedAppointment = useMemo(
     () => appointments.find((appointment) => appointment.id === selectedAppointmentId) ?? null,
@@ -209,10 +214,21 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
   }, [chatOpen, loadChatSessions]);
 
   useEffect(() => {
+    if (!chatImageFile || !chatImageFile.type.startsWith("image/")) {
+      setChatImagePreviewUrl(null);
+      return;
+    }
+
+    const url = URL.createObjectURL(chatImageFile);
+    setChatImagePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [chatImageFile]);
+
+  useEffect(() => {
     const wsBase = process.env.NEXT_PUBLIC_REALTIME_WS_URL;
     const wsUrl = wsBase?.trim()
       ? `${wsBase.replace(/\/$/, "")}/ws/notifications`
-      : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.hostname}:8000/ws/notifications`;
+      : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/notifications`;
 
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -458,6 +474,61 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
       toast.error(error instanceof Error ? error.message : "No se pudo obtener respuesta de MetaBrain");
     } finally {
       setChatLoading(false);
+    }
+  };
+
+  const analyzeChatImage = async () => {
+    if (!chatImageFile) {
+      toast.error("Seleccioná una imagen o PDF para analizar");
+      return;
+    }
+
+    setChatImageLoading(true);
+    const uploadedFile = chatImageFile;
+    try {
+      const formData = new FormData();
+      formData.set("file", uploadedFile);
+      formData.set("source", "doctor_chat");
+      if (chatPatientId) formData.set("optionalContext", `Paciente seleccionado en chat: ${chatPatientId}`);
+
+      const response = await fetch("/api/ai/image-analysis", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        data?: AiImageAnalysisResult;
+        error?: { message?: string };
+      };
+
+      if (!response.ok || payload.ok === false || !payload.data) {
+        throw new Error(payload.error?.message ?? "No se pudo analizar la imagen. Verificá el formato o intentá nuevamente.");
+      }
+
+      const report = formatMedicalImageAnalysisReport(payload.data);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `doctor-image-${Date.now()}`,
+          role: "doctor",
+          content: `Adjunté imagen para análisis asistido: ${uploadedFile.name}`,
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: `metabrain-image-${Date.now()}`,
+          role: "metabrain",
+          content: report,
+          created_at: new Date().toISOString(),
+          source: "GROQ_IMAGE_ANALYSIS",
+        },
+      ]);
+      setChatImageFile(null);
+      if (chatImageInputRef.current) chatImageInputRef.current.value = "";
+      toast.success("Análisis asistido generado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo analizar la imagen. Verificá el formato o intentá nuevamente.");
+    } finally {
+      setChatImageLoading(false);
     }
   };
 
@@ -731,10 +802,63 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
                     key={message.id}
                     className={`rounded-md px-3 py-2 text-sm ${message.role === "doctor" ? "ml-auto max-w-[85%] bg-slate-900 text-white" : "max-w-[90%] border bg-white text-slate-800"}`}
                   >
+                    {message.content.startsWith("Análisis asistido de imagen") ? (
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-sky-700">Análisis asistido de imagen</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="Copiar informe"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(message.content);
+                            toast.success("Informe copiado");
+                          }}
+                        >
+                          <Clipboard className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : null}
                     <p className="whitespace-pre-wrap">{message.content}</p>
                   </div>
                 ))
               )}
+            </div>
+
+            <div className="rounded-md border bg-white p-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Input
+                  ref={chatImageInputRef}
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                  className="hidden"
+                  onChange={(event) => setChatImageFile(event.target.files?.[0] ?? null)}
+                />
+                <Button type="button" variant="outline" size="sm" onClick={() => chatImageInputRef.current?.click()}>
+                  <ImagePlus className="h-4 w-4" />
+                  Adjuntar imagen
+                </Button>
+                <Button type="button" size="sm" disabled={!chatImageFile || chatImageLoading} onClick={() => void analyzeChatImage()}>
+                  {chatImageLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Analizar imagen
+                </Button>
+              </div>
+              {chatImageFile ? (
+                <div className="mt-2 grid gap-2 text-xs text-slate-600">
+                  <span className="truncate">Archivo: {chatImageFile.name}</span>
+                  {chatImagePreviewUrl ? (
+                    <Image
+                      src={chatImagePreviewUrl}
+                      alt="Vista previa de imagen adjunta"
+                      width={180}
+                      height={112}
+                      unoptimized
+                      className="max-h-28 rounded-md border object-contain"
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+              <p className="mt-2 text-xs text-amber-700">Informe preliminar generado por IA. Requiere validación de un profesional médico.</p>
             </div>
 
             <div className="flex gap-2">

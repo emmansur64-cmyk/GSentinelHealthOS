@@ -1,7 +1,8 @@
 import { fail, ok } from "@/lib/api-response";
 import { getShadowModeStrategySnapshot } from "@/lib/ai/shadowModeStrategy";
+import { auditLog } from "@/lib/compliance/audit-log";
+import { requireRole, requireSessionWithTenant } from "@/lib/compliance/access";
 import { prisma } from "@/lib/prisma";
-import { getAuthenticatedUser } from "@/lib/server-auth";
 import { ensurePredictionTables, getDoctorScoreSnapshot } from "@/services/predictionEngine";
 
 type DailyMetricRow = {
@@ -30,9 +31,10 @@ function toNum(value: number | null | undefined, decimals = 4): number | null {
 }
 
 export async function GET(request: Request): Promise<Response> {
-  const authUser = await getAuthenticatedUser();
-  if (!authUser) return fail("No autenticado", 401);
-  if (String(authUser.role).toLowerCase() !== "admin") return fail("Sin permisos", 403);
+  const session = await requireSessionWithTenant();
+  if (!session.ok) return session.response;
+  const role = await requireRole(session.authUser, ["CLINIC_ADMIN", "AUDITOR"]);
+  if (!role.ok) return role.response;
 
   const url = new URL(request.url);
   const daysRaw = Number(url.searchParams.get("days") ?? "14");
@@ -46,37 +48,63 @@ export async function GET(request: Request): Promise<Response> {
     const [dailyMetrics, riskDistribution, modelDistribution, topDoctors, observationCounts] = await Promise.all([
       prisma.$queryRaw<DailyMetricRow[]>`
         SELECT
-          metric_date,
-          total_predictions,
-          resolved_predictions,
-          accuracy,
-          brier_score,
-          no_show_rate,
-          occupancy_rate
-        FROM prediction_daily_metrics
-        WHERE metric_date >= ${fromDate}
+          DATE(o.created_at) AS metric_date,
+          COUNT(*)::int AS total_predictions,
+          SUM(CASE WHEN o.outcome_no_show IS NOT NULL THEN 1 ELSE 0 END)::int AS resolved_predictions,
+          CASE
+            WHEN SUM(CASE WHEN o.outcome_no_show IS NOT NULL THEN 1 ELSE 0 END) = 0 THEN NULL
+            ELSE AVG(
+              CASE
+                WHEN o.outcome_no_show IS NOT NULL AND ((o.predicted_probability >= 0.6) = o.outcome_no_show) THEN 1.0
+                WHEN o.outcome_no_show IS NOT NULL THEN 0.0
+                ELSE NULL
+              END
+            )
+          END AS accuracy,
+          CASE
+            WHEN SUM(CASE WHEN o.outcome_no_show IS NOT NULL THEN 1 ELSE 0 END) = 0 THEN NULL
+            ELSE AVG(
+              CASE
+                WHEN o.outcome_no_show IS NOT NULL THEN POWER(o.predicted_probability - CASE WHEN o.outcome_no_show THEN 1 ELSE 0 END, 2)
+                ELSE NULL
+              END
+            )
+          END AS brier_score,
+          AVG(CASE WHEN o.outcome_no_show IS NOT NULL THEN CASE WHEN o.outcome_no_show THEN 1 ELSE 0 END ELSE NULL END) AS no_show_rate,
+          NULL::double precision AS occupancy_rate
+        FROM prediction_observations o
+        INNER JOIN appointments a ON a.id = o.appointment_id
+        WHERE o.created_at >= ${fromDate}
+          AND a.tenant_id = ${session.tenantId}
+        GROUP BY DATE(o.created_at)
         ORDER BY metric_date ASC
       `,
       prisma.$queryRaw<DistributionRow[]>`
-        SELECT risk_level AS key, COUNT(*)::int AS total
-        FROM prediction_observations
-        WHERE created_at >= ${fromDate}
+        SELECT o.risk_level AS key, COUNT(*)::int AS total
+        FROM prediction_observations o
+        INNER JOIN appointments a ON a.id = o.appointment_id
+        WHERE o.created_at >= ${fromDate}
+          AND a.tenant_id = ${session.tenantId}
         GROUP BY risk_level
       `,
       prisma.$queryRaw<DistributionRow[]>`
-        SELECT model_version AS key, COUNT(*)::int AS total
-        FROM prediction_observations
-        WHERE created_at >= ${fromDate}
+        SELECT o.model_version AS key, COUNT(*)::int AS total
+        FROM prediction_observations o
+        INNER JOIN appointments a ON a.id = o.appointment_id
+        WHERE o.created_at >= ${fromDate}
+          AND a.tenant_id = ${session.tenantId}
         GROUP BY model_version
         ORDER BY COUNT(*) DESC
       `,
-      getDoctorScoreSnapshot({ limit: 8 }),
+      getDoctorScoreSnapshot({ limit: 8, tenantId: session.tenantId }),
       prisma.$queryRaw<Array<{ total: number; resolved: number }>>`
         SELECT
           COUNT(*)::int AS total,
-          SUM(CASE WHEN outcome_no_show IS NOT NULL THEN 1 ELSE 0 END)::int AS resolved
-        FROM prediction_observations
-        WHERE created_at >= ${fromDate}
+          SUM(CASE WHEN o.outcome_no_show IS NOT NULL THEN 1 ELSE 0 END)::int AS resolved
+        FROM prediction_observations o
+        INNER JOIN appointments a ON a.id = o.appointment_id
+        WHERE o.created_at >= ${fromDate}
+          AND a.tenant_id = ${session.tenantId}
       `,
     ]);
 
@@ -90,6 +118,17 @@ export async function GET(request: Request): Promise<Response> {
 
     const observationTotal = Number(observationCounts[0]?.total ?? 0);
     const observationResolved = Number(observationCounts[0]?.resolved ?? 0);
+
+    await auditLog({
+      tenantId: session.tenantId,
+      actorUserId: session.authUser.userId,
+      entityType: "prediction_dashboard",
+      action: "READ",
+      metadata: {
+        endpoint: "/api/admin/predictions/dashboard",
+        window_days: days,
+      },
+    });
 
     return ok({
       window_days: days,

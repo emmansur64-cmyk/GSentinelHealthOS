@@ -1,4 +1,7 @@
 import { callBrainDecide } from "@/lib/brain-client";
+import { appendMedicalDisclaimer, buildEmergencyEscalationMessage, detectEmergency, enforceSafeMedicalResponse } from "@/lib/compliance/ai-safety";
+import { auditLog } from "@/lib/compliance/audit-log";
+import { hasActiveConsent } from "@/lib/compliance/consent";
 import { callGroqDoctorChat } from "@/lib/groq-doctor-chat";
 import { metabrain, type MetaBrainDecision, type MetaBrainDecisionInput, type MetaBrainSource } from "@/lib/metabrain";
 import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
@@ -428,6 +431,61 @@ export async function generateWhatsAppMetaBrainReply(input: WhatsAppMetaBrainInp
   if (!isWhatsAppMetaBrainEnabled()) return null;
 
   const context = await buildContext(input);
+  const emergency = detectEmergency(input.text);
+
+  if (emergency.detected) {
+    await auditLog({
+      tenantId: input.tenantId,
+      patientId: context.patient?.id ?? null,
+      entityType: "whatsapp_ai",
+      entityId: context.patient?.id ?? null,
+      action: "AI_ACCESS",
+      metadata: {
+        action: "emergency_escalation",
+        reason: emergency.reason ?? null,
+        channel: "whatsapp",
+      },
+    });
+
+    return {
+      action: "ESCALATE_EMERGENCY",
+      response: buildEmergencyEscalationMessage(),
+      confidence: 1,
+      source: "RULES",
+    };
+  }
+
+  if (context.patient?.id) {
+    const hasConsent = await hasActiveConsent({
+      tenantId: input.tenantId,
+      patientId: context.patient.id,
+      appliesTo: "WHATSAPP",
+    });
+
+    if (!hasConsent) {
+      await auditLog({
+        tenantId: input.tenantId,
+        patientId: context.patient.id,
+        entityType: "whatsapp_ai",
+        entityId: context.patient.id,
+        action: "SECURITY_DENIED",
+        metadata: {
+          reason: "missing_active_consent",
+          applies_to: "WHATSAPP",
+          channel: "whatsapp",
+        },
+      });
+
+      return {
+        action: "CONSENT_REQUIRED",
+        response:
+          "Para continuar con orientación clínica por WhatsApp necesitamos tu consentimiento informado activo. Escribí CONSENTIR para que la clínica gestione la autorización.",
+        confidence: 1,
+        source: "RULES",
+      };
+    }
+  }
+
   const payload = {
     role: "DOCTOR" as const,
     message: input.text,
@@ -448,7 +506,21 @@ export async function generateWhatsAppMetaBrainReply(input: WhatsAppMetaBrainInp
         ? groqResult
         : await metabrain.decide(payload);
 
-    decision.response = cleanResponse(decision.response);
+    decision.response = appendMedicalDisclaimer(enforceSafeMedicalResponse(cleanResponse(decision.response)));
+
+    await auditLog({
+      tenantId: input.tenantId,
+      patientId: context.patient?.id ?? null,
+      entityType: "whatsapp_ai",
+      entityId: context.patient?.id ?? null,
+      action: "AI_ACCESS",
+      metadata: {
+        action: decision.action,
+        source: decision.source,
+        confidence: decision.confidence,
+        channel: "whatsapp",
+      },
+    });
 
     await publishMetaBrainSignal({
       event: "whatsapp.metabrain.completed",

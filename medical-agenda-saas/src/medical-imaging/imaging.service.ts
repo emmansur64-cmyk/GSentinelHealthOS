@@ -1,4 +1,5 @@
 import { predictMedicalImaging } from "@/medical-imaging/predictor.service";
+import { analyzeMedicalImageWithVisionAI } from "@/medical-imaging/vision-ai.service";
 
 export type MedicalStudyType = "MRI" | "CT" | "XRAY" | "DICOM" | "UNKNOWN";
 export type MedicalRegion = "knee" | "shoulder" | "spine" | "head" | "chest" | "unknown";
@@ -22,7 +23,7 @@ export type MedicalImagingAnalysis = {
   limitations: string;
   recommendation: string;
   confidence: number;
-  pipeline: "onnx-v1" | "structured-v1";
+  pipeline: "onnx-v1" | "structured-v1" | "ai-vision-v1";
   model_key: string;
   model_version: string;
   notes: string;
@@ -246,6 +247,13 @@ export async function analyzeMedicalImage(file: File, mimeType: string): Promise
   const prediction = await predictMedicalImaging(file);
   if (prediction.inference_mode === "onnx") {
     return mapPredictionToAnalysis(prediction);
+  }
+  const visionAnalysis = await analyzeMedicalImageWithVisionAI(file, mimeType);
+  if (visionAnalysis) {
+    return {
+      ...visionAnalysis,
+      elapsed_ms: prediction.elapsed_ms,
+    };
   }
   return await analyzeMedicalImageStructured(file, mimeType);
 }

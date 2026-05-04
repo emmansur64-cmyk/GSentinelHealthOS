@@ -216,7 +216,7 @@ function fragmentationScore(slotStart: Date, slotEnd: Date, busy: OccupiedInterv
 function getApplicableRulesForDay(rules: AvailabilityRuleRecord[], day: Date): AvailabilityRuleRecord[] {
   const weekly = rules.filter((rule) => rule.specific_date === null && rule.day_of_week === day.getDay());
   const specific = rules.filter((rule) => rule.specific_date !== null && isSameUTCDate(rule.specific_date as Date, day));
-  return [...weekly, ...specific];
+  return specific.length > 0 ? specific : weekly;
 }
 
 function formatFecha(date: Date): string {

@@ -7,39 +7,63 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from api.app.dependencies.db import get_db
 from api.app.eventing.realtime_notifications import broadcast_realtime_event
+from api.app.models import ClientWhatsAppAccount
 from api.app.services.shadow_profile_service import ShadowProfileService
 from api.app.services.whatsapp_webhook_service import WhatsAppWebhookService
 import httpx
 from shared.config import WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_VERIFY_TOKEN
+from shared.security.secrets import SecretEncryptionError, decrypt_secret
 from shared.utils import setup_logger
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 logger = setup_logger(__name__)
 
 
-async def _send_whatsapp_reply(to_phone: str, message: str) -> None:
+def _safe_external_body(body: str, *, max_length: int = 500) -> str:
+    redacted = str(body or "")
+    for marker in ("Authorization", "Bearer", "access_token", "app_secret"):
+        if marker in redacted:
+            redacted = redacted.replace(marker, f"{marker}[redacted-key]")
+    if len(redacted) > max_length:
+        return f"{redacted[:max_length]}...[truncated]"
+    return redacted
+
+
+async def _send_whatsapp_reply(
+    to_phone: str,
+    message: str,
+    *,
+    phone_number_id: str | None = None,
+    access_token: str | None = None,
+) -> None:
     """Envía un mensaje de texto via WhatsApp Cloud API."""
-    if not WHATSAPP_PHONE_NUMBER_ID or not WHATSAPP_ACCESS_TOKEN:
+    resolved_phone_number_id = (phone_number_id or WHATSAPP_PHONE_NUMBER_ID or "").strip()
+    resolved_access_token = (access_token or WHATSAPP_ACCESS_TOKEN or "").strip()
+    if not resolved_phone_number_id or not resolved_access_token:
         logger.warning("whatsapp_send_skipped_missing_credentials")
         return
-    url = f"https://graph.facebook.com/v19.0/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+    url = f"https://graph.facebook.com/v19.0/{resolved_phone_number_id}/messages"
     payload = {
         "messaging_product": "whatsapp",
         "to": to_phone,
         "type": "text",
         "text": {"body": message},
     }
-    headers = {"Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}"}
+    headers = {"Authorization": f"Bearer {resolved_access_token}"}
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(url, json=payload, headers=headers)
             if resp.status_code != 200:
-                logger.warning("whatsapp_send_failed", extra={"status": resp.status_code, "body": resp.text})
+                logger.warning(
+                    "whatsapp_send_failed",
+                    extra={"status": resp.status_code, "body": _safe_external_body(resp.text)},
+                )
             else:
-                logger.info("whatsapp_reply_sent", extra={"to": to_phone})
+                logger.info("whatsapp_reply_sent", extra={"to": to_phone, "phone_number_id": resolved_phone_number_id})
     except Exception as exc:
         logger.exception("whatsapp_send_error", extra={"error": str(exc)})
 
@@ -85,17 +109,13 @@ async def receive_whatsapp_webhook(
     body = await request.body()
     signature = request.headers.get("X-Hub-Signature-256", "")
 
-    webhook_service = WhatsAppWebhookService(signing_secret=WHATSAPP_APP_SECRET or WHATSAPP_ACCESS_TOKEN)
-    if WHATSAPP_APP_SECRET and not webhook_service.verify_signature(body, signature):
-        logger.warning("webhook_signature_invalid", extra={"clinic_id": clinic_id})
-        raise HTTPException(status_code=403, detail="invalid_signature")
-
     try:
         payload: dict[str, Any] = await request.json()
     except Exception as exc:
         logger.exception("webhook_invalid_json", extra={"clinic_id": clinic_id, "error": str(exc)})
         raise HTTPException(status_code=400, detail="invalid_json") from exc
 
+    webhook_service = WhatsAppWebhookService(signing_secret=WHATSAPP_APP_SECRET or WHATSAPP_ACCESS_TOKEN)
     parsed = webhook_service.parse_first_message(payload)
     if not parsed:
         return WhatsAppWebhookAck(
@@ -104,20 +124,64 @@ async def receive_whatsapp_webhook(
             received_at=datetime.utcnow().isoformat(),
         )
 
+    account: ClientWhatsAppAccount | None = None
+    access_token: str | None = None
+    app_secret = WHATSAPP_APP_SECRET
+    if parsed.phone_number_id:
+        account = (
+            await db.execute(
+                select(ClientWhatsAppAccount).where(
+                    ClientWhatsAppAccount.phone_number_id == parsed.phone_number_id,
+                    ClientWhatsAppAccount.status.in_(("active", "connected")),
+                    ClientWhatsAppAccount.webhook_enabled.is_(True),
+                )
+            )
+        ).scalars().first()
+        if account is not None:
+            clinic_id = str(account.clinic_id or clinic_id)
+            try:
+                access_token = decrypt_secret(account.access_token_encrypted) if account.access_token_encrypted else None
+                app_secret = decrypt_secret(account.app_secret_encrypted) if account.app_secret_encrypted else app_secret
+            except SecretEncryptionError as exc:
+                logger.error("whatsapp_token_decrypt_failed", extra={"clinic_id": clinic_id, "error": str(exc)})
+                raise HTTPException(status_code=503, detail="token_decrypt_failed") from exc
+
+    if parsed.phone_number_id and account is None:
+        logger.warning("whatsapp_account_not_found", extra={"phone_number_id": parsed.phone_number_id})
+        raise HTTPException(status_code=404, detail="whatsapp_account_not_found")
+
+    if app_secret and not WhatsAppWebhookService(signing_secret=app_secret).verify_signature(body, signature):
+        logger.warning(
+            "webhook_signature_invalid",
+            extra={"clinic_id": clinic_id, "phone_number_id": parsed.phone_number_id},
+        )
+        raise HTTPException(status_code=403, detail="invalid_signature")
+
     shadow_service = ShadowProfileService(db)
-    patient = await shadow_service.get_or_create_by_phone(phone=parsed.phone)
+    patient = await shadow_service.get_or_create_by_phone(
+        phone=parsed.phone,
+        client_id=account.client_id if account is not None else None,
+        clinic_id=account.clinic_id if account is not None else None,
+    )
 
     intent = webhook_service.detect_intent(parsed.text)
     patient_name = getattr(patient, "name", None) or "paciente"
     auto_reply = webhook_service.build_auto_reply(intent, patient_name)
 
     # Enviar respuesta al usuario via WhatsApp Cloud API
-    await _send_whatsapp_reply(parsed.phone, auto_reply)
+    await _send_whatsapp_reply(
+        parsed.phone,
+        auto_reply,
+        phone_number_id=parsed.phone_number_id,
+        access_token=access_token,
+    )
 
     logger.info(
         "whatsapp_webhook_processed",
         extra={
             "clinic_id": clinic_id,
+            "client_id": str(account.client_id) if account is not None else None,
+            "phone_number_id": parsed.phone_number_id,
             "phone": parsed.phone,
             "intent": intent,
             "patient_id": str(getattr(patient, "id", "")),

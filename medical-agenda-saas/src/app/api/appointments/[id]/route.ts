@@ -1,5 +1,6 @@
 import { fail, ok } from "@/lib/api-response";
 import { logAudit, requestMeta } from "@/lib/audit";
+import { auditLog } from "@/lib/compliance/audit-log";
 import { logFunctionalAudit } from "@/lib/audit-functional";
 import { lockDoctorSchedule } from "@/lib/db-locks";
 import { requireTenant } from "@/middleware/tenantMiddleware";
@@ -64,6 +65,17 @@ export async function GET(_request: Request, context: Params) {
   if (hasRole(authUser, ["doctor", "medico"]) && appointment.doctor_id !== authUser.userId) {
     return fail("Sin permisos", 403);
   }
+
+  await auditLog({
+    tenantId: tenant.tenant.id,
+    actorUserId: authUser.userId,
+    patientId: appointment.patient_id,
+    entityType: "appointment",
+    entityId: appointment.id,
+    action: "READ",
+    metadata: { endpoint: "/api/appointments/:id" },
+  });
+
   return ok(serializeAppointment(appointment));
 }
 

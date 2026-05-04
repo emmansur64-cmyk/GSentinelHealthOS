@@ -1,5 +1,6 @@
 import type { Prisma, Role } from "@prisma/client";
 
+import { auditLog } from "@/lib/compliance/audit-log";
 import { prisma } from "@/lib/prisma";
 import { logServerError } from "@/lib/server-logger";
 
@@ -24,6 +25,7 @@ export async function writeAuditLog(input: AuditServiceInput): Promise<void> {
   try {
     await prisma.activityLog.create({
       data: {
+        tenant_id: input.tenantId,
         user_id: input.userId ?? null,
         role: input.role ?? null,
         action: input.action,
@@ -35,13 +37,17 @@ export async function writeAuditLog(input: AuditServiceInput): Promise<void> {
       },
     });
 
-    await prisma.auditLog.create({
-      data: {
-        user_id: input.userId ?? null,
-        action: input.action,
-        entity_id: input.entityId ?? null,
-        entity_type: input.entity,
-        payload_after: safeJson(input.details) as Prisma.InputJsonValue,
+    await auditLog({
+      tenantId: input.tenantId,
+      actorUserId: input.userId ?? null,
+      entityType: input.entity,
+      entityId: input.entityId ?? null,
+      action: "UPDATE",
+      ipAddress: input.ipAddress ?? null,
+      userAgent: input.userAgent ?? null,
+      metadata: {
+        action_label: input.action,
+        details: safeJson(input.details) as Prisma.InputJsonValue,
       },
     });
   } catch (error) {

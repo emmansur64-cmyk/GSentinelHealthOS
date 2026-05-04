@@ -11,6 +11,7 @@ class ParsedWhatsAppMessage:
     phone: str
     text: str
     message_id: str
+    phone_number_id: str | None
     raw_data: dict[str, Any]
 
 
@@ -44,6 +45,8 @@ class WhatsAppWebhookService:
         for entry in payload.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
+                metadata = value.get("metadata", {})
+                phone_number_id = str(metadata.get("phone_number_id") or "").strip() or None
                 for message in value.get("messages", []):
                     phone = str(message.get("from") or "").strip()
                     text = str((message.get("text") or {}).get("body") or "").strip()
@@ -53,6 +56,7 @@ class WhatsAppWebhookService:
                             phone=phone,
                             text=text,
                             message_id=message_id,
+                            phone_number_id=phone_number_id,
                             raw_data=message,
                         )
         return None

@@ -7,7 +7,7 @@ import { verifyMetaOAuthState } from "@/lib/meta-oauth-state";
 import { discoverWhatsAppAccount, exchangeCodeForToken, getMetaOAuthConfig } from "@/lib/meta-whatsapp";
 
 function redirectToClinicDashboard(request: Request, params: Record<string, string>) {
-  const url = new URL("/clinic/dashboard", request.url);
+  const url = new URL("/dashboard/agenda", request.url);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }

@@ -20,7 +20,9 @@ class ShadowProfileService:
         self,
         phone: str,
         name: Optional[str] = None,
-        email: Optional[str] = None
+        email: Optional[str] = None,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
     ) -> Patient:
         """
         Obtiene un paciente por teléfono.
@@ -67,6 +69,10 @@ class ShadowProfileService:
         
         # Buscar paciente existente
         stmt = select(Patient).where(Patient.phone == phone)
+        if client_id is not None and hasattr(Patient, "client_id"):
+            stmt = stmt.where(Patient.client_id == client_id)
+        if clinic_id is not None and hasattr(Patient, "clinic_id"):
+            stmt = stmt.where(Patient.clinic_id == clinic_id)
         result = await self.db.execute(stmt)
         existing_patient = result.scalars().first()
         
@@ -79,6 +85,10 @@ class ShadowProfileService:
             name=name or "<pending>",  # Marcador de perfil incompleto
             email=email,
         )
+        if client_id is not None and hasattr(shadow_patient, "client_id"):
+            shadow_patient.client_id = client_id
+        if clinic_id is not None and hasattr(shadow_patient, "clinic_id"):
+            shadow_patient.clinic_id = clinic_id
         
         try:
             self.db.add(shadow_patient)
@@ -95,12 +105,21 @@ class ShadowProfileService:
                 detail=f"Error al crear shadow profile: {str(e)}"
             )
     
-    async def get_by_phone(self, phone: str) -> Optional[Patient]:
+    async def get_by_phone(
+        self,
+        phone: str,
+        client_id: UUID | None = None,
+        clinic_id: UUID | None = None,
+    ) -> Optional[Patient]:
         """
         Obtiene un paciente por teléfono.
         NO crea si no existe.
         """
         stmt = select(Patient).where(Patient.phone == phone)
+        if client_id is not None and hasattr(Patient, "client_id"):
+            stmt = stmt.where(Patient.client_id == client_id)
+        if clinic_id is not None and hasattr(Patient, "clinic_id"):
+            stmt = stmt.where(Patient.clinic_id == clinic_id)
         result = await self.db.execute(stmt)
         return result.scalars().first()
     

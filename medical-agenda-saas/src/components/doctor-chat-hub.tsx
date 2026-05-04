@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Eraser, ImagePlus, LoaderCircle, Send, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
+import { Clipboard, Eraser, ImagePlus, LoaderCircle, Send, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatMedicalImageAnalysisReport, type AiImageAnalysisResult } from "@/lib/ai-image-analysis-format";
 import { fetchJsonWithRetry } from "@/lib/http-client";
 
 type ChatMessage = {
@@ -35,38 +37,6 @@ type ClearChatResponse = {
   deleted_count: number;
 };
 
-type ParseAnalysisResponse = {
-  analysis?: {
-    document_type?: string;
-    quality?: string;
-    observations?: string[];
-    raw_extracted_text?: string;
-    confidence?: { overall?: number };
-    clinical_content?: {
-      diagnoses?: string[];
-      imaging_findings?: string[];
-      recommendations?: string[];
-    };
-  };
-  imaging_analysis?: {
-    type?: string;
-    region?: string;
-    quality?: string;
-    confidence?: number;
-    condition?: string;
-    probability?: number;
-    findings?: string[];
-    technical_description?: string;
-    limitations?: string;
-    recommendation?: string;
-    pipeline?: string;
-    model_key?: string;
-    model_version?: string;
-    notes?: string;
-    elapsed_ms?: number;
-  } | null;
-};
-
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return fetchJsonWithRetry<T>(url, init, {
     retries: 2,
@@ -83,14 +53,10 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
   const [clearingChat, setClearingChat] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageLoading, setImageLoading] = useState(false);
-  const [analysis, setAnalysis] = useState<ParseAnalysisResponse["analysis"] | null>(null);
-  const [imagingAnalysis, setImagingAnalysis] = useState<ParseAnalysisResponse["imaging_analysis"] | null>(null);
-
-  const extractionPreview = useMemo(() => {
-    const raw = String(analysis?.raw_extracted_text ?? "").trim();
-    if (!raw) return "";
-    return raw.slice(0, 500);
-  }, [analysis]);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef(true);
 
   const loadChatHistory = useCallback(async () => {
     setLoadingHistory(true);
@@ -109,6 +75,45 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
     void loadChatHistory();
   }, [loadChatHistory]);
 
+  useEffect(() => {
+    const container = chatScrollRef.current;
+    if (!container) return;
+    if (!shouldAutoScrollRef.current) return;
+    container.scrollTop = container.scrollHeight;
+  }, [chatMessages]);
+
+  useEffect(() => {
+    if (!imageFile || !imageFile.type.startsWith("image/")) {
+      setImagePreviewUrl(null);
+      return;
+    }
+
+    const url = URL.createObjectURL(imageFile);
+    setImagePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
+
+  const handleChatScroll = useCallback(() => {
+    const container = chatScrollRef.current;
+    if (!container) return;
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    shouldAutoScrollRef.current = distanceToBottom <= 120;
+  }, []);
+
+  const postDoctorChat = useCallback(
+    async (message: string, context?: Record<string, unknown>) => {
+      return fetchJson<DoctorChatResponse>("/chat/doctor", {
+        method: "POST",
+        body: JSON.stringify({
+          doctor_id: doctorId,
+          message,
+          context,
+        }),
+      });
+    },
+    [doctorId],
+  );
+
   const sendDoctorChat = async () => {
     if (!chatInput.trim()) return;
 
@@ -125,13 +130,7 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
     setChatLoading(true);
 
     try {
-      const result = await fetchJson<DoctorChatResponse>("/chat/doctor", {
-        method: "POST",
-        body: JSON.stringify({
-          doctor_id: doctorId,
-          message: outgoingText,
-        }),
-      });
+      const result = await postDoctorChat(outgoingText);
 
       setChatMessages((prev) => [
         ...prev,
@@ -181,25 +180,46 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
     try {
       const formData = new FormData();
       formData.set("file", imageFile);
+      formData.set("source", "doctor_chat");
 
-      const response = await fetch("/api/import/agenda/parse", {
+      const response = await fetch("/api/ai/image-analysis", {
         method: "POST",
         body: formData,
       });
 
       const payload = (await response.json()) as {
         ok?: boolean;
-        data?: ParseAnalysisResponse;
+        data?: AiImageAnalysisResult;
         error?: { message?: string };
       };
 
-      if (!response.ok || payload.ok === false) {
+      if (!response.ok || payload.ok === false || !payload.data) {
         throw new Error(payload.error?.message ?? `HTTP ${response.status}`);
       }
+      const analysis = payload.data;
 
-      setAnalysis(payload.data?.analysis ?? null);
-      setImagingAnalysis(payload.data?.imaging_analysis ?? null);
-      toast.success("Analisis de imagen completado");
+      const doctorImageMessage: ChatMessage = {
+        id: `doctor-image-${Date.now()}`,
+        role: "doctor",
+        content: `Adjunté imagen para análisis asistido: ${imageFile.name}`,
+        created_at: new Date().toISOString(),
+      };
+      setChatMessages((prev) => [...prev, doctorImageMessage]);
+
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `metabrain-image-${Date.now()}`,
+          role: "metabrain",
+          content: formatMedicalImageAnalysisReport(analysis),
+          created_at: new Date().toISOString(),
+          source: "GROQ_IMAGE_ANALYSIS",
+        },
+      ]);
+
+      setImageFile(null);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+      toast.success("Análisis asistido generado");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "No se pudo analizar la imagen");
     } finally {
@@ -208,7 +228,7 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+    <div className="grid gap-4">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -217,7 +237,11 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="max-h-[480px] space-y-2 overflow-auto rounded-md border bg-slate-50 p-3">
+          <div
+            ref={chatScrollRef}
+            onScroll={handleChatScroll}
+            className="max-h-[480px] space-y-2 overflow-auto rounded-md border bg-slate-50 p-3"
+          >
             {loadingHistory ? (
               <div className="flex items-center gap-2 text-sm text-slate-500">
                 <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -231,6 +255,23 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
                   key={message.id}
                   className={`rounded-md px-3 py-2 text-sm ${message.role === "doctor" ? "ml-auto max-w-[85%] bg-slate-900 text-white" : "max-w-[90%] border bg-white text-slate-800"}`}
                 >
+                  {message.content.startsWith("Análisis asistido de imagen") ? (
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-sky-700">Análisis asistido de imagen</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Copiar informe"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(message.content);
+                          toast.success("Informe copiado");
+                        }}
+                      >
+                        <Clipboard className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : null}
                   <p className="whitespace-pre-wrap">{message.content}</p>
                 </div>
               ))
@@ -240,17 +281,53 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="doctor-chat-hub-input">Consulta clinica libre</Label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={clearingChat}
-                onClick={() => void clearDoctorChat()}
-              >
-                {clearingChat ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Eraser className="h-4 w-4" />}
-                Borrar chat
-              </Button>
+              <div className="flex items-center gap-2">
+                <Input
+                  id="doctor-chat-image-input"
+                  ref={imageInputRef}
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                  className="hidden"
+                  onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
+                />
+                <Button type="button" variant="outline" size="sm" onClick={() => imageInputRef.current?.click()}>
+                  <ImagePlus className="h-4 w-4" />
+                  Adjuntar imagen
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={clearingChat}
+                  onClick={() => void clearDoctorChat()}
+                >
+                  {clearingChat ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Eraser className="h-4 w-4" />}
+                  Borrar chat
+                </Button>
+              </div>
             </div>
+            {imageFile ? (
+              <div className="grid gap-2 rounded-md border bg-slate-50 p-2 text-xs text-slate-700">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate">Archivo: {imageFile.name}</span>
+                  <Button size="sm" disabled={imageLoading} onClick={() => void analyzeImage()}>
+                    {imageLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+                    Analizar imagen
+                  </Button>
+                </div>
+                {imagePreviewUrl ? (
+                  <Image
+                    src={imagePreviewUrl}
+                    alt="Vista previa de imagen adjunta"
+                    width={180}
+                    height={112}
+                    unoptimized
+                    className="max-h-28 rounded-md border object-contain"
+                  />
+                ) : null}
+                <p className="text-amber-700">Informe preliminar generado por IA. Requiere validación de un profesional médico.</p>
+              </div>
+            ) : null}
             <div className="flex gap-2">
               <Input
                 id="doctor-chat-hub-input"
@@ -270,87 +347,6 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
               </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ImagePlus className="h-4 w-4" />
-            Analisis de imagen / PDF
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-2">
-            <Label htmlFor="doctor-image-input">Archivo</Label>
-            <Input
-              id="doctor-image-input"
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
-            />
-            <Button disabled={imageLoading || !imageFile} onClick={() => void analyzeImage()}>
-              {imageLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-              Analizar con IA
-            </Button>
-          </div>
-
-          {analysis ? (
-            <div className="space-y-2 rounded-md border bg-slate-50 p-3 text-sm">
-              <p><strong>Tipo:</strong> {analysis.document_type || "n/d"}</p>
-              <p><strong>Calidad:</strong> {analysis.quality || "n/d"}</p>
-              <p>
-                <strong>Confianza:</strong>{" "}
-                {typeof analysis.confidence?.overall === "number" ? `${Math.round(analysis.confidence.overall * 100)}%` : "n/d"}
-              </p>
-              <p><strong>Observaciones:</strong> {(analysis.observations ?? []).join(" | ") || "Sin observaciones"}</p>
-
-              {imagingAnalysis ? (
-                <div className="mt-2 space-y-1 rounded-md border bg-emerald-50 p-2">
-                  <p className="font-semibold text-emerald-900">Pipeline de imagen medica</p>
-                  <p><strong>Tipo estudio:</strong> {imagingAnalysis.type || "n/d"}</p>
-                  <p><strong>Region:</strong> {imagingAnalysis.region || "n/d"}</p>
-                  <p><strong>Calidad imagen:</strong> {imagingAnalysis.quality || "n/d"}</p>
-                  <p><strong>Confianza:</strong> {typeof imagingAnalysis.confidence === "number" ? `${Math.round(imagingAnalysis.confidence * 100)}%` : "n/d"}</p>
-                  <p><strong>Condicion sugerida:</strong> {imagingAnalysis.condition || "n/d"}</p>
-                  <p><strong>Probabilidad:</strong> {typeof imagingAnalysis.probability === "number" ? `${Math.round(imagingAnalysis.probability * 100)}%` : "n/d"}</p>
-                  <p><strong>Hallazgos estructurados:</strong> {(imagingAnalysis.findings ?? []).join(" | ") || "Sin hallazgos"}</p>
-                  <p><strong>Descripcion tecnica:</strong> {imagingAnalysis.technical_description || "n/d"}</p>
-                  <p><strong>Limitaciones:</strong> {imagingAnalysis.limitations || "n/d"}</p>
-                  <p><strong>Recomendacion:</strong> {imagingAnalysis.recommendation || "n/d"}</p>
-                  <p><strong>Pipeline:</strong> {imagingAnalysis.pipeline || "n/d"}</p>
-                  <p><strong>Model key:</strong> {imagingAnalysis.model_key || "n/d"}</p>
-                  <p><strong>Modelo:</strong> {imagingAnalysis.model_version || "n/d"}</p>
-                  <p><strong>Tiempo inferencia:</strong> {typeof imagingAnalysis.elapsed_ms === "number" ? `${imagingAnalysis.elapsed_ms} ms` : "n/d"}</p>
-                  <p><strong>Nota:</strong> {imagingAnalysis.notes || "Analisis asistido"}</p>
-                </div>
-              ) : null}
-
-              <div className="mt-2 space-y-1 rounded-md border bg-white p-2">
-                <p className="font-semibold text-slate-800">Informe clinico preliminar</p>
-                <p>
-                  <strong>Impresion diagnostica:</strong>{" "}
-                  {(analysis.clinical_content?.diagnoses ?? []).join(" | ") || "No concluyente con la calidad actual del archivo."}
-                </p>
-                <p>
-                  <strong>Hallazgos de imagen:</strong>{" "}
-                  {(analysis.clinical_content?.imaging_findings ?? []).join(" | ") || "No se detectaron hallazgos estructurados en el texto extraido."}
-                </p>
-                <p>
-                  <strong>Recomendaciones:</strong>{" "}
-                  {(analysis.clinical_content?.recommendations ?? []).join(" | ") || "Correlacionar con clinica y evaluar informe formal por especialista."}
-                </p>
-              </div>
-
-              {extractionPreview ? (
-                <p className="text-xs text-slate-600">
-                  <strong>Texto extraido:</strong> {extractionPreview}{analysis.raw_extracted_text && analysis.raw_extracted_text.length > 500 ? "..." : ""}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500">Sube un archivo para obtener analisis asistido por IA.</p>
-          )}
         </CardContent>
       </Card>
     </div>

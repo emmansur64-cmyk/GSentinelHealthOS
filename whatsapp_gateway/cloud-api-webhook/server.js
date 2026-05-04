@@ -25,6 +25,18 @@ function safeErrorMessage(error) {
   return String(error);
 }
 
+function redactSensitiveText(value) {
+  return String(value || '')
+    .replace(/Authorization:\s*Bearer\s+[A-Za-z0-9._-]+/gi, 'Authorization: Bearer [REDACTED]')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
+    .replace(/access_token["'=:\s]+[A-Za-z0-9._-]+/gi, 'access_token=[REDACTED]')
+    .replace(/client_secret["'=:\s]+[A-Za-z0-9._-]+/gi, 'client_secret=[REDACTED]');
+}
+
+function sanitizePayload(payload) {
+  return JSON.parse(redactSensitiveText(JSON.stringify(payload)));
+}
+
 function timingSafeEqualHex(a, b) {
   const aBuffer = Buffer.from(a, 'hex');
   const bBuffer = Buffer.from(b, 'hex');
@@ -93,10 +105,10 @@ async function sendWhatsAppTextMessage(to, text) {
   const responseText = await response.text();
 
   if (!response.ok) {
-    throw new Error(`Error Meta send message (${response.status}): ${responseText}`);
+    throw new Error(`Error Meta send message (${response.status}): ${redactSensitiveText(responseText)}`);
   }
 
-  return { sent: true, status: response.status, body: responseText };
+  return { sent: true, status: response.status, body: redactSensitiveText(responseText) };
 }
 
 app.use(express.json({
@@ -145,19 +157,21 @@ app.post('/webhook', (req, res) => {
           const from = message.from || 'desconocido';
           const messageType = message.type || 'desconocido';
           const messageText = message?.text?.body || '';
+          const safeMessageText = redactSensitiveText(messageText);
+          const safeMessage = sanitizePayload(message);
 
           if (messageText) {
-            console.log(`[Mensaje] De: ${from} | Tipo: ${messageType} | Texto: ${messageText}`);
+            console.log(`[Mensaje] De: ${from} | Tipo: ${messageType} | Texto: ${safeMessageText}`);
           } else {
-            console.log('[Mensaje] De:', from, '| Tipo:', messageType, '| Payload:', JSON.stringify(message));
+            console.log('[Mensaje] De:', from, '| Tipo:', messageType, '| Payload:', JSON.stringify(safeMessage));
           }
 
           await appendJsonLine(INCOMING_LOG_PATH, {
             ts: new Date().toISOString(),
             from,
             type: messageType,
-            text: messageText,
-            raw: message,
+            text: safeMessageText,
+            raw: safeMessage,
           });
 
           if (messageType === 'text' && from !== 'desconocido') {
@@ -196,7 +210,7 @@ app.post('/webhook', (req, res) => {
       await appendJsonLine(INCOMING_LOG_PATH, {
         ts: new Date().toISOString(),
         type: 'non_message_event',
-        raw: body,
+        raw: sanitizePayload(body),
       });
     }
   }).catch((error) => {

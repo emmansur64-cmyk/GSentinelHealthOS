@@ -22,6 +22,7 @@ from api.app.api.v1.endpoints import (
     doctors,
     health,
     knowledge,
+    meta,
     patients,
     realtime,
     time_slots_simple,
@@ -100,6 +101,7 @@ app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(knowledge.router, prefix="/api/v1")
 app.include_router(clinics.router, prefix="/api/v1")
+app.include_router(meta.router, prefix="/api")
 app.include_router(time_slots_simple.router, prefix="/api/v1")
 app.include_router(brain_decide.router, prefix="/api/v1")
 if _env_flag("ENABLE_PY_WHATSAPP_WEBHOOK", default=False):
