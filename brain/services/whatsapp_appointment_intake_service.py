@@ -90,7 +90,8 @@ class WhatsAppAppointmentIntakeService:
         if digits.startswith("00"):
             return f"+{digits[2:]}"
         if not digits.startswith("+"):
-            return f"+{re.sub(r'\D', '', digits)}"
+            clean_digits = re.sub(r"\D", "", digits)
+            return f"+{clean_digits}"
         return digits
 
     @staticmethod
