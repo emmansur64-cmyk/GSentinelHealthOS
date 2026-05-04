@@ -26,14 +26,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isAdmin = user?.role === "admin";
   const isMedico = user?.role === "doctor" || user?.role === "medico";
-  const isRecepcion = user?.role === "secretaria" || user?.role === "recepcionista";
+  const isRecepcion =
+    user?.role === "secretaria" ||
+    user?.role === "recepcionista" ||
+    user?.role === "receptionist" ||
+    user?.role === "clinic_owner" ||
+    user?.role === "clinic_admin";
 
   const roleLabel = isAdmin ? "Administracion" : isMedico ? "Medico" : "Recepcion";
 
   const navItems = [
     { label: "Overview", href: "/dashboard/overview", icon: LayoutDashboard },
     { label: "Agenda", href: "/dashboard/agenda", icon: CalendarDays },
-    ...(isMedico ? [{ label: "Panel Doctor", href: "/dashboard/doctor", icon: Stethoscope }] : []),
+    ...(isMedico ? [{ label: "Panel Doctor", href: "/doctor/dashboard", icon: Stethoscope }] : []),
     ...(isMedico ? [] : [{ label: "Pacientes", href: "/dashboard/pacientes", icon: UserRound }]),
     ...(isAdmin || isRecepcion ? [{ label: "Profesionales", href: "/dashboard/profesionales", icon: Stethoscope }] : []),
     ...(isAdmin || isRecepcion ? [{ label: "Importar Agenda", href: "/dashboard/importar-agenda", icon: Upload }] : []),
@@ -47,6 +52,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     "/dashboard/overview": "Overview",
     "/dashboard/agenda": "Agenda",
     "/dashboard/doctor": "Panel Doctor",
+    "/doctor/dashboard": "Panel Doctor",
     "/dashboard/pacientes": "Pacientes",
     "/dashboard/profesionales": "Profesionales",
     "/dashboard/importar-agenda": "Importar Agenda",

@@ -98,7 +98,10 @@ async function readApiError(response) {
       details: providerDetail || null,
     };
   } catch {
-    return { message: "Error desconocido", details: null };
+    return {
+      message: `Error HTTP ${response.status}${response.statusText ? `: ${response.statusText}` : ""}`,
+      details: null,
+    };
   }
 }
 
