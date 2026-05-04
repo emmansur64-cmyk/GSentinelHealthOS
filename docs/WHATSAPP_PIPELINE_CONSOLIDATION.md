@@ -50,3 +50,28 @@ Meta must point to only one webhook endpoint:
 - `/api/webhooks/whatsapp`
 
 Do not configure Meta to send traffic to legacy webhook endpoints while this consolidation is active.
+
+## Validación local FLOW_OK
+
+Validación ejecutada en entorno local (sin deploy, sin VPS) para el pipeline Next.js + BullMQ:
+
+- Redis local OK
+- Webhook GET OK
+- Webhook POST firmado OK
+- DB persistence OK
+- Queue enqueue OK
+- Workers OK
+
+Requisito local confirmado para resolver tenant por `phone_number_id`:
+
+- Tenant activo
+- `ClinicWhatsappAccount` activa para el `phoneNumberId` local
+
+Configuración local validada:
+
+- `DEFAULT_TENANT_ID=default` solo para entorno local validado
+
+Notas de seguridad:
+
+- No incluir tokens
+- No incluir secrets
