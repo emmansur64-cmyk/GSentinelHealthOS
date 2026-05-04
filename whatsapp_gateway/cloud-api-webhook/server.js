@@ -6,6 +6,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const ENABLE_LEGACY_NODE_WHATSAPP = String(process.env.ENABLE_LEGACY_NODE_WHATSAPP || 'false').toLowerCase() === 'true';
 
 // Cambia este valor por el mismo token que usarás en Meta.
 const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'WABIZ_VERIFY_2026_GSENTINEL';
@@ -202,6 +203,11 @@ app.post('/webhook', (req, res) => {
     console.error('Error procesando webhook:', safeErrorMessage(error));
   });
 });
+
+if (!ENABLE_LEGACY_NODE_WHATSAPP) {
+  console.log('Legacy Node WhatsApp webhook disabled; Next/BullMQ is primary pipeline.');
+  process.exit(0);
+}
 
 app.listen(PORT, () => {
   console.log(`Servidor webhook corriendo en http://localhost:${PORT}`);

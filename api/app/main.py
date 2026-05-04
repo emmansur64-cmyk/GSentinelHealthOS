@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 if sys.platform.startswith("win"):
@@ -33,6 +34,13 @@ from api.app.core import settings
 from shared.utils import setup_logger
 
 logger = setup_logger(__name__)
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _validate_windows_psycopg_runtime() -> None:
@@ -94,7 +102,11 @@ app.include_router(knowledge.router, prefix="/api/v1")
 app.include_router(clinics.router, prefix="/api/v1")
 app.include_router(time_slots_simple.router, prefix="/api/v1")
 app.include_router(brain_decide.router, prefix="/api/v1")
-app.include_router(webhooks_whatsapp.router, prefix="/api/v1")
+if _env_flag("ENABLE_PY_WHATSAPP_WEBHOOK", default=False):
+    app.include_router(webhooks_whatsapp.router, prefix="/api/v1")
+    logger.info("Python WhatsApp webhook legacy enabled by flag ENABLE_PY_WHATSAPP_WEBHOOK")
+else:
+    logger.info("Python WhatsApp webhook legacy disabled; Next/BullMQ is primary pipeline")
 app.include_router(webhooks_google_calendar.router, prefix="/api/v1")
 app.include_router(realtime.router)
 

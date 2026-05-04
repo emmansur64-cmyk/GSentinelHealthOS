@@ -31,6 +31,13 @@ EXPECTED_BUSINESS_ACCOUNT_ID = "967835399226590"
 EXPECTED_REDIS_URL = "redis://sentinel-redis-master:6379"
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 async def _gateway_preflight() -> None:
     errors: list[str] = []
     if not (REDIS_URL or "").strip():
@@ -73,6 +80,13 @@ async def _gateway_preflight() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    gateway_enabled = _env_flag("ENABLE_WHATSAPP_GATEWAY", default=False)
+
+    if not gateway_enabled:
+        logger.info("WhatsApp Gateway legacy disabled; Next/BullMQ is primary pipeline")
+        yield
+        return
+
     if ENV == "production":
         await _gateway_preflight()
 
@@ -112,7 +126,11 @@ app.add_middleware(
 )
 
 # Registrar routers
-app.include_router(webhook.router)
+if _env_flag("ENABLE_WHATSAPP_GATEWAY", default=False):
+    app.include_router(webhook.router)
+    logger.info("WhatsApp Gateway legacy router enabled by flag ENABLE_WHATSAPP_GATEWAY")
+else:
+    logger.info("WhatsApp Gateway legacy router disabled; Next/BullMQ is primary pipeline")
 
 logger.info("WhatsApp Gateway inicializado correctamente")
 

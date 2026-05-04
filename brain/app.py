@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
@@ -30,6 +31,13 @@ from brain.orchestration.orchestrator import IntelligentOrchestrator
 from brain.orchestration.session_manager import OrchestratorSessionManager
 
 logger = logging.getLogger(__name__)
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 # ── Schemas de request/response ───────────────────────────────────────────────
@@ -90,10 +98,18 @@ async def lifespan(app: FastAPI):
     # Arrancar el worker Redis en background (booking existente)
     from brain.main import BrainWorker  # import diferido para evitar circular
 
-    worker = BrainWorker()
-    worker_task = asyncio.create_task(worker.start())
-    app.state.brain_worker = worker
-    app.state.brain_worker_task = worker_task
+    worker_enabled = _env_flag("ENABLE_BRAIN_REDIS_WORKER", default=False)
+    worker = None
+    worker_task = None
+
+    if worker_enabled:
+        worker = BrainWorker()
+        worker_task = asyncio.create_task(worker.start())
+        app.state.brain_worker = worker
+        app.state.brain_worker_task = worker_task
+        logger.info("Brain Redis WhatsApp legacy worker enabled by flag ENABLE_BRAIN_REDIS_WORKER")
+    else:
+        logger.info("Brain Redis WhatsApp legacy worker disabled; Next/BullMQ is primary pipeline")
 
     logger.info(
         "Brain listo | HTTP=%s:%d | Redis worker activo",
@@ -105,12 +121,14 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await orchestrator.close()
-        await worker.stop()
-        worker_task.cancel()
-        try:
-            await worker_task
-        except asyncio.CancelledError:
-            pass
+        if worker is not None:
+            await worker.stop()
+        if worker_task is not None:
+            worker_task.cancel()
+            try:
+                await worker_task
+            except asyncio.CancelledError:
+                pass
         logger.info("Brain detenido correctamente.")
 
 

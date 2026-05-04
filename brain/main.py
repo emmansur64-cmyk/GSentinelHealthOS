@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from typing import Any
 
 from redis.asyncio import Redis
@@ -16,6 +17,13 @@ from shared.logging_utils import mask_phone
 from shared.utils import setup_logger
 
 logger = setup_logger(__name__)
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 class BrainWorker:
@@ -157,6 +165,10 @@ class BrainWorker:
 
 async def _run_worker_only() -> None:
     """Corre únicamente el worker Redis (modo legado / standalone)."""
+    if not _env_flag("ENABLE_BRAIN_REDIS_WORKER", default=False):
+        logger.info("Brain Redis WhatsApp legacy worker disabled; Next/BullMQ is primary pipeline")
+        return
+
     logger.info("Iniciando GSentinelHealthOS Brain (modo worker)...")
     worker = BrainWorker()
     try:
