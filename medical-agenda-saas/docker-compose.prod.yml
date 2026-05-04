@@ -1,4 +1,6 @@
 services:
+  # IMPORTANTE: No usar 6379 en host. Ese puerto está ocupado por sentinel-redis-master.
+  # Usar únicamente puertos alternativos (6380 o superior) vía REDIS_HOST_PORT.
   redis:
     image: redis:7-alpine
     container_name: medical-agenda-redis
@@ -14,6 +16,8 @@ services:
     networks:
       - medical-agenda-net
 
+  # IMPORTANTE: No usar 5432 en host. Ese puerto está ocupado por sentinel-postgres.
+  # Usar únicamente puertos alternativos (55432) vía POSTGRES_HOST_PORT.
   postgres:
     image: postgres:16-alpine
     container_name: medical-agenda-postgres
@@ -114,7 +118,7 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://' + process.env.HOSTNAME + ':3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 10s
       timeout: 3s
       retries: 12
