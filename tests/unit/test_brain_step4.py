@@ -149,8 +149,33 @@ def test_nlu_extracts_specialty_and_datetime_entities() -> None:
 
 
 @pytest.mark.asyncio
-async def test_nlu_classifies_system_reset_with_high_priority() -> None:
-    intent = await NLUEngine.classify_intent("Quiero cancelar y empezar de nuevo")
+@pytest.mark.parametrize(
+    "message",
+    [
+        "cancelar turno",
+        "quiero cancelar mi turno",
+        "cancelar cita",
+        "anular turno",
+    ],
+)
+async def test_nlu_classifies_appointment_cancellation_before_reset(message: str) -> None:
+    intent = await NLUEngine.classify_intent(message)
+    assert intent == "cancel_appointment"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    [
+        "reiniciar conversacion",
+        "reset",
+        "empezar de nuevo",
+        "borrar contexto",
+        "limpiar conversacion",
+    ],
+)
+async def test_nlu_classifies_explicit_system_reset(message: str) -> None:
+    intent = await NLUEngine.classify_intent(message)
     assert intent == "SYSTEM_RESET"
 
 

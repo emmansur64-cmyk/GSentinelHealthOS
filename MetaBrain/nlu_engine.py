@@ -186,14 +186,24 @@ class NLUEngine:
     @classmethod
     async def classify_intent(cls, text: str) -> str:
         normalized = cls._normalize(text)
-        reset_commands = ("cancelar", "salir", "empezar de nuevo", "chau", "reset", "abortar")
+        reset_commands = (
+            "reiniciar conversacion",
+            "reset",
+            "empezar de nuevo",
+            "borrar contexto",
+            "limpiar conversacion",
+        )
         if any(token in normalized for token in reset_commands):
             return "SYSTEM_RESET"
 
-        if any(token in normalized for token in ("cancelar", "cancelacion", "baja", "borrar")):
+        cancellation_targets = ("turno", "cita", "appointment", "reserva")
+        cancellation_verbs = ("cancelar", "cancelacion", "baja", "borrar", "anular", "suspender")
+        if any(verb in normalized for verb in cancellation_verbs) and any(
+            target in normalized for target in cancellation_targets
+        ):
             return "cancel_appointment"
 
-        if any(token in normalized for token in ("anular", "anular cita", "suspender cita")):
+        if any(token in normalized for token in ("anular cita", "suspender cita")):
             return "cancel_appointment"
 
         if any(token in normalized for token in ("turno", "cita", "agendar", "reservar")):
