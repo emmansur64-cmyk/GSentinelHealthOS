@@ -181,3 +181,25 @@ export const availabilityRuleUpdateSchema = z.object({
   end_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/).optional(),
   slot_duration: z.number().int().min(10).max(180).optional(),
 }).strict();
+
+export const doctorAvailabilityMonthQuerySchema = z.object({
+  year: z.coerce.number().int().min(2024).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+}).strict();
+
+export const doctorAvailabilityMonthSlotSchema = z.object({
+  id: z.uuid().optional(),
+  start_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
+  end_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
+}).strict();
+
+export const doctorAvailabilityMonthDaySchema = z.object({
+  date: z.iso.date(),
+  slots: z.array(doctorAvailabilityMonthSlotSchema).default([]),
+}).strict();
+
+export const doctorAvailabilityMonthSaveSchema = z.object({
+  year: z.number().int().min(2024).max(2100),
+  month: z.number().int().min(1).max(12),
+  days: z.array(doctorAvailabilityMonthDaySchema),
+}).strict();
