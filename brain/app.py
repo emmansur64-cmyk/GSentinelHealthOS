@@ -144,11 +144,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+BRAIN_ALLOWED_ORIGINS = os.environ.get(
+    "BRAIN_ALLOWED_ORIGINS", "http://localhost:3000"
+)
+origins = [o.strip() for o in BRAIN_ALLOWED_ORIGINS.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["POST", "GET"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 

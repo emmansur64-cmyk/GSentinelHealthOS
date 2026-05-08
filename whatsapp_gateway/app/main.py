@@ -26,11 +26,6 @@ from shared.utils import setup_logger
 logger = setup_logger(__name__)
 
 
-EXPECTED_PHONE_NUMBER_ID = "1093032243892458"
-EXPECTED_BUSINESS_ACCOUNT_ID = "967835399226590"
-EXPECTED_REDIS_URL = "redis://sentinel-redis-master:6379"
-
-
 def _env_flag(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -39,12 +34,14 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 
 async def _gateway_preflight() -> None:
+    redis_url = os.environ.get("REDIS_URL", "")
+    whatsapp_phone_number_id = os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "")
+    whatsapp_business_account_id = os.environ.get("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
+
     errors: list[str] = []
-    if not (REDIS_URL or "").strip():
+    if not (redis_url or "").strip():
         errors.append("REDIS_URL no configurado")
-    if REDIS_URL != EXPECTED_REDIS_URL:
-        errors.append("REDIS_URL incorrecto")
-    if "localhost" in REDIS_URL or "127.0.0.1" in REDIS_URL:
+    if "localhost" in redis_url or "127.0.0.1" in redis_url:
         errors.append("REDIS_URL invalido para Docker production")
     if (os.getenv("REDIS_SENTINELS", "") or "").strip():
         errors.append("REDIS_SENTINELS no permitido en gateway production")
@@ -54,12 +51,14 @@ async def _gateway_preflight() -> None:
         errors.append("WHATSAPP_ACCESS_TOKEN no configurado")
     if not (WHATSAPP_APP_SECRET or "").strip():
         errors.append("WHATSAPP_APP_SECRET no configurado")
-    if WHATSAPP_PHONE_NUMBER_ID != EXPECTED_PHONE_NUMBER_ID:
-        errors.append("WHATSAPP_PHONE_NUMBER_ID incorrecto")
-    if WHATSAPP_BUSINESS_ACCOUNT_ID != EXPECTED_BUSINESS_ACCOUNT_ID:
-        errors.append("WHATSAPP_BUSINESS_ACCOUNT_ID incorrecto")
+    if not (whatsapp_phone_number_id or "").strip():
+        errors.append("WHATSAPP_PHONE_NUMBER_ID no configurado")
+    if not (whatsapp_business_account_id or "").strip():
+        errors.append("WHATSAPP_BUSINESS_ACCOUNT_ID no configurado")
 
     if errors:
+        for error in errors:
+            logger.critical("Gateway preflight variable faltante o invalida: %s", error)
         logger.critical("Gateway preflight fallo: %s", "; ".join(errors))
         raise RuntimeError("Gateway preflight fallo")
 

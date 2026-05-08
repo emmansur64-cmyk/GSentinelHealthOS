@@ -1,4 +1,6 @@
 import asyncio
+import os
+import sys
 from passlib.context import CryptContext
 from api.app.db.session import async_session_local
 from sqlalchemy import text
@@ -6,8 +8,12 @@ from sqlalchemy import text
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 async def create_seed_users():
-    admin_password = "Admin123!"
-    doctor_password = "Doctor123!"
+    admin_password = os.environ.get("SEED_ADMIN_PASSWORD")
+    doctor_password = os.environ.get("SEED_DOCTOR_PASSWORD")
+
+    if not admin_password or not doctor_password:
+        print("ERROR: SEED_ADMIN_PASSWORD y SEED_DOCTOR_PASSWORD deben estar definidos en variables de entorno.")
+        sys.exit(1)
     
     admin_hash = pwd_context.hash(admin_password)
     doctor_hash = pwd_context.hash(doctor_password)

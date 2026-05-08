@@ -1,33 +1,55 @@
 services:
   # ============ INFRAESTRUCTURA ============
+  db:
+    image: postgres:15-alpine
+    container_name: gs_db
+    mem_limit: 1g
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      POSTGRES_DB: gsentinel
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    command: ["postgres", "-c", "max_connections=50", "-c", "shared_buffers=128MB"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d gsentinel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis-master:
     image: redis:7-alpine
-    container_name: sentinel-redis-master
+    container_name: gs_redis_master
     mem_limit: 768m
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-    ports:
-      - "127.0.0.1:6379:6379"
     volumes:
       - redis_master_data:/data
       - ./broker/redis.conf:/usr/local/etc/redis/redis.conf:ro
     command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--bind", "0.0.0.0", "--protected-mode", "no"]
     networks:
-      - sentinel-network
+      - gs_prod
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 3s
       retries: 5
 
-  redis-replica-1:
+  redis-replica:
     image: redis:7-alpine
-    container_name: sentinel-redis-replica-1
+    container_name: gs_redis_replica
     mem_limit: 512m
     logging:
       driver: "json-file"
@@ -35,270 +57,143 @@ services:
         max-size: "10m"
         max-file: "3"
     volumes:
-      - redis_replica1_data:/data
+      - redis_replica_data:/data
       - ./broker/redis.conf:/usr/local/etc/redis/redis.conf:ro
     command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--replicaof", "redis-master", "6379"]
     depends_on:
       redis-master:
         condition: service_healthy
     networks:
-      - sentinel-network
+      - gs_prod
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  redis-replica-2:
-    image: redis:7-alpine
-    container_name: sentinel-redis-replica-2
-    mem_limit: 512m
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    volumes:
-      - redis_replica2_data:/data
-      - ./broker/redis.conf:/usr/local/etc/redis/redis.conf:ro
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf", "--replicaof", "redis-master", "6379"]
-    depends_on:
-      redis-master:
-        condition: service_healthy
-    networks:
-      - sentinel-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 3s
       retries: 5
 
   redis-sentinel-1:
     image: redis:7-alpine
-    container_name: sentinel-redis-sentinel-1
+    container_name: gs_redis_sentinel_1
     mem_limit: 128m
     logging:
       driver: "json-file"
       options:
         max-size: "5m"
         max-file: "2"
-    ports:
-      - "127.0.0.1:26379:26379"
     volumes:
       - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
     command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && redis-server /tmp/sentinel.conf --sentinel"]
     depends_on:
       redis-master:
         condition: service_healthy
-      redis-replica-1:
-        condition: service_healthy
-      redis-replica-2:
+      redis-replica:
         condition: service_healthy
     networks:
-      - sentinel-network
+      - gs_prod
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "-h", "localhost", "-p", "26379", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 3s
       retries: 5
 
   redis-sentinel-2:
     image: redis:7-alpine
-    container_name: sentinel-redis-sentinel-2
+    container_name: gs_redis_sentinel_2
     mem_limit: 128m
     logging:
       driver: "json-file"
       options:
         max-size: "5m"
         max-file: "2"
-    ports:
-      - "127.0.0.1:26380:26379"
     volumes:
       - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
     command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && redis-server /tmp/sentinel.conf --sentinel"]
     depends_on:
       redis-master:
         condition: service_healthy
-      redis-replica-1:
-        condition: service_healthy
-      redis-replica-2:
+      redis-replica:
         condition: service_healthy
     networks:
-      - sentinel-network
+      - gs_prod
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "-h", "localhost", "-p", "26379", "ping"]
-      interval: 5s
+      interval: 10s
       timeout: 3s
       retries: 5
 
   redis-sentinel-3:
     image: redis:7-alpine
-    container_name: sentinel-redis-sentinel-3
+    container_name: gs_redis_sentinel_3
     mem_limit: 128m
     logging:
       driver: "json-file"
       options:
         max-size: "5m"
         max-file: "2"
-    ports:
-      - "127.0.0.1:26381:26379"
     volumes:
       - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
     command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && redis-server /tmp/sentinel.conf --sentinel"]
     depends_on:
       redis-master:
         condition: service_healthy
-      redis-replica-1:
-        condition: service_healthy
-      redis-replica-2:
+      redis-replica:
         condition: service_healthy
     networks:
-      - sentinel-network
+      - gs_prod
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "-h", "localhost", "-p", "26379", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  # Redis separado para cache (no cola crítica)
-  redis-cache:
-    image: redis:7-alpine
-    container_name: sentinel-redis-cache
-    mem_limit: 256m
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "2"
-    ports:
-      - "127.0.0.1:6380:6379"
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
-    volumes:
-      - redis_cache_data:/data
-    networks:
-      - sentinel-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  # Redis separado para métricas/eventos de observabilidad
-  redis-metrics:
-    image: redis:7-alpine
-    container_name: sentinel-redis-metrics
-    mem_limit: 256m
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "2"
-    ports:
-      - "127.0.0.1:6381:6379"
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "volatile-lru"]
-    volumes:
-      - redis_metrics_data:/data
-    networks:
-      - sentinel-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6379", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  # Monitoreo básico de colas críticas y latencia Redis
-  redis-monitor:
-    image: redis:7-alpine
-    container_name: sentinel-redis-monitor
-    mem_limit: 64m
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "2"
-    depends_on:
-      redis-master:
-        condition: service_healthy
-    environment:
-      DLQ_ALERT_THRESHOLD: ${DLQ_ALERT_THRESHOLD:-50}
-    command:
-      - /bin/sh
-      - -lc
-      - |
-        while true; do
-          TS=$$(date '+%Y-%m-%dT%H:%M:%S%z');
-          IN_LEN=$$(redis-cli -h redis-master -p 6379 LLEN whatsapp:incoming 2>/dev/null || echo -1);
-          OUT_LEN=$$(redis-cli -h redis-master -p 6379 LLEN whatsapp:outgoing 2>/dev/null || echo -1);
-          DLQ_LEN=$$(redis-cli -h redis-master -p 6379 LLEN whatsapp:outgoing:dead 2>/dev/null || echo -1);
-          LAT=$$(redis-cli -h redis-master -p 6379 LATENCY LATEST 2>/dev/null | tr '\n' ' ');
-          echo "[$$TS] queue_len incoming=$$IN_LEN outgoing=$$OUT_LEN dlq=$$DLQ_LEN";
-          echo "[$$TS] redis_latency $$LAT";
-          if [ "$$DLQ_LEN" -gt "$$DLQ_ALERT_THRESHOLD" ]; then
-            echo "[$$TS] CRITICAL dlq_threshold_exceeded dlq=$$DLQ_LEN threshold=$$DLQ_ALERT_THRESHOLD";
-          fi;
-          sleep 10;
-        done
-    networks:
-      - sentinel-network
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:16-alpine
-    container_name: sentinel-postgres
-    mem_limit: 1g
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    environment:
-      POSTGRES_DB: sentinel_health
-      POSTGRES_USER: sentinel
-      POSTGRES_PASSWORD: sentinel_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - sentinel-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinel_health"]
-      interval: 5s
+      interval: 10s
       timeout: 3s
       retries: 5
 
   # ============ APLICACIONES ============
-  
+  migrate-api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_migrate_api
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+    networks:
+      - gs_prod
+    restart: "no"
+
   api:
     build:
       context: .
       dockerfile: docker/api.Dockerfile
-    container_name: sentinel-api
+    container_name: gs_api
     mem_limit: 768m
-    restart: unless-stopped
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-    ports:
-      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate-api:
+        condition: service_completed_successfully
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health
-      REDIS_URL: redis://redis-master:6379
-      REDIS_CACHE_URL: redis://redis-cache:6379
-      REDIS_METRICS_URL: redis://redis-metrics:6379
-      REDIS_SENTINEL_MASTER: mymaster
-      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
-      REDIS_QUEUE_PREFIX: "queue:"
-      REDIS_STATE_PREFIX: "state:"
-      REDIS_CACHE_PREFIX: "cache:"
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://redis-master:6379}
+      REDIS_SENTINEL_MASTER: ${REDIS_SENTINEL_MASTER:-mymaster}
+      REDIS_SENTINELS: ${REDIS_SENTINELS:-redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379}
+      REDIS_QUEUE_PREFIX: ${REDIS_QUEUE_PREFIX:-queue:}
+      REDIS_STATE_PREFIX: ${REDIS_STATE_PREFIX:-state:}
+      REDIS_CACHE_PREFIX: ${REDIS_CACHE_PREFIX:-cache:}
       JWT_SECRET: ${JWT_SECRET}
       GATEWAY_API_KEY: ${GATEWAY_API_KEY}
       BRAIN_API_KEY: ${BRAIN_API_KEY}
@@ -307,319 +202,81 @@ services:
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
       WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
-      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
-      META_APP_ID: ${META_APP_ID:-}
-      META_APP_SECRET: ${META_APP_SECRET:-}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v21.0}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+      META_APP_ID: ${META_APP_ID}
+      META_APP_SECRET: ${META_APP_SECRET}
       META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v21.0}
-      META_OAUTH_REDIRECT_URI: ${META_OAUTH_REDIRECT_URI:-}
-      META_EMBEDDED_SIGNUP_CONFIGURATION_ID: ${META_EMBEDDED_SIGNUP_CONFIGURATION_ID:-}
-      ENV: production
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis-master:
-        condition: service_healthy
-      redis-sentinel-1:
-        condition: service_healthy
+      META_OAUTH_REDIRECT_URI: ${META_OAUTH_REDIRECT_URI}
+      META_EMBEDDED_SIGNUP_CONFIGURATION_ID: ${META_EMBEDDED_SIGNUP_CONFIGURATION_ID}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     volumes:
-      - ./api:/app/api
-      - ./brain:/app/brain
-      - ./MetaBrain:/app/MetaBrain
-      - ./shared:/app/shared
+      - uploads_data:/data/uploads
     networks:
-      - sentinel-network
-    command: uvicorn api.app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  booking-worker-0:
-    build:
-      context: .
-      dockerfile: docker/api.Dockerfile
-    container_name: sentinel-booking-worker-0
-    mem_limit: 512m
+      - gs_prod
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    environment:
-      DATABASE_URL: postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health
-      REDIS_URL: redis://redis-master:6379
-      REDIS_CACHE_URL: redis://redis-cache:6379
-      REDIS_METRICS_URL: redis://redis-metrics:6379
-      REDIS_SENTINEL_MASTER: mymaster
-      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
-      REDIS_QUEUE_PREFIX: "queue:"
-      REDIS_STATE_PREFIX: "state:"
-      REDIS_CACHE_PREFIX: "cache:"
-      JWT_SECRET: ${JWT_SECRET}
-      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
-      BRAIN_API_KEY: ${BRAIN_API_KEY}
-      BOOKING_QUEUE_SHARDS: 2
-      BOOKING_WORKER_SHARD: 0
-      BOOKING_QUEUE_RESULT_TTL_SECONDS: 86400
-      BOOKING_QUEUE_LOCK_TTL_MS: 15000
-      ENV: production
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis-master:
-        condition: service_healthy
-      redis-sentinel-1:
-        condition: service_healthy
-    volumes:
-      - ./api:/app/api
-      - ./brain:/app/brain
-      - ./MetaBrain:/app/MetaBrain
-      - ./shared:/app/shared
-    networks:
-      - sentinel-network
-    command: python -m api.app.booking_queue_worker_main
     healthcheck:
-      disable: true
-
-  booking-worker-1:
-    build:
-      context: .
-      dockerfile: docker/api.Dockerfile
-    container_name: sentinel-booking-worker-1
-    mem_limit: 512m
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    environment:
-      DATABASE_URL: postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health
-      REDIS_URL: redis://redis-master:6379
-      REDIS_CACHE_URL: redis://redis-cache:6379
-      REDIS_METRICS_URL: redis://redis-metrics:6379
-      REDIS_SENTINEL_MASTER: mymaster
-      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
-      REDIS_QUEUE_PREFIX: "queue:"
-      REDIS_STATE_PREFIX: "state:"
-      REDIS_CACHE_PREFIX: "cache:"
-      JWT_SECRET: ${JWT_SECRET}
-      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
-      BRAIN_API_KEY: ${BRAIN_API_KEY}
-      BOOKING_QUEUE_SHARDS: 2
-      BOOKING_WORKER_SHARD: 1
-      BOOKING_QUEUE_RESULT_TTL_SECONDS: 86400
-      BOOKING_QUEUE_LOCK_TTL_MS: 15000
-      ENV: production
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis-master:
-        condition: service_healthy
-      redis-sentinel-1:
-        condition: service_healthy
-    volumes:
-      - ./api:/app/api
-      - ./brain:/app/brain
-      - ./MetaBrain:/app/MetaBrain
-      - ./shared:/app/shared
-    networks:
-      - sentinel-network
-    command: python -m api.app.booking_queue_worker_main
-    healthcheck:
-      disable: true
-
-  outbox-scheduler:
-    build:
-      context: .
-      dockerfile: docker/api.Dockerfile
-    container_name: sentinel-outbox-scheduler
-    mem_limit: 512m
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    environment:
-      DATABASE_URL: postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health
-      REDIS_URL: redis://redis-master:6379
-      REDIS_CACHE_URL: redis://redis-cache:6379
-      REDIS_METRICS_URL: redis://redis-metrics:6379
-      REDIS_SENTINEL_MASTER: mymaster
-      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
-      REDIS_QUEUE_PREFIX: "queue:"
-      REDIS_STATE_PREFIX: "state:"
-      REDIS_CACHE_PREFIX: "cache:"
-      JWT_SECRET: ${JWT_SECRET}
-      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
-      BRAIN_API_KEY: ${BRAIN_API_KEY}
-      OUTBOX_PROCESS_LIMIT: 200
-      OUTBOX_SCHEDULER_INTERVAL_SECONDS: 15
-      ENV: production
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis-master:
-        condition: service_healthy
-      redis-sentinel-1:
-        condition: service_healthy
-    volumes:
-      - ./api:/app/api
-      - ./brain:/app/brain
-      - ./MetaBrain:/app/MetaBrain
-      - ./shared:/app/shared
-      - ./scripts:/app/scripts
-    networks:
-      - sentinel-network
-    command: python scripts/run_outbox_scheduler.py
-    healthcheck:
-      disable: true
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/readiness')\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   brain:
     build:
       context: .
       dockerfile: docker/brain.Dockerfile
-    container_name: sentinel-brain
+    container_name: gs_brain
     mem_limit: 1g
-    restart: unless-stopped
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-    ports:
-      - "127.0.0.1:8001:8001"
-    environment:
-      DATABASE_URL: postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health
-      REDIS_URL: redis://redis-master:6379
-      REDIS_CACHE_URL: redis://redis-cache:6379
-      REDIS_METRICS_URL: redis://redis-metrics:6379
-      REDIS_SENTINEL_MASTER: mymaster
-      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
-      REDIS_QUEUE_PREFIX: "queue:"
-      REDIS_STATE_PREFIX: "state:"
-      REDIS_CACHE_PREFIX: "cache:"
-      API_BASE_URL: http://api:8000
-      BRAIN_API_KEY: brain-secret-key-change-production
-      BRAIN_MODE: http
-      BRAIN_HOST: 0.0.0.0
-      BRAIN_PORT: 8001
-      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY:-}
-      DIALOGUE_ENGINE_URL: http://dialogue-engine:8010
-      INFERENCE_SERVICE_URL: http://inference-service:8011
-      DECISION_SERVICE_URL: http://decision-service:8012
-      NLG_SERVICE_URL: http://nlg-service:8013
-      ENV: production
     depends_on:
-      - redis-master
-      - redis-sentinel-1
-      - postgres
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://redis-master:6379}
+      REDIS_SENTINEL_MASTER: ${REDIS_SENTINEL_MASTER:-mymaster}
+      REDIS_SENTINELS: ${REDIS_SENTINELS:-redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379}
+      REDIS_QUEUE_PREFIX: ${REDIS_QUEUE_PREFIX:-queue:}
+      REDIS_STATE_PREFIX: ${REDIS_STATE_PREFIX:-state:}
+      REDIS_CACHE_PREFIX: ${REDIS_CACHE_PREFIX:-cache:}
+      API_BASE_URL: ${API_BASE_URL:-http://api:8000}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      BRAIN_STATE_TTL_SECONDS: ${BRAIN_STATE_TTL_SECONDS:-86400}
+      BRAIN_MODE: ${BRAIN_MODE:-http}
+      BRAIN_HOST: ${BRAIN_HOST:-0.0.0.0}
+      BRAIN_PORT: ${BRAIN_PORT:-8001}
+      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY}
+      DIALOGUE_ENGINE_URL: ${DIALOGUE_ENGINE_URL:-http://dialogue-engine:8010}
+      INFERENCE_SERVICE_URL: ${INFERENCE_SERVICE_URL:-http://inference-service:8011}
+      DECISION_SERVICE_URL: ${DECISION_SERVICE_URL:-http://decision-service:8012}
+      NLG_SERVICE_URL: ${NLG_SERVICE_URL:-http://nlg-service:8013}
+      BRAIN_ALLOWED_ORIGINS: http://localhost:3000,http://frontend:3000
+      ENABLE_BRAIN_REDIS_WORKER: ${ENABLE_BRAIN_REDIS_WORKER:-true}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${BRAIN_PORT:-8001}:8001"
     volumes:
-      - ./brain:/app/brain
-      - ./MetaBrain:/app/MetaBrain
-      - ./shared:/app/shared
+      - uploads_data:/data/uploads
     networks:
-      - sentinel-network
-    command: python brain/main.py
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import httpx; httpx.get('http://localhost:8001/health').raise_for_status()\""]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-
-  # ============ MICROSERVICIOS DE IA ============
-  # Configuración base para todos los servicios de IA.
-  # Cada servicio puede tener su propio Dockerfile/imagen en producción.
-
-  dialogue-engine:
-    # Reemplazar 'image' por 'build' cuando el servicio esté disponible localmente
-    image: ${DIALOGUE_ENGINE_IMAGE:-sentinel-dialogue-engine:latest}
-    container_name: sentinel-dialogue-engine
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    ports:
-      - "127.0.0.1:8010:8010"
-    environment:
-      REDIS_URL: redis://redis-master:6379
-      REDIS_CACHE_URL: redis://redis-cache:6379
-      REDIS_METRICS_URL: redis://redis-metrics:6379
-      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY:-}
-      ENV: production
-    depends_on:
-      - redis-master
-    networks:
-      - sentinel-network
+      - gs_prod
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8010/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-
-  inference-service:
-    image: ${INFERENCE_SERVICE_IMAGE:-sentinel-inference-service:latest}
-    container_name: sentinel-inference-service
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    ports:
-      - "127.0.0.1:8011:8011"
-    environment:
-      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY:-}
-      ENV: production
-    networks:
-      - sentinel-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8011/health || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 3
-
-  decision-service:
-    image: ${DECISION_SERVICE_IMAGE:-sentinel-decision-service:latest}
-    container_name: sentinel-decision-service
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    ports:
-      - "127.0.0.1:8012:8012"
-    environment:
-      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY:-}
-      ENV: production
-    networks:
-      - sentinel-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8012/health || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-
-  nlg-service:
-    image: ${NLG_SERVICE_IMAGE:-sentinel-nlg-service:latest}
-    container_name: sentinel-nlg-service
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    ports:
-      - "127.0.0.1:8013:8013"
-    environment:
-      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY:-}
-      ENV: production
-    networks:
-      - sentinel-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8013/health || exit 1"]
-      interval: 15s
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\" || exit 1"]
+      interval: 30s
       timeout: 5s
       retries: 3
 
@@ -627,109 +284,354 @@ services:
     build:
       context: .
       dockerfile: docker/gateway.Dockerfile
-    container_name: sentinel-gateway
+    container_name: gs_gateway
     mem_limit: 512m
-    restart: unless-stopped
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-    ports:
-      - "8002:8002"
-    env_file:
-      - .env
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      api:
+        condition: service_healthy
     environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://redis-master:6379}
+      REDIS_SENTINELS: ${GATEWAY_REDIS_SENTINELS:-}
+      REDIS_SENTINEL_MASTER: ${GATEWAY_REDIS_SENTINEL_MASTER:-}
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
       WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
       WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
       WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
-      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION}
-      REDIS_URL: ${REDIS_URL}
-      ENV: production
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v21.0}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+      ENABLE_WHATSAPP_GATEWAY: ${ENABLE_WHATSAPP_GATEWAY:-true}
+      GATEWAY_HOST: ${GATEWAY_HOST:-0.0.0.0}
+      GATEWAY_PORT: ${GATEWAY_PORT:-8002}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${GATEWAY_PORT:-8002}:8002"
     volumes:
-      - ./whatsapp_gateway:/app/whatsapp_gateway
-      - ./shared:/app/shared
+      - uploads_data:/data/uploads
     networks:
-      - sentinel-network
-    command: uvicorn whatsapp_gateway.app.main:app --host 0.0.0.0 --port 8002
+      - gs_prod
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import httpx; httpx.get('http://localhost:8002/health')\" || exit 1"]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\" || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 5s
 
-  # ============ FRONTEND (medical-agenda-saas) ============
-
   frontend:
     build:
       context: ./medical-agenda-saas
       dockerfile: Dockerfile
-    container_name: sentinel-frontend
+    container_name: gs_frontend
     mem_limit: 512m
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-    ports:
-      - "127.0.0.1:3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate-frontend:
+        condition: service_completed_successfully
+      redis-master:
+        condition: service_healthy
+      brain:
+        condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: ${FRONTEND_DATABASE_URL:-postgresql://sentinel:sentinel_password@postgres:5432/sentinel_health}
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production-at-least-32-chars}
+      DATABASE_URL: ${FRONTEND_DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN_HOURS: ${JWT_EXPIRES_IN_HOURS:-24}
       NEXT_TELEMETRY_DISABLED: "1"
-      BRAIN_API_URL: http://brain:8001
-      BRAIN_API_KEY: ${BRAIN_API_KEY:-change-me-brain-key}
-      BRAIN_TIMEOUT_MS: "5000"
-      REDIS_URL: redis://redis-master:6379
-      WHATSAPP_AUTO_BOOT_WORKERS: "false"
+      BRAIN_API_URL: ${BRAIN_API_URL:-http://brain:8001}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      BRAIN_TIMEOUT_MS: ${BRAIN_TIMEOUT_MS:-5000}
+      REDIS_URL: ${REDIS_URL:-redis://redis-master:6379}
+      WHATSAPP_AUTO_BOOT_WORKERS: ${WHATSAPP_AUTO_BOOT_WORKERS:-false}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v21.0}
       DOCUMENT_AI_ENABLED: ${DOCUMENT_AI_ENABLED:-false}
       DOCUMENT_AI_PROVIDER: ${DOCUMENT_AI_PROVIDER:-groq}
       DOCUMENT_AI_BASE_URL: ${DOCUMENT_AI_BASE_URL:-https://api.groq.com/openai/v1}
-    depends_on:
-      - postgres
-      - redis-master
+      ENV: ${ENV:-production}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
     networks:
-      - sentinel-network
+      - gs_prod
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # ============ OPCIONAL: N8N ============
-  
-  # n8n:
-  #   image: n8nio/n8n:latest
-  #   container_name: sentinel-n8n
-  #   ports:
-  #     - "5678:5678"
-  #   environment:
-  #     N8N_BASIC_AUTH_ACTIVE: "false"
-  #     N8N_HOST: localhost
-  #   depends_on:
-  #     - postgres
-  #   volumes:
-  #     - n8n_data:/home/node/.n8n
-  #     - ./n8n/workflows:/home/node/.n8n/workflows
-  #   networks:
-  #     - sentinel-network
+  migrate-frontend:
+    build:
+      context: ./medical-agenda-saas
+      dockerfile: Dockerfile
+      target: bootstrap
+    container_name: gs_migrate_frontend
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["npx", "prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"]
+    environment:
+      DATABASE_URL: ${FRONTEND_DATABASE_URL}
+    networks:
+      - gs_prod
+    restart: "no"
 
-networks:
-  sentinel-network:
-    name: gsentinelhealthos_sentinel-network
-    external: true
+  # ============ WORKERS ============
+  booking_worker_0:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_booking_worker_0
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://redis-master:6379}
+      REDIS_SENTINEL_MASTER: ${REDIS_SENTINEL_MASTER:-mymaster}
+      REDIS_SENTINELS: ${REDIS_SENTINELS:-redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379}
+      REDIS_QUEUE_PREFIX: ${REDIS_QUEUE_PREFIX:-queue:}
+      REDIS_STATE_PREFIX: ${REDIS_STATE_PREFIX:-state:}
+      REDIS_CACHE_PREFIX: ${REDIS_CACHE_PREFIX:-cache:}
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      BOOKING_QUEUE_SHARDS: ${BOOKING_QUEUE_SHARDS_PROD:-2}
+      BOOKING_WORKER_SHARD: 0
+      BOOKING_QUEUE_RESULT_TTL_SECONDS: ${BOOKING_QUEUE_RESULT_TTL_SECONDS:-86400}
+      BOOKING_QUEUE_LOCK_TTL_MS: ${BOOKING_QUEUE_LOCK_TTL_MS:-15000}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: python -m api.app.booking_queue_worker_main
+    healthcheck:
+      disable: true
+    networks:
+      - gs_prod
+    restart: unless-stopped
+
+  booking_worker_1:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_booking_worker_1
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://redis-master:6379}
+      REDIS_SENTINEL_MASTER: ${REDIS_SENTINEL_MASTER:-mymaster}
+      REDIS_SENTINELS: ${REDIS_SENTINELS:-redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379}
+      REDIS_QUEUE_PREFIX: ${REDIS_QUEUE_PREFIX:-queue:}
+      REDIS_STATE_PREFIX: ${REDIS_STATE_PREFIX:-state:}
+      REDIS_CACHE_PREFIX: ${REDIS_CACHE_PREFIX:-cache:}
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      BOOKING_QUEUE_SHARDS: ${BOOKING_QUEUE_SHARDS_PROD:-2}
+      BOOKING_WORKER_SHARD: 1
+      BOOKING_QUEUE_RESULT_TTL_SECONDS: ${BOOKING_QUEUE_RESULT_TTL_SECONDS:-86400}
+      BOOKING_QUEUE_LOCK_TTL_MS: ${BOOKING_QUEUE_LOCK_TTL_MS:-15000}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: python -m api.app.booking_queue_worker_main
+    healthcheck:
+      disable: true
+    networks:
+      - gs_prod
+    restart: unless-stopped
+
+  outbox_scheduler:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_outbox_scheduler
+    mem_limit: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://redis-master:6379}
+      REDIS_SENTINEL_MASTER: ${REDIS_SENTINEL_MASTER:-mymaster}
+      REDIS_SENTINELS: ${REDIS_SENTINELS:-redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379}
+      REDIS_QUEUE_PREFIX: ${REDIS_QUEUE_PREFIX:-queue:}
+      REDIS_STATE_PREFIX: ${REDIS_STATE_PREFIX:-state:}
+      REDIS_CACHE_PREFIX: ${REDIS_CACHE_PREFIX:-cache:}
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      OUTBOX_PROCESS_LIMIT: ${OUTBOX_PROCESS_LIMIT:-200}
+      OUTBOX_SCHEDULER_INTERVAL_SECONDS: ${OUTBOX_SCHEDULER_INTERVAL_SECONDS:-15}
+      GOOGLE_CALENDAR_ENABLED: ${GOOGLE_CALENDAR_ENABLED:-false}
+      GOOGLE_CALENDAR_AUTH_MODE: ${GOOGLE_CALENDAR_AUTH_MODE:-service_account}
+      GOOGLE_CALENDAR_ID: ${GOOGLE_CALENDAR_ID:-primary}
+      GOOGLE_CALENDAR_TIMEZONE: ${GOOGLE_CALENDAR_TIMEZONE:-UTC}
+      GOOGLE_SERVICE_ACCOUNT_FILE: ${GOOGLE_SERVICE_ACCOUNT_FILE:-}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+      GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${GOOGLE_SERVICE_ACCOUNT_JSON_BASE64:-}
+      GOOGLE_OAUTH_CLIENT_SECRET_FILE: ${GOOGLE_OAUTH_CLIENT_SECRET_FILE:-}
+      GOOGLE_OAUTH_TOKEN_FILE: ${GOOGLE_OAUTH_TOKEN_FILE:-}
+      GOOGLE_CALENDAR_WEBHOOK_TOKEN: ${GOOGLE_CALENDAR_WEBHOOK_TOKEN:-}
+      GOOGLE_CALENDAR_WEBHOOK_CALLBACK_URL: ${GOOGLE_CALENDAR_WEBHOOK_CALLBACK_URL:-}
+      GOOGLE_CALENDAR_WATCH_TTL_SECONDS: ${GOOGLE_CALENDAR_WATCH_TTL_SECONDS:-86400}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    command: python scripts/run_outbox_scheduler.py
+    volumes:
+      - ./scripts:/app/scripts:ro
+    healthcheck:
+      disable: true
+    networks:
+      - gs_prod
+    restart: unless-stopped
+
+  # ============ AI MICROSERVICIOS ============
+  dialogue-engine:
+    build:
+      context: .
+      dockerfile: docker/dialogue-engine.Dockerfile
+    container_name: gs_dialogue_engine
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis-master:6379}
+      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${DIALOGUE_ENGINE_PORT:-8010}:8010"
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8010/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  inference-service:
+    build:
+      context: .
+      dockerfile: docker/inference-service.Dockerfile
+    container_name: gs_inference_service
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis-master:6379}
+      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${INFERENCE_SERVICE_PORT:-8011}:8011"
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8011/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  decision-service:
+    build:
+      context: .
+      dockerfile: docker/decision-service.Dockerfile
+    container_name: gs_decision_service
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis-master:6379}
+      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${DECISION_SERVICE_PORT:-8012}:8012"
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8012/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nlg-service:
+    build:
+      context: .
+      dockerfile: docker/nlg-service.Dockerfile
+    container_name: gs_nlg_service
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis-master:6379}
+      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "127.0.0.1:${NLG_SERVICE_PORT:-8013}:8013"
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8013/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   postgres_data:
   redis_master_data:
-  redis_replica1_data:
-  redis_replica2_data:
-  redis_cache_data:
-  redis_metrics_data:
-  # n8n_data:
+  redis_replica_data:
+  uploads_data:
+
+networks:
+  gs_prod:
+    driver: bridge
