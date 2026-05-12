@@ -1,0 +1,68 @@
+services:
+  postgres_precanary_lab:
+    image: postgres:16-alpine
+    container_name: gsentinel_postgres_precanary_lab
+    environment:
+      POSTGRES_DB: gsentinel_runtime_lab
+      POSTGRES_USER: gsentinel_lab
+      POSTGRES_PASSWORD: gsentinel_lab
+    command: ["postgres", "-c", "max_connections=80", "-c", "shared_buffers=128MB"]
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - precanary_lab_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gsentinel_lab -d gsentinel_runtime_lab"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - precanary_lab_net
+
+  redis_precanary_lab:
+    image: redis:8.0.2-alpine
+    container_name: gsentinel_redis_precanary_lab
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:56380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-p", "6379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - precanary_lab_net
+
+  api_precanary_lab:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gsentinel_api_precanary_lab
+    env_file:
+      - .env.runtime_lab_docker
+    command: ["uvicorn", "api.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--log-level", "info"]
+    depends_on:
+      postgres_precanary_lab:
+        condition: service_healthy
+      redis_precanary_lab:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18090:8000"
+    stop_grace_period: 30s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://localhost:8000/api/health/liveness', timeout=5); sys.exit(0 if r.status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - precanary_lab_net
+
+networks:
+  precanary_lab_net:
+    name: gsentinel_precanary_lab_net
+    driver: bridge
+
+volumes:
+  precanary_lab_postgres_data:
+    name: gsentinel_precanary_lab_postgres_data
