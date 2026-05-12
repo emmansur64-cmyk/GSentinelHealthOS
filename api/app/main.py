@@ -33,6 +33,10 @@ from api.app.api.v1.endpoints import (
 from api.app.core import settings
 from api.app.db.session import close_async_database_runtime, validate_async_database_runtime
 from api.app.exceptions.handlers import register_exception_handlers
+from api.app.runtime_integration import (
+    initialize_runtime_integration_state,
+    passive_runtime_integration_middleware,
+)
 from api.app.services.rate_limit import (
     RedisRateLimiter,
     build_redis_rate_limiter,
@@ -163,11 +167,13 @@ async def csrf_middleware(request: Request, call_next):
 app.add_middleware(IdempotencyMiddleware)
 
 register_exception_handlers(app)
+app.middleware("http")(passive_runtime_integration_middleware)
 
 
 @app.on_event("startup")
 async def startup_runtime_checks() -> None:
     _validate_windows_psycopg_runtime()
+    initialize_runtime_integration_state(app)
     await validate_async_database_runtime()
     app.state.rate_limiter = await build_redis_rate_limiter(
         settings.redis_url,
