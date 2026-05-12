@@ -9,7 +9,7 @@ export class OnlineTrainingBuffer {
   /**
    * Unique incident identifier
    */
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   incidentId!: string;
 
   /**
