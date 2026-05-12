@@ -2,9 +2,14 @@
 .gitignore
 .venv
 .pytest_cache
+**/__pycache__
+**/*.pyc
 node_modules
 dist
 .vscode
+*.tsbuildinfo
+MetaBrain/src
+src
 
 # Large runtime/data folders not needed for build context
 data
