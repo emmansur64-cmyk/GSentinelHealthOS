@@ -29,7 +29,7 @@ from api.app.api.v1.endpoints import (
     webhooks_google_calendar,
     webhooks_whatsapp,
 )
-from api.app.db.session import validate_async_database_runtime
+from api.app.db.session import close_async_database_runtime, validate_async_database_runtime
 from api.app.exceptions.handlers import register_exception_handlers
 from api.app.core import settings
 from shared.utils import setup_logger
@@ -64,18 +64,18 @@ def _validate_windows_psycopg_runtime() -> None:
 # Crear app
 app = FastAPI(
     title=settings.api_title,
-    description="Sistema de gestión de citas médicas",
+    description="Sistema de gesti├│n de citas m├®dicas",
     version=settings.api_version,
     debug=settings.debug,
 )
 
 # --- BLOQUEO DE SEGURIDAD CORS ---
-# Lee orígenes permitidos desde .env via settings
+# Lee or├¡genes permitidos desde .env via settings
 # Estructura: allow_origins, allow_credentials=True para auth
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.origins_list,
-    allow_credentials=True,  # Permite envío de cookies/auth headers
+    allow_credentials=True,  # Permite env├¡o de cookies/auth headers
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "Idempotency-Key"],
 )
@@ -89,6 +89,11 @@ register_exception_handlers(app)
 async def startup_runtime_checks() -> None:
     _validate_windows_psycopg_runtime()
     await validate_async_database_runtime()
+
+
+@app.on_event("shutdown")
+async def shutdown_runtime_checks() -> None:
+    await close_async_database_runtime()
 
 
 # Registrar routers
