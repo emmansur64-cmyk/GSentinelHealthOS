@@ -1,0 +1,8 @@
+.git
+**/__pycache__
+**/*.pyc
+node_modules
+MetaBrain/src
+MetaBrain/node_modules
+*.tsbuildinfo
+MetaBrain/*.tsbuildinfo

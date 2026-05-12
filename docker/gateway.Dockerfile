@@ -1,5 +1,5 @@
 # WhatsApp Gateway Dockerfile
-FROM python:3.11-slim
+FROM python:3.11.11-slim-bookworm
 
 WORKDIR /app
 
@@ -21,6 +21,9 @@ COPY scripts/preflight-check.sh ./scripts/preflight-check.sh
 COPY scripts/preflight.sh ./scripts/preflight.sh
 
 RUN chmod +x ./scripts/preflight-check.sh ./scripts/preflight.sh
+
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
+USER appuser
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

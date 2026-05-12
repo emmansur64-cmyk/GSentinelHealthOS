@@ -1,5 +1,5 @@
-ARG PYTHON_VERSION=3.11
-FROM python:${PYTHON_VERSION}-slim
+ARG PYTHON_VERSION=3.11.11-slim-bookworm
+FROM python:${PYTHON_VERSION}
 
 WORKDIR /app
 
@@ -14,6 +14,9 @@ COPY MetaBrain/cerebro_ai_med ./MetaBrain/cerebro_ai_med
 
 ENV PYTHONPATH=/app/MetaBrain
 ENV PYTHONUNBUFFERED=1
+
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
+USER appuser
 
 EXPOSE 8011
 

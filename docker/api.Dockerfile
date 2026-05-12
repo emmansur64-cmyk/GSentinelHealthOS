@@ -1,5 +1,5 @@
 # API Dockerfile
-FROM python:3.11-slim
+FROM python:3.11.11-slim-bookworm
 
 WORKDIR /app
 
@@ -22,6 +22,9 @@ COPY MetaBrain ./MetaBrain
 COPY shared ./shared
 COPY alembic.ini .
 COPY alembic ./alembic
+
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
+USER appuser
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
