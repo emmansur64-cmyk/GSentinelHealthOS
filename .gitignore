@@ -19,6 +19,7 @@ pip
 
 # Python Cache
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -35,9 +36,12 @@ pip-delete-this-directory.txt
 .coverage
 .coverage.*
 htmlcov/
+coverage/
 .tox/
 .hypothesis/
 *.cover
+.mypy_cache/
+.ruff_cache/
 
 # IDEs & Editors
 .vscode/
@@ -145,6 +149,21 @@ backups/
 deploy-logs/
 tools/Python312/
 imagen doc.jpg
+
+# Python runtime backups
+main.py.backup_*
+*.backup_*
+*.backup-before-*
+
+# Test import artifacts
+test-import*.txt
+*.cleaned.txt
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# npm audit reports (generated, not versioned)
+npm-audit*.json
 
 # ============================================================================
 
