@@ -7,6 +7,7 @@ import {
 } from '../common/types/brain.types';
 import { IncidentMemoryRecord } from './schemas/incidents.schema';
 import { PersistenceService } from '../persistence/persistence.service';
+import { sanitizeForPersistence } from '../common/utils/persistence-sanitizer.util';
 
 @Injectable()
 export class MemoryService implements OnModuleInit {
@@ -45,26 +46,27 @@ export class MemoryService implements OnModuleInit {
       ...(metadata?.realOutcome ? { realOutcome: metadata.realOutcome } : {}),
       storedAt: new Date().toISOString(),
     };
+    const sanitizedRecord = sanitizeForPersistence(record);
 
-    this.incidents.push(record);
+    this.incidents.push(sanitizedRecord);
     if (this.incidents.length > MemoryService.MAX_ENTRIES) {
       this.incidents.shift();
     }
 
     this.persistenceService.fireAndForget(
-      this.persistenceService.saveIncident(record),
-      `saveIncident incidentId=${record.incident.id}`,
+      this.persistenceService.saveIncident(sanitizedRecord),
+      `saveIncident incidentId=${sanitizedRecord.incident.id}`,
     );
     this.persistenceService.fireAndForget(
-      this.persistenceService.saveDecision(record),
-      `saveDecision incidentId=${record.incident.id}`,
+      this.persistenceService.saveDecision(sanitizedRecord),
+      `saveDecision incidentId=${sanitizedRecord.incident.id}`,
     );
     this.persistenceService.fireAndForget(
-      this.persistenceService.saveFeatures(record),
-      `saveFeatures incidentId=${record.incident.id}`,
+      this.persistenceService.saveFeatures(sanitizedRecord),
+      `saveFeatures incidentId=${sanitizedRecord.incident.id}`,
     );
 
-    return record;
+    return sanitizedRecord;
   }
 
   last(limit = 10): IncidentMemoryRecord[] {

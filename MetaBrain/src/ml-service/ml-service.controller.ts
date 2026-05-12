@@ -1,8 +1,10 @@
-import { Controller, Post, Get, Body, Query, Logger } from '@nestjs/common';
+import { Controller, Post, Get, Body, Query, Logger, UseGuards } from '@nestjs/common';
 import { MlServiceService, MlPredictionRequest, MlPredictionResponse } from './ml-service.service';
 import { MetricsService } from './metrics.service';
 import { ModelMonitorService } from './model-monitor.service';
+import { ApiKeyGuard } from '../ingress/guards/api-key.guard';
 
+@UseGuards(ApiKeyGuard)
 @Controller('ml')
 export class MlServiceController {
   private readonly logger = new Logger(MlServiceController.name);

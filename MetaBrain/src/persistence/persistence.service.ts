@@ -13,6 +13,7 @@ import {
   OnlineTrainingBuffer,
   OnlineTrainingBufferDocument,
 } from './schemas/online-training-buffer.schema';
+import { sanitizeForPersistence } from '../common/utils/persistence-sanitizer.util';
 
 @Injectable()
 export class PersistenceService {
@@ -29,47 +30,50 @@ export class PersistenceService {
   ) {}
 
   async saveIncident(record: IncidentMemoryRecord): Promise<void> {
+    const sanitized = sanitizeForPersistence(record);
     await this.incidentModel.create({
-      incidentId: record.incident.id,
-      incident: record.incident,
-      decision: record.decision,
-      result: record.result,
-      prediction: record.prediction,
-      realOutcome: record.realOutcome,
-      storedAt: record.storedAt,
+      incidentId: sanitized.incident.id,
+      incident: sanitized.incident,
+      decision: sanitized.decision,
+      result: sanitized.result,
+      prediction: sanitized.prediction,
+      realOutcome: sanitized.realOutcome,
+      storedAt: sanitized.storedAt,
     });
   }
 
   async saveDecision(record: IncidentMemoryRecord): Promise<void> {
+    const sanitized = sanitizeForPersistence(record);
     await this.decisionModel.create({
-      incidentId: record.incident.id,
-      source: record.incident.source,
-      action: record.decision.action,
-      strategy: record.decision.strategy,
-      confidence: record.decision.confidence,
-      reason: record.decision.reason,
-      createdAt: record.storedAt,
+      incidentId: sanitized.incident.id,
+      source: sanitized.incident.source,
+      action: sanitized.decision.action,
+      strategy: sanitized.decision.strategy,
+      confidence: sanitized.decision.confidence,
+      reason: sanitized.decision.reason,
+      createdAt: sanitized.storedAt,
     });
   }
 
   async saveFeatures(record: IncidentMemoryRecord): Promise<void> {
-    if (!record.prediction?.features) return;
+    const sanitized = sanitizeForPersistence(record);
+    if (!sanitized.prediction?.features) return;
     await this.featureModel.create({
-      incidentId: record.incident.id,
-      source: record.incident.source,
-      decisionAction: record.decision.action,
-      featureMap: record.prediction.features,
-      onnxFeatureVector: record.prediction.onnxFeatureVector,
-      createdAt: record.storedAt,
+      incidentId: sanitized.incident.id,
+      source: sanitized.incident.source,
+      decisionAction: sanitized.decision.action,
+      featureMap: sanitized.prediction.features,
+      onnxFeatureVector: sanitized.prediction.onnxFeatureVector,
+      createdAt: sanitized.storedAt,
     });
   }
 
   async saveOutcome(record: OutcomeRecord): Promise<void> {
-    await this.outcomeModel.create(record);
+    await this.outcomeModel.create(sanitizeForPersistence(record));
   }
 
   async saveAudit(record: AuditEntity): Promise<void> {
-    await this.auditModel.create(record);
+    await this.auditModel.create(sanitizeForPersistence(record));
   }
 
   async getRecentIncidents(limit: number): Promise<IncidentMemoryRecord[]> {
@@ -138,6 +142,8 @@ export class PersistenceService {
     finalConfidence: number,
     modelVersion: string,
   ): Promise<OnlineTrainingBufferDocument> {
+    const sanitizedInput = sanitizeForPersistence(input);
+    const sanitizedMlPrediction = sanitizeForPersistence(mlPrediction);
     const hasCompleteFeatures =
       onnxFeatureVector.length > 0 &&
       !onnxFeatureVector.some((v) => !Number.isFinite(v));
@@ -146,11 +152,11 @@ export class PersistenceService {
     const record = await this.onlineTrainingBufferModel.create({
       incidentId,
       source,
-      input,
+      input: sanitizedInput,
       featureMap,
       onnxFeatureVector,
       featureNames,
-      mlPrediction,
+      mlPrediction: sanitizedMlPrediction,
       finalAction,
       finalConfidence,
       realOutcome: undefined,

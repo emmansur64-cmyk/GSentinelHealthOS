@@ -1,8 +1,10 @@
-import { Controller, Get, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { MlCoreModelLoader } from '../ml-core/model.loader';
 import { OnlineLearningService } from './online-learning.service';
 import { OnlineBufferService } from './online-buffer.service';
+import { ApiKeyGuard } from '../ingress/guards/api-key.guard';
 
+@UseGuards(ApiKeyGuard)
 @Controller('api/ml')
 export class MlController {
   constructor(
@@ -40,7 +42,7 @@ export class MlController {
 
   @Post('online-feedback/outcome')
   @HttpCode(202)
-  async registerOutcome(body: {
+  async registerOutcome(@Body() body: {
     incidentId: string;
     realOutcome: 'success' | 'failure' | 'blocked' | 'simulated';
     executed: boolean;

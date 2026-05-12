@@ -8,6 +8,7 @@ import {
 } from '../common/types/brain.types';
 import { AuditEntity } from './audit.entity';
 import { PersistenceService } from '../persistence/persistence.service';
+import { sanitizeForPersistence } from '../common/utils/persistence-sanitizer.util';
 
 const MAX_AUDIT_ENTRIES = 2000;
 
@@ -58,13 +59,14 @@ export class AuditService implements OnModuleInit {
   }
 
   private append(entity: AuditEntity): void {
-    this.logs.push(entity);
+    const sanitizedEntity = sanitizeForPersistence(entity);
+    this.logs.push(sanitizedEntity);
     if (this.logs.length > MAX_AUDIT_ENTRIES) {
       this.logs.shift();
     }
     this.persistenceService.fireAndForget(
-      this.persistenceService.saveAudit(entity),
-      `saveAudit incidentId=${entity.incidentId}`,
+      this.persistenceService.saveAudit(sanitizedEntity),
+      `saveAudit incidentId=${sanitizedEntity.incidentId}`,
     );
   }
 }

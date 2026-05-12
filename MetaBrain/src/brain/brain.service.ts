@@ -427,13 +427,15 @@ export class BrainService {
       const isReal = executionResult.executed && !executionResult.simulated;
       const isSimulated = !executionResult.executed && executionResult.simulated;
 
-      const executionStatus = isReal ? 'EXECUTED' : isSimulated ? 'SIMULATED' : 'SUCCESS';
+      const executionStatus = isReal ? 'EXECUTED' : isSimulated ? 'SIMULATED' : 'BLOCKED';
+      const executionDenied = !executionResult.executed && !executionResult.simulated;
 
       this.eventProducer.publish('action.executed', {
         incidentId: normalizedInput.id,
         action: decision.action,
         executed: executionResult.executed,
         simulated: executionResult.simulated,
+        denied: executionDenied,
         reason: executionResult.reason,
       });
 
@@ -482,6 +484,8 @@ export class BrainService {
         meta: {
           incidentId: normalizedInput.id,
           diagnosisCode,
+          denied: executionDenied,
+          operational_success: isReal || isSimulated,
         },
       };
     } catch (error) {
