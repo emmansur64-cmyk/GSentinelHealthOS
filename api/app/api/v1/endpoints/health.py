@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
 
 from api.app.core.config import settings
+from api.app.core.security import InternalAuth, validate_api_key
 from api.app.db.session import get_db
 from api.app.models import NotificationOutbox
 from api.app.observability.health_metrics import build_health_observability
@@ -191,8 +192,11 @@ async def _collect_provider_observability() -> dict:
 
 
 @router.get("/readiness")
-async def readiness(db: AsyncSession = Depends(get_db)):
-    """Health check para readiness probe"""
+async def readiness(
+    db: AsyncSession = Depends(get_db),
+    auth: InternalAuth = Depends(validate_api_key)
+):
+    """Health check para readiness probe - Requiere autenticación"""
     observability = await _collect_redis_observability()
     outbox = await _collect_outbox_observability(db)
     providers = await _collect_provider_observability()
@@ -208,8 +212,11 @@ async def readiness(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/dashboard-summary")
-async def dashboard_summary(db: AsyncSession = Depends(get_db)):
-    """Payload resumido de salud para widgets del Dashboard."""
+async def dashboard_summary(
+    db: AsyncSession = Depends(get_db),
+    auth: InternalAuth = Depends(validate_api_key)
+):
+    """Payload resumido de salud para widgets del Dashboard - Requiere autenticación"""
     observability = await _collect_redis_observability()
     outbox = await _collect_outbox_observability(db)
     providers = await _collect_provider_observability()
@@ -230,8 +237,11 @@ async def dashboard_summary(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/outbox")
-async def outbox_readiness(db: AsyncSession = Depends(get_db)):
-    """Estado operativo del outbox para alertas de backlog y fallos."""
+async def outbox_readiness(
+    db: AsyncSession = Depends(get_db),
+    auth: InternalAuth = Depends(validate_api_key)
+):
+    """Estado operativo del outbox para alertas de backlog y fallos - Requiere autenticación"""
     outbox = await _collect_outbox_observability(db)
     status_map = {
         "healthy": 200,
@@ -251,8 +261,8 @@ async def outbox_readiness(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/providers")
-async def providers_readiness():
-    """Estado de circuit breakers de proveedores externos."""
+async def providers_readiness(auth: InternalAuth = Depends(validate_api_key)):
+    """Estado de circuit breakers de proveedores externos - Requiere autenticación"""
     providers = await _collect_provider_observability()
     http_status = 200 if providers.get("status") == "healthy" else 503
     payload = {
@@ -265,8 +275,8 @@ async def providers_readiness():
 
 
 @router.get("/booking-workers")
-async def booking_workers_readiness():
-    """Estado de workers de reserva por shard con clasificación SRE."""
+async def booking_workers_readiness(auth: InternalAuth = Depends(validate_api_key)):
+    """Estado de workers de reserva por shard con clasificación SRE - Requiere autenticación"""
     redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
 
     configured_shards = max(1, settings.booking_queue_shards)
