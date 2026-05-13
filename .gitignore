@@ -123,6 +123,14 @@ credentials/
 *.key
 *.crt
 
+# Env dump spill files (prevent accidental tracking of exported secrets)
+*_env.txt
+*env_dump*
+gs_api_env.txt
+CWindowsTemp*
+*secret_dump*
+*credential_dump*
+
 # ============================================================================
 
 # === OS ===
