@@ -125,11 +125,11 @@ credentials/
 
 # Env dump spill files (prevent accidental tracking of exported secrets)
 *_env.txt
-*env_dump*
+*env_dump*.txt
 gs_api_env.txt
 CWindowsTemp*
-*secret_dump*
-*credential_dump*
+*_secret_dump.txt
+*_credential_dump.txt
 
 # ============================================================================
 
