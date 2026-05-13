@@ -194,21 +194,43 @@ async def _collect_provider_observability() -> dict:
 @router.get("/readiness")
 async def readiness(
     db: AsyncSession = Depends(get_db),
-    auth: InternalAuth = Depends(validate_api_key)
 ):
-    """Health check para readiness probe - Requiere autenticación"""
-    observability = await _collect_redis_observability()
-    outbox = await _collect_outbox_observability(db)
-    providers = await _collect_provider_observability()
+    """Health check público mínimo para readiness probe infra (Docker, Kubernetes, scripts).
+    No expone datos operativos internos. Para métricas detalladas usar /dashboard-summary (protegido).
+    """
+    db_ok = False
+    redis_ok = False
 
-    return {
-        "status": "ready",
+    with suppress(Exception):
+        await db.execute(select(func.now()))
+        db_ok = True
+
+    redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        await redis_client.ping()
+        redis_ok = True
+    except Exception:
+        pass
+    finally:
+        with suppress(Exception):
+            close_method = getattr(redis_client, "aclose", None)
+            if close_method is not None:
+                await close_method()
+            else:
+                await redis_client.close()
+
+    overall = "ready" if (db_ok and redis_ok) else "not_ready"
+    http_status = 200 if overall == "ready" else 503
+    payload = {
+        "status": overall,
         "timestamp": datetime.utcnow().isoformat(),
         "service": "GSentinelHealthOS API",
-        "outbox": outbox,
-        "providers": providers,
-        **observability,
+        "checks": {
+            "database": "ok" if db_ok else "error",
+            "redis": "ok" if redis_ok else "error",
+        },
     }
+    return JSONResponse(status_code=http_status, content=payload)
 
 
 @router.get("/dashboard-summary")
