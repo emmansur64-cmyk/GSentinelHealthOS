@@ -5,6 +5,11 @@ import { MedicalUserRole } from '../ai/classification.service';
 import { BrainService } from '../brain/brain.service';
 import { IncidentPayload } from '../common/types/brain.types';
 import {
+  ClinicalActorRole,
+  ClinicalAssistantMode,
+  evaluateClinicalPolicies,
+} from './clinical-policy';
+import {
   MedicalAssistantMode,
   MedicalAssistantRequest,
   MedicalAssistantResponse,
@@ -26,6 +31,7 @@ export class MedicalAssistantService {
     const query = (input.message ?? input.query ?? '').trim();
     const hasText = query.length > 0;
     const hasImage = typeof input.imageBase64 === 'string' && input.imageBase64.trim().length > 0;
+    const mode = this.resolveMode(input.mode);
     const explicitRole = this.mapExplicitRole(input.role);
 
     const modality: 'text' | 'image' | 'multimodal' = hasText && hasImage
@@ -36,53 +42,49 @@ export class MedicalAssistantService {
 
     const roleHint = this.normalizeUserTypeHint(input.userTypeHint);
     const roleClassification = explicitRole
-      ? { role: explicitRole, confidence: 1 }
+      ? { role: this.toMedicalUserRole(explicitRole), confidence: 1 }
       : roleHint
       ? { role: roleHint, confidence: 1 }
       : this.aiService.classifyMedicalRole(query || 'consulta medica por chat clinico');
+    const actorRole: ClinicalActorRole = explicitRole ?? this.toClinicalActorRole(roleClassification.role);
 
     this.logger.log(this.serializeLog({
       event: 'medical_chat.request',
       requestId,
-      role: input.role ?? roleClassification.role,
-      mode: input.mode ?? MedicalAssistantMode.CLINICAL_SUPPORT,
+      role: actorRole,
+      mode,
       modality,
     }));
 
-    const emergencyResponse = this.buildEmergencyResponseIfNeeded(query, input.channel, roleClassification.role);
-    if (emergencyResponse) {
+    const prePolicyResult = evaluateClinicalPolicies({
+      requestId,
+      stage: 'pre',
+      query,
+      role: actorRole,
+      mode,
+      channel: input.channel,
+      modality,
+    });
+
+    if (prePolicyResult.decision === 'short_circuit' && prePolicyResult.responseText) {
       this.logger.warn(this.serializeLog({
-        event: 'medical_chat.emergency_short_circuit',
+        event: 'medical_chat.policy_short_circuit',
         requestId,
-        role: roleClassification.role,
-        mode: input.mode ?? MedicalAssistantMode.CLINICAL_SUPPORT,
+        role: actorRole,
+        mode,
+        severity: prePolicyResult.severity,
+        policies: prePolicyResult.triggeredPolicies,
         latencyMs: Date.now() - startedAt,
       }));
-      return emergencyResponse;
-    }
 
-    const missingClinicalDataResponse = this.buildMissingClinicalDataResponse(query, input.channel, roleClassification.role);
-    if (missingClinicalDataResponse) {
-      this.logger.log(this.serializeLog({
-        event: 'medical_chat.missing_clinical_data',
-        requestId,
-        role: roleClassification.role,
-        mode: input.mode ?? MedicalAssistantMode.CLINICAL_SUPPORT,
-        latencyMs: Date.now() - startedAt,
-      }));
-      return missingClinicalDataResponse;
-    }
-
-    const definitiveDiagnosisResponse = this.buildDefinitiveDiagnosisLimitResponse(query, input.channel, roleClassification.role);
-    if (definitiveDiagnosisResponse) {
-      this.logger.log(this.serializeLog({
-        event: 'medical_chat.definitive_diagnosis_limited',
-        requestId,
-        role: roleClassification.role,
-        mode: input.mode ?? MedicalAssistantMode.CLINICAL_SUPPORT,
-        latencyMs: Date.now() - startedAt,
-      }));
-      return definitiveDiagnosisResponse;
+      return this.buildPolicyResponse(
+        input.channel,
+        this.toMedicalUserRole(actorRole),
+        roleClassification.confidence,
+        modality,
+        prePolicyResult.responseText,
+        prePolicyResult.warnings,
+      );
     }
 
     const effectiveQuery = hasText
@@ -90,6 +92,7 @@ export class MedicalAssistantService {
       : `Interpretar hallazgos de imagen medica (${input.modalityHint ?? 'sin modalidad especificada'}) y contexto clinico.`;
 
     try {
+      const aiRole = this.toMedicalUserRole(actorRole);
       const medical = await this.aiService.answerMedicalQuestion(
         effectiveQuery,
         input.country ?? 'US',
@@ -98,23 +101,33 @@ export class MedicalAssistantService {
         input.imageMimeType,
         input.patientAge,
         input.modalityHint,
-        roleClassification.role,
+        aiRole,
       );
 
-      let refinedAnswer = await this.aiService.refineMedicalText(medical.answer);
+      const refinedAnswer = await this.aiService.refineMedicalText(medical.answer);
+      let finalAnswer = refinedAnswer;
 
-      if (roleClassification.role !== 'DOCTOR') {
-        refinedAnswer = this.applyPatientFacingSafety(refinedAnswer);
-      }
+      if (prePolicyResult.flags.applyPatientFacingBoundaries) {
+        const postPolicyResult = evaluateClinicalPolicies({
+          requestId,
+          stage: 'post',
+          query,
+          role: actorRole,
+          mode,
+          channel: input.channel,
+          modality,
+          responseText: refinedAnswer,
+        });
 
-      if (input.mode === MedicalAssistantMode.CLINICAL_SUPPORT && roleClassification.role !== 'DOCTOR') {
-        refinedAnswer = this.applyPatientFacingSafety(refinedAnswer);
+        if (postPolicyResult.transformedText) {
+          finalAnswer = postPolicyResult.transformedText;
+        }
       }
 
       let metabrain: MedicalAssistantResponse['metabrain'] | undefined;
 
       // For text modality we attach ML+rules decision trace in dry-run mode.
-      if (hasText && roleClassification.role !== 'DOCTOR') {
+      if (hasText && actorRole === 'PATIENT' && !prePolicyResult.flags.skipPatientTriage) {
         const incident: IncidentPayload = {
           id: `clinical-chat-${Date.now()}-${randomUUID().slice(0, 8)}`,
           source: 'clinical-chat-medical-assistant',
@@ -123,7 +136,7 @@ export class MedicalAssistantService {
           metadata: {
             dryRun: true,
             channel: input.channel ?? 'clinical_chat',
-            role: roleClassification.role,
+            role: aiRole,
             modality,
             domain: 'medical_assistant',
           },
@@ -140,11 +153,15 @@ export class MedicalAssistantService {
 
       const warnings: string[] = [];
 
-      if (roleClassification.role === 'PATIENT') {
+      if (actorRole === 'PATIENT') {
         warnings.push('Orientacion informativa: no sustituye consulta medica presencial.');
         warnings.push('Ante signos de alarma o empeoramiento, acudir a urgencias.');
       } else {
         warnings.push('Usar como apoyo clinico; validar con contexto del paciente y guias locales.');
+      }
+
+      if (prePolicyResult.warnings.length > 0) {
+        warnings.push(...prePolicyResult.warnings);
       }
 
       if (medical.citations.length === 0) {
@@ -153,15 +170,15 @@ export class MedicalAssistantService {
 
       const response: MedicalAssistantResponse = {
         channel: input.channel ?? 'clinical_chat',
-        role: roleClassification.role,
+        role: aiRole,
         roleConfidence: roleClassification.confidence,
         modality,
         response: {
-          text: refinedAnswer,
+          text: finalAnswer,
           citations: medical.citations,
         },
         guidance: {
-          languageStyle: roleClassification.role === 'PATIENT' ? 'simple' : 'technical',
+          languageStyle: actorRole === 'PATIENT' ? 'simple' : 'technical',
           warnings,
         },
         ...(medical.imaging ? { imaging: medical.imaging } : {}),
@@ -171,42 +188,55 @@ export class MedicalAssistantService {
       this.logger.log(this.serializeLog({
         event: 'medical_chat.response',
         requestId,
-        role: roleClassification.role,
-        mode: input.mode ?? MedicalAssistantMode.CLINICAL_SUPPORT,
+        role: actorRole,
+        mode,
         providerStatus: 'ok',
+        severity: prePolicyResult.severity,
+        policies: prePolicyResult.triggeredPolicies,
         latencyMs: Date.now() - startedAt,
       }));
 
       return response;
     } catch (error) {
       const safeError = this.sanitizeErrorClass(error);
+
+      const errorPolicyResult = evaluateClinicalPolicies({
+        requestId,
+        stage: 'error',
+        query,
+        role: actorRole,
+        mode,
+        channel: input.channel,
+        modality,
+        providerErrorClass: safeError,
+      });
+
       this.logger.error(this.serializeLog({
         event: 'medical_chat.error',
         requestId,
-        role: input.role ?? roleClassification.role,
-        mode: input.mode ?? MedicalAssistantMode.CLINICAL_SUPPORT,
+        role: actorRole,
+        mode,
         providerStatus: 'fallback',
         latencyMs: Date.now() - startedAt,
+        severity: errorPolicyResult.severity,
+        policies: errorPolicyResult.triggeredPolicies,
         errorClass: safeError,
       }));
 
-      return {
-        channel: input.channel ?? 'clinical_chat',
-        role: roleClassification.role,
-        roleConfidence: roleClassification.confidence,
+      return this.buildPolicyResponse(
+        input.channel,
+        this.toMedicalUserRole(actorRole),
+        roleClassification.confidence,
         modality,
-        response: {
-          text: 'No puedo generar una respuesta clinica segura en este momento. Recomiendo evaluacion profesional presencial para una orientacion adecuada.',
-          citations: [],
-        },
-        guidance: {
-          languageStyle: roleClassification.role === 'PATIENT' ? 'simple' : 'technical',
-          warnings: [
-            'Se activo respuesta segura por indisponibilidad temporal del proveedor.',
-            'Si hay signos de alarma, acudir a urgencias.',
-          ],
-        },
-      };
+        errorPolicyResult.responseText
+          ?? 'No puedo generar una respuesta clinica segura en este momento. Recomiendo evaluacion profesional presencial para una orientacion adecuada.',
+        errorPolicyResult.warnings.length > 0
+          ? errorPolicyResult.warnings
+          : [
+              'Se activo respuesta segura por indisponibilidad temporal del proveedor.',
+              'Si hay signos de alarma, acudir a urgencias.',
+            ],
+      );
     }
   }
 
@@ -225,7 +255,7 @@ export class MedicalAssistantService {
     return undefined;
   }
 
-  private mapExplicitRole(role?: MedicalAssistantRole): MedicalUserRole | undefined {
+  private mapExplicitRole(role?: MedicalAssistantRole): ClinicalActorRole | undefined {
     if (!role) {
       return undefined;
     }
@@ -234,127 +264,55 @@ export class MedicalAssistantService {
       return 'PATIENT';
     }
 
-    if (role === MedicalAssistantRole.DOCTOR || role === MedicalAssistantRole.ADMIN) {
+    if (role === MedicalAssistantRole.DOCTOR) {
       return 'DOCTOR';
+    }
+
+    if (role === MedicalAssistantRole.ADMIN) {
+      return 'ADMIN';
     }
 
     return undefined;
   }
 
-  private buildEmergencyResponseIfNeeded(
-    query: string,
-    channel: string | undefined,
-    role: MedicalUserRole,
-  ): MedicalAssistantResponse | undefined {
-    const lowered = query.toLowerCase();
-    const emergencySignals = [
-      'dolor de pecho',
-      'no puedo respirar',
-      'convulsion',
-      'convulsión',
-      'desmayo',
-      'sangrado abundante',
-      'suicid',
-      'stroke',
-      'acv',
-      'infarto',
-      'anaphyl',
-    ];
+  private toClinicalActorRole(role: MedicalUserRole): ClinicalActorRole {
+    return role === 'PATIENT' ? 'PATIENT' : 'DOCTOR';
+  }
 
-    if (!emergencySignals.some((signal) => lowered.includes(signal))) {
-      return undefined;
+  private toMedicalUserRole(role: ClinicalActorRole): MedicalUserRole {
+    return role === 'PATIENT' ? 'PATIENT' : 'DOCTOR';
+  }
+
+  private resolveMode(mode?: MedicalAssistantMode): ClinicalAssistantMode {
+    if (mode === MedicalAssistantMode.DOCTOR_PROFESSIONAL) {
+      return 'doctor_professional';
     }
 
+    return 'clinical_support';
+  }
+
+  private buildPolicyResponse(
+    channel: string | undefined,
+    role: MedicalUserRole,
+    roleConfidence: number,
+    modality: 'text' | 'image' | 'multimodal',
+    responseText: string,
+    warnings: string[],
+  ): MedicalAssistantResponse {
     return {
       channel: channel ?? 'clinical_chat',
       role,
-      roleConfidence: 1,
-      modality: 'text',
+      roleConfidence,
+      modality,
       response: {
-        text: 'Posible emergencia detectada. Busca atencion medica de urgencia de inmediato o llama al servicio de emergencias local ahora.',
+        text: responseText,
         citations: [],
       },
       guidance: {
-        languageStyle: role === 'DOCTOR' ? 'technical' : 'simple',
-        warnings: [
-          'Respuesta abreviada por seguridad clinica.',
-          'No continuar autoevaluacion en chat ante posible emergencia.',
-        ],
+        languageStyle: role === 'PATIENT' ? 'simple' : 'technical',
+        warnings,
       },
     };
-  }
-
-  private buildMissingClinicalDataResponse(
-    query: string,
-    channel: string | undefined,
-    role: MedicalUserRole,
-  ): MedicalAssistantResponse | undefined {
-    if (role === 'DOCTOR') {
-      return undefined;
-    }
-
-    const lowered = query.toLowerCase();
-    const isShort = lowered.length < 10;
-    const containsSymptoms = /(dolor|fiebre|tos|mareo|nausea|náusea|vomito|vómito|lesion|lesión)/.test(lowered);
-    const containsDuration = /(hora|horas|dia|días|dias|semana|semanas)/.test(lowered);
-
-    if (!isShort && containsSymptoms && containsDuration) {
-      return undefined;
-    }
-
-    return {
-      channel: channel ?? 'clinical_chat',
-      role,
-      roleConfidence: 1,
-      modality: 'text',
-      response: {
-        text: 'Para orientarte sin asumir un diagnostico definitivo, necesito datos minimos: edad, sintomas principales, tiempo de evolucion y signos de alarma presentes.',
-        citations: [],
-      },
-      guidance: {
-        languageStyle: 'simple',
-        warnings: ['Informacion insuficiente para orientar con seguridad clinica.'],
-      },
-    };
-  }
-
-  private buildDefinitiveDiagnosisLimitResponse(
-    query: string,
-    channel: string | undefined,
-    role: MedicalUserRole,
-  ): MedicalAssistantResponse | undefined {
-    if (role === 'DOCTOR') {
-      return undefined;
-    }
-
-    const lowered = query.toLowerCase();
-    if (!/(diagnostico definitivo|diagnóstico definitivo|dime que tengo|confirmame el diagnostico|confírmame el diagnóstico)/.test(lowered)) {
-      return undefined;
-    }
-
-    return {
-      channel: channel ?? 'clinical_chat',
-      role,
-      roleConfidence: 1,
-      modality: 'text',
-      response: {
-        text: 'No puedo confirmar un diagnostico definitivo por chat. Puedo darte orientacion general y los proximos pasos, pero necesitas evaluacion profesional para confirmar diagnostico.',
-        citations: [],
-      },
-      guidance: {
-        languageStyle: 'simple',
-        warnings: ['Diagnostico definitivo limitado por seguridad clinica.'],
-      },
-    };
-  }
-
-  private applyPatientFacingSafety(text: string): string {
-    const lowered = text.toLowerCase();
-    if (/(diagnóstico definitivo|diagnostico definitivo|usted tiene|you have)/.test(lowered)) {
-      return 'Orientacion general basada en informacion disponible. No sustituye una evaluacion medica presencial para confirmar diagnostico.';
-    }
-
-    return text;
   }
 
   private sanitizeErrorClass(error: unknown): string {

@@ -88,6 +88,32 @@ describe('MedicalAssistantService', () => {
     expect(result.response.citations).toEqual([]);
   });
 
+  it('minimum data solicita contexto clinico minimo', async () => {
+    const answerMedicalQuestionSpy = jest.spyOn(aiServiceMock, 'answerMedicalQuestion');
+
+    const result = await service.handleMedicalChatMessage({
+      message: 'me siento mal',
+      role: MedicalAssistantRole.PATIENT,
+      mode: MedicalAssistantMode.CLINICAL_SUPPORT,
+    });
+
+    expect(result.response.text.toLowerCase()).toContain('datos minimos');
+    expect(answerMedicalQuestionSpy).not.toHaveBeenCalled();
+  });
+
+  it('diagnostico definitivo queda bloqueado en patient-facing', async () => {
+    const answerMedicalQuestionSpy = jest.spyOn(aiServiceMock, 'answerMedicalQuestion');
+
+    const result = await service.handleMedicalChatMessage({
+      message: 'dime un diagnostico definitivo',
+      role: MedicalAssistantRole.PATIENT,
+      mode: MedicalAssistantMode.CLINICAL_SUPPORT,
+    });
+
+    expect(result.response.text.toLowerCase()).toContain('no puedo confirmar un diagnostico definitivo');
+    expect(answerMedicalQuestionSpy).not.toHaveBeenCalled();
+  });
+
   it('no loguea message completo', async () => {
     const loggerSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
 
