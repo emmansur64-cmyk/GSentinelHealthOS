@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
 import { AgendaApiDryRunClient } from './agenda-api-dry-run.client';
 import { AgendaApiHttpDryRunClient } from './agenda-api-http-dry-run.client';
@@ -39,6 +39,7 @@ const FORBIDDEN_DOMAIN_RE = /\b(whatsapp|triage|diagnostico|diagnóstico|diagnos
 export class ScheduleImportPreviewService {
   constructor(
     private readonly parser: ScheduleImportParserService,
+    @Optional()
     private readonly agendaApiClient: AgendaApiDryRunClient | AgendaApiHttpDryRunClient = new AgendaApiHttpDryRunClient(),
   ) {}
 

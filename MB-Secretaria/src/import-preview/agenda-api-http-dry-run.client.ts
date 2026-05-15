@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import {
   AGENDA_APPLY_DISABLED_ERROR,
   AgendaApiClient,
@@ -18,6 +18,7 @@ const MUTATING_PATH_RE = /\b(apply|write|mutate|mutation|create|update|delete|pa
 export class AgendaApiHttpDryRunClient implements AgendaApiClient {
   constructor(
     private readonly localClient: AgendaApiDryRunClient = new AgendaApiDryRunClient(),
+    @Optional()
     private readonly transport: HttpTransport = globalThis.fetch.bind(globalThis),
   ) {}
 
