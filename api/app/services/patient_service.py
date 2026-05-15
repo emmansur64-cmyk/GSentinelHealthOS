@@ -5,11 +5,13 @@ from __future__ import annotations
 import uuid
 from typing import List, Optional
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models import Patient
 from shared.schemas import PatientCreate, PatientUpdate, WhatsAppPatientUpsert
+from shared.security.secrets import hash_phone, normalize_phone
 from shared.utils import validate_email, setup_logger
 
 logger = setup_logger(__name__)
@@ -28,11 +30,16 @@ class PatientService:
         client_id: uuid.UUID | None = None,
     ) -> Patient:
         """Crea un nuevo paciente."""
-        logger.info(f"Creando paciente: {patient_data.email}")
+        if clinic_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="clinic_id obligatorio: operaciones PHI requieren tenant explícito",
+            )
+        logger.info("Creando paciente (nuevo registro)")
         
         if not validate_email(patient_data.email):
-            raise ValueError(f"Email inválido: {patient_data.email}")
-        
+            raise ValueError("Email inválido")
+
         # Verificar que no exista
         existing_stmt = select(Patient).where(Patient.email == str(patient_data.email))
         if client_id is not None and hasattr(Patient, "client_id"):
@@ -41,9 +48,14 @@ class PatientService:
             existing_stmt = existing_stmt.where(Patient.clinic_id == clinic_id)
         existing = (await self.db.execute(existing_stmt)).scalar_one_or_none()
         if existing:
-            raise ValueError(f"Paciente con email {patient_data.email} ya existe")
+            raise ValueError("Paciente con ese email ya existe")
         
         db_patient = Patient(**patient_data.model_dump())
+        if getattr(db_patient, "phone", None):
+            normalized_phone = normalize_phone(db_patient.phone)
+            db_patient.phone = normalized_phone
+            if hasattr(db_patient, "phone_hash"):
+                db_patient.phone_hash = hash_phone(normalized_phone)
         if client_id is not None and hasattr(db_patient, "client_id"):
             db_patient.client_id = client_id
         if clinic_id is not None:
@@ -62,6 +74,11 @@ class PatientService:
         client_id: uuid.UUID | None = None,
     ) -> Optional[Patient]:
         """Obtiene un paciente por ID."""
+        if clinic_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="clinic_id obligatorio: operaciones PHI requieren tenant explícito",
+            )
         stmt = select(Patient).where(Patient.id == patient_id)
         if client_id is not None and hasattr(Patient, "client_id"):
             stmt = stmt.where(Patient.client_id == client_id)
@@ -77,6 +94,11 @@ class PatientService:
         client_id: uuid.UUID | None = None,
     ) -> List[Patient]:
         """Lista todos los pacientes con paginación."""
+        if clinic_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="clinic_id obligatorio: operaciones PHI requieren tenant explícito",
+            )
         stmt = select(Patient).offset(skip).limit(limit)
         if client_id is not None and hasattr(Patient, "client_id"):
             stmt = select(Patient).where(Patient.client_id == client_id).offset(skip).limit(limit)
@@ -128,7 +150,7 @@ class PatientService:
         client_id: uuid.UUID | None,
     ) -> Patient:
         """Crea o actualiza paciente por telefono para intake de WhatsApp."""
-        stmt = select(Patient).where(Patient.phone == payload.phone)
+        stmt = select(Patient).where(Patient.phone_hash == hash_phone(payload.phone))
         if client_id is not None and hasattr(Patient, "client_id"):
             stmt = stmt.where(Patient.client_id == client_id)
         if clinic_id is not None:
@@ -140,10 +162,12 @@ class PatientService:
                 name=payload.full_name,
                 full_name=payload.full_name,
                 dni=payload.dni,
-                phone=payload.phone,
+                phone=normalize_phone(payload.phone),
                 email=str(payload.email) if payload.email else None,
                 age=payload.age,
             )
+            if hasattr(patient, "phone_hash"):
+                patient.phone_hash = hash_phone(payload.phone)
             if client_id is not None and hasattr(patient, "client_id"):
                 patient.client_id = client_id
             if clinic_id is not None:

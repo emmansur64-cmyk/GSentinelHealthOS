@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, date
 
+from api.app.core.security import validate_hybrid_auth
 from api.app.db.session import get_db
 from api.app.models.time_slot_simple import TimeSlot
 from api.app.services.buffer_service import BufferService
@@ -17,11 +18,21 @@ from api.app.schemas.buffer_schemas import (
     BufferImpactResponse,
     BufferIntegrityResponse,
 )
+from shared.utils import setup_logger
 
 router = APIRouter(
-    prefix="/api/v1/slots",
+    prefix="/slots",
     tags=["buffer_slots"]
 )
+logger = setup_logger(__name__)
+
+
+def _raise_internal_error(operation: str, exc: Exception) -> None:
+    logger.error("%s: %s", operation, exc, exc_info=True)
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Error interno del servidor",
+    )
 
 
 @router.post(
@@ -47,7 +58,8 @@ router = APIRouter(
 )
 async def book_slot_with_buffer(
     request: BufferBookingRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Reservar slot con bloqueo automático de buffer."""
     try:
@@ -90,10 +102,7 @@ async def book_slot_with_buffer(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        _raise_internal_error("Error reservando slot con buffer", e)
 
 
 @router.post(
@@ -119,7 +128,8 @@ async def book_slot_with_buffer(
 )
 async def cancel_with_buffer_release(
     request: BufferCancellationRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Cancelar cita y liberar slots bloqueados."""
     try:
@@ -145,10 +155,7 @@ async def cancel_with_buffer_release(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        _raise_internal_error("Error cancelando cita con buffer", e)
 
 
 @router.get(
@@ -168,7 +175,8 @@ async def get_available_slots_excluding_buffers(
     doctor_id: int,
     slot_date: str,
     include_blocked: bool = False,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Listar slots disponibles excluyendo buffers."""
     try:
@@ -204,10 +212,7 @@ async def get_available_slots_excluding_buffers(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        _raise_internal_error("Error listando slots disponibles sin buffers", e)
 
 
 @router.get(
@@ -233,7 +238,8 @@ async def get_available_slots_excluding_buffers(
 async def get_buffer_impact(
     doctor_id: int,
     slot_date: str = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Analizar impacto de buffers."""
     try:
@@ -259,10 +265,7 @@ async def get_buffer_impact(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        _raise_internal_error("Error analizando impacto de buffers", e)
 
 
 @router.get(
@@ -284,7 +287,8 @@ async def get_buffer_impact(
 async def check_buffer_integrity(
     doctor_id: int,
     slot_date: str = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Validar integridad de buffers."""
     try:
@@ -310,10 +314,7 @@ async def check_buffer_integrity(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        _raise_internal_error("Error validando integridad de buffers", e)
 
 
 @router.get(
@@ -325,7 +326,8 @@ async def check_buffer_integrity(
 )
 async def get_doctor_buffer_config(
     doctor_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Obtener configuración de buffer."""
     try:
@@ -341,7 +343,4 @@ async def get_doctor_buffer_config(
         }
         
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        _raise_internal_error("Error obteniendo configuracion de buffer", e)

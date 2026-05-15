@@ -499,7 +499,7 @@ async function handleConfirmAppointment(
   const overlapping = await tx.$queryRaw<{ id: string }[]>`
     SELECT id FROM appointments
     WHERE tenant_id = ${tenantId}
-      AND doctor_id  = ${context.doctor_id}::uuid
+      AND doctor_id  = ${context.doctor_id}
       AND deleted_at IS NULL
       AND status NOT IN ('cancelled', 'no_show')
       AND datetime < ${candidateEnd}::timestamptz

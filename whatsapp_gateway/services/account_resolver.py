@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from shared.config import DATABASE_URL
-from shared.security.secrets import MissingSecretEncryptionKeyError, SecretEncryptionError, decrypt_secret
+from shared.security.secrets import MissingSecretEncryptionKeyError, SecretEncryptionError, decrypt_secret, sha256_hex
 from shared.utils import setup_logger
 
 logger = setup_logger(__name__)
@@ -192,6 +192,7 @@ class ClientWhatsAppAccountResolver:
         normalized = (verify_token or "").strip()
         if not normalized or not self._is_configured():
             return None
+        verify_token_hash = sha256_hex(normalized)
 
         query = text(
             """
@@ -209,7 +210,7 @@ class ClientWhatsAppAccountResolver:
 
         try:
             async with await self._session() as session:
-                result = await session.execute(query, {"verify_token": normalized})
+                result = await session.execute(query, {"verify_token": verify_token_hash})
                 row = result.first()
         except Exception as exc:
             logger.warning("No se pudo resolver cuenta por verify_token: %s", exc)

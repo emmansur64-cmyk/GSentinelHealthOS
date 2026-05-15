@@ -15,11 +15,27 @@ export type BrainDecideResponse = {
 };
 
 /**
+ * Modos de asistente válidos para el contrato conversacional.
+ * Deben coincidir exactamente con AssistantMode en brain/contracts/routing.py
+ */
+export type AssistantMode =
+  | "doctor_professional"
+  | "patient_assistant"
+  | "patient_triage"
+  | "receptionist"
+  | "administrative"
+  | "generic_non_clinical";
+
+export type ActorRole = "doctor" | "patient" | "receptionist" | "admin" | "system";
+
+/**
  * Payload que enviamos al Brain.
  */
 type BrainDecidePayload = {
   role: string;
   message: string;
+  assistant_mode?: AssistantMode;
+  actor_role?: ActorRole;
   context: {
     doctor_id?: string | null;
     patient?: { id?: string; name?: string; notes?: string | null } | null;
@@ -257,6 +273,10 @@ export async function callBrainDecide(
         user_input: payload.message,
         session_id: buildSessionId(payload),
         context: payload.context,
+        // Contrato conversacional: necesario para role isolation en el Brain.
+        // Sin estos campos el Brain cae a generic_non_clinical (más restrictivo).
+        assistant_mode: payload.assistant_mode ?? "generic_non_clinical",
+        actor_role: payload.actor_role ?? "system",
       }),
       signal: controller.signal,
     });

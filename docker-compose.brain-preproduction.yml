@@ -1,0 +1,66 @@
+# docker-compose.brain-preproduction.yml
+# =====================================================================
+# ENTORNO PREPRODUCCIÓN — Solo para validación E2E del Brain /orchestrate
+# NO usar en producción. NO push. NO conecta providers externos.
+# Levanta: Redis mínimo (sin auth/sentinel) + Brain aislado
+# Puerto del brain: 127.0.0.1:19001 (no colisiona con producción 8001)
+# =====================================================================
+
+services:
+  redis_brain_preprod:
+    image: redis:8.0.2-alpine
+    container_name: gsentinel_redis_brain_preprod
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:56382:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-p", "6379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks:
+      - brain_preprod_net
+
+  brain_preprod:
+    build:
+      context: .
+      dockerfile: docker/brain.Dockerfile
+    image: gs_brain_preproduction:latest
+    container_name: gsentinel_brain_preprod
+    depends_on:
+      redis_brain_preprod:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis_brain_preprod:6379
+      BRAIN_API_KEY: brain-preprod-test-key-not-production
+      BRAIN_HOST: 0.0.0.0
+      BRAIN_PORT: "8001"
+      BRAIN_STATE_TTL_SECONDS: "3600"
+      BRAIN_MODE: http
+      # Sin clave interna → /orchestrate accesible sin X-Internal-Key (dev mode)
+      INTERNAL_SERVICES_KEY: ""
+      # Deshabilitar worker WhatsApp/Redis (no necesario para validar /orchestrate)
+      ENABLE_BRAIN_REDIS_WORKER: "false"
+      # Sin microservicios IA externos (clients.py es 100% offline/local)
+      DIALOGUE_ENGINE_URL: http://localhost:8010
+      INFERENCE_SERVICE_URL: http://localhost:8011
+      DECISION_SERVICE_URL: http://localhost:8012
+      NLG_SERVICE_URL: http://localhost:8013
+      ENV: preproduction
+      LOG_LEVEL: DEBUG
+    ports:
+      - "127.0.0.1:19001:8001"
+    networks:
+      - brain_preprod_net
+    restart: "no"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; r=urllib.request.urlopen('http://localhost:8001/health', timeout=5); sys.exit(0 if r.status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+networks:
+  brain_preprod_net:
+    name: gsentinel_brain_preprod_net
+    driver: bridge

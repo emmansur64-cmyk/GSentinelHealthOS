@@ -45,6 +45,13 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   });
 }
 
+async function fetchChatJson<T>(url: string, init?: RequestInit): Promise<T> {
+  return fetchJsonWithRetry<T>(url, init, {
+    retries: 0,
+    timeoutMs: 30_000,
+  });
+}
+
 export function DoctorChatHub({ doctorId }: { doctorId: string }) {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [chatLoading, setChatLoading] = useState(false);
@@ -57,6 +64,7 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(true);
+  const chatRequestRef = useRef<{ requestId: string; controller: AbortController } | null>(null);
 
   const loadChatHistory = useCallback(async () => {
     setLoadingHistory(true);
@@ -74,6 +82,13 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
   useEffect(() => {
     void loadChatHistory();
   }, [loadChatHistory]);
+
+  useEffect(() => {
+    return () => {
+      chatRequestRef.current?.controller.abort();
+      chatRequestRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const container = chatScrollRef.current;
@@ -101,9 +116,10 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
   }, []);
 
   const postDoctorChat = useCallback(
-    async (message: string, context?: Record<string, unknown>) => {
-      return fetchJson<DoctorChatResponse>("/chat/doctor", {
+    async (message: string, context: Record<string, unknown>, signal: AbortSignal) => {
+      return fetchChatJson<DoctorChatResponse>("/chat/doctor", {
         method: "POST",
+        signal,
         body: JSON.stringify({
           doctor_id: doctorId,
           message,
@@ -115,11 +131,14 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
   );
 
   const sendDoctorChat = async () => {
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || chatRequestRef.current) return;
 
     const outgoingText = chatInput.trim();
+    const requestId = crypto.randomUUID();
+    const controller = new AbortController();
+    chatRequestRef.current = { requestId, controller };
     const doctorMessage: ChatMessage = {
-      id: `doctor-${Date.now()}`,
+      id: `doctor-${requestId}`,
       role: "doctor",
       content: outgoingText,
       created_at: new Date().toISOString(),
@@ -130,12 +149,22 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
     setChatLoading(true);
 
     try {
-      const result = await postDoctorChat(outgoingText);
+      const result = await postDoctorChat(
+        outgoingText,
+        {
+          metadata: {
+            chat_request_id: requestId,
+          },
+        },
+        controller.signal,
+      );
+
+      if (chatRequestRef.current?.requestId !== requestId || controller.signal.aborted) return;
 
       setChatMessages((prev) => [
         ...prev,
         {
-          id: `metabrain-${Date.now()}`,
+          id: `metabrain-${requestId}`,
           role: "metabrain",
           content: result.response,
           created_at: new Date().toISOString(),
@@ -144,11 +173,15 @@ export function DoctorChatHub({ doctorId }: { doctorId: string }) {
         },
       ]);
     } catch (error) {
+      if (controller.signal.aborted) return;
       setChatMessages((prev) => prev.filter((message) => message.id !== doctorMessage.id));
       setChatInput(outgoingText);
       toast.error(error instanceof Error ? error.message : "No se pudo obtener respuesta de MetaBrain");
     } finally {
-      setChatLoading(false);
+      if (chatRequestRef.current?.requestId === requestId) {
+        chatRequestRef.current = null;
+        setChatLoading(false);
+      }
     }
   };
 

@@ -86,3 +86,40 @@ def decrypt_secret(value: str) -> str:
         raise SecretEncryptionError(f"Error descifrando secreto: {exc}") from exc
 
     return decrypted.decode("utf-8")
+
+
+def sha256_hex(value: str) -> str:
+    if value is None:
+        raise SecretEncryptionError("No se puede hashear un valor nulo")
+
+    normalized = value.strip()
+    if not normalized:
+        raise SecretEncryptionError("No se puede hashear un valor vacío")
+
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def normalize_phone(value: str) -> str:
+    if value is None:
+        raise SecretEncryptionError("No se puede normalizar un telefono nulo")
+
+    raw = value.strip()
+    if not raw:
+        raise SecretEncryptionError("No se puede normalizar un telefono vacio")
+
+    cleaned = "".join(ch for ch in raw if ch.isdigit() or ch == "+")
+    if not cleaned:
+        raise SecretEncryptionError("Telefono invalido")
+
+    if "+" in cleaned and not cleaned.startswith("+"):
+        raise SecretEncryptionError("Telefono invalido")
+
+    if cleaned.count("+") > 1:
+        raise SecretEncryptionError("Telefono invalido")
+
+    return cleaned
+
+
+def hash_phone(value: str) -> str:
+    normalized = normalize_phone(value)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()

@@ -1,0 +1,394 @@
+# DOCUMENTAL ONLY
+# DO NOT DEPLOY DIRECTLY
+# GENERATED FROM LIVE CANONICAL RUNTIME
+# GENERATED: 2026-05-12
+# PURPOSE: TRACEABILITY / ROLLBACK / STABILIZATION
+# THIS FILE DOES NOT MODIFY RUNTIME
+#
+# This is a documentary runtime lock, not an operational compose file.
+# It intentionally records observed live runtime image IDs, canonical tags,
+# ports, networks, mounts, commands and restart policies.
+# Do not use this file with docker compose up/down/build/pull.
+
+name: gsentinelhealthos-runtime-lock-documental
+
+x-runtime-lock:
+  generated_from_compose_project: gsentinelhealthos
+  generated_from_compose_file: E:\GSentinelHealthOS\docker-compose.yml
+  active_runtime_network: gsentinelhealthos_gs_prod
+  generated_date: "2026-05-12"
+  mode: documental-only
+  warning: DO NOT DEPLOY DIRECTLY
+
+services:
+  frontend:
+    image: gsentinelhealthos-frontend:latest
+    container_name: gs_frontend
+    restart: unless-stopped
+    command: ["docker-entrypoint.sh", "node", "server.js"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes: []
+    x-runtime-trace:
+      container: gs_frontend
+      status: running
+      health: healthy
+      real_image_id: sha256:c1eef26b3087b1964b50f7c64ab40a4b34c0aa238732ac08600e6536afa39c2a
+      image_digest: null
+      canonical_tag: gsentinelhealthos-frontend:latest
+      latest_trusted_for_runtime: true
+      source_observed: medical-agenda-saas baked into image
+
+  api:
+    image: gsentinelhealthos-api:latest
+    container_name: gs_api
+    restart: unless-stopped
+    command: ["uvicorn", "api.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes:
+      - uploads_data:/data/uploads
+    x-runtime-trace:
+      container: gs_api
+      status: running
+      health: healthy
+      real_image_id: sha256:d9868f3e26bac5665211287a713e9b8d64ee14001211c74c471e1d56b30a49e7
+      image_digest: null
+      canonical_tag: gsentinelhealthos-api:latest
+      latest_trusted_for_runtime: true
+
+  brain:
+    image: gsentinelhealthos-brain:latest
+    container_name: gs_brain
+    restart: unless-stopped
+    command: ["python", "brain/main.py"]
+    ports:
+      - "127.0.0.1:8001:8001"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes:
+      - uploads_data:/data/uploads
+    x-runtime-trace:
+      container: gs_brain
+      status: running
+      health: healthy
+      real_image_id: sha256:bb85e7d49f10362835655c6612e0d9f7acdd39757ffd3f0a0d106436e4fefa00
+      image_digest: null
+      canonical_tag: gsentinelhealthos-brain:latest
+      latest_trusted_for_runtime: true
+
+  gateway:
+    image: gsentinelhealthos-gateway:latest
+    container_name: gs_gateway
+    restart: unless-stopped
+    command: ["uvicorn", "whatsapp_gateway.app.main:app", "--host", "0.0.0.0", "--port", "8002"]
+    ports:
+      - "127.0.0.1:8002:8002"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes:
+      - uploads_data:/data/uploads
+    x-runtime-trace:
+      container: gs_gateway
+      status: running
+      health: healthy
+      real_image_id: sha256:a9bb2547b9cbbe78c8a548ee89d665013061569fe5fb184369cb3ba593b026b8
+      image_digest: null
+      canonical_tag: gsentinelhealthos-gateway:latest
+      latest_trusted_for_runtime: true
+
+  nlg-service:
+    image: gsentinelhealthos-nlg-service:latest
+    container_name: gs_nlg_service
+    restart: unless-stopped
+    command: ["uvicorn", "services.nlg_service.main:app", "--host", "0.0.0.0", "--port", "8013", "--workers", "1"]
+    ports:
+      - "127.0.0.1:8013:8013"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes: []
+    x-runtime-trace:
+      container: gs_nlg_service
+      status: running
+      health: healthy
+      real_image_id: sha256:2347f33098d8d3da63ee4156cf0f3cb3ebde5d6825bb9aaef054a8ec6d3542f2
+      image_digest: null
+      canonical_tag: gsentinelhealthos-nlg-service:latest
+      latest_trusted_for_runtime: true
+
+  inference-service:
+    image: gsentinelhealthos-inference-service:latest
+    container_name: gs_inference_service
+    restart: unless-stopped
+    command: ["uvicorn", "services.inference_service.main:app", "--host", "0.0.0.0", "--port", "8011", "--workers", "1"]
+    ports:
+      - "127.0.0.1:8011:8011"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes: []
+    x-runtime-trace:
+      container: gs_inference_service
+      status: running
+      health: healthy
+      real_image_id: sha256:0a4281800dcb607be4c2fb70fbdd37742bc55c8aa65304854cad0e03d5714d14
+      image_digest: null
+      canonical_tag: gsentinelhealthos-inference-service:latest
+      latest_trusted_for_runtime: true
+
+  decision-service:
+    image: gsentinelhealthos/decision-service:runtime-canonical-20260512
+    container_name: gs_decision_service
+    restart: unless-stopped
+    command: ["uvicorn", "services.decision_service.main:app", "--host", "0.0.0.0", "--port", "8012", "--workers", "1"]
+    ports:
+      - "127.0.0.1:8012:8012"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes: []
+    x-runtime-trace:
+      container: gs_decision_service
+      status: running
+      health: healthy
+      real_image_id: sha256:dd886d9ee4ecd9c76a01e6642a1495f6b70e03bfdd62cddb0e6f756a165592e7
+      image_digest: null
+      canonical_tag: gsentinelhealthos/decision-service:runtime-canonical-20260512
+      previous_latest_tag: gsentinelhealthos-decision-service:latest
+      previous_latest_image_id: sha256:0a17e788c1e98143acdfad27bdd65cf21ea1d0b15247adc35376dfdb39c6908f
+      latest_trusted_for_runtime: false
+
+  dialogue-engine:
+    image: gsentinelhealthos/dialogue-engine:runtime-canonical-20260512
+    container_name: gs_dialogue_engine
+    restart: unless-stopped
+    command: ["uvicorn", "services.dialogue_engine.main:app", "--host", "0.0.0.0", "--port", "8010", "--workers", "1"]
+    ports:
+      - "127.0.0.1:8010:8010"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes: []
+    x-runtime-trace:
+      container: gs_dialogue_engine
+      status: running
+      health: healthy
+      real_image_id: sha256:0bfd3f9b1643fbb8145dfe792aa32f3b14590a354ca4506d11a65f21911d37d5
+      image_digest: null
+      canonical_tag: gsentinelhealthos/dialogue-engine:runtime-canonical-20260512
+      previous_latest_tag: gsentinelhealthos-dialogue-engine:latest
+      previous_latest_image_id: sha256:78f758ad1056d22d6f0cf548ccbfc73a08f61dfb761bdc65dd4caa398c5e9036
+      latest_trusted_for_runtime: false
+
+  outbox_scheduler:
+    image: gsentinelhealthos/outbox_scheduler:runtime-canonical-20260512
+    container_name: gs_outbox_scheduler
+    restart: unless-stopped
+    command: ["python", "scripts/run_outbox_scheduler.py"]
+    networks:
+      - gs_prod
+    env_file: []
+    volumes:
+      - ./scripts:/app/scripts:ro
+    x-runtime-trace:
+      container: gs_outbox_scheduler
+      status: running
+      health: none
+      real_image_id: sha256:98cb722fbe069b97fd6bca5bbc206545605da9528bead7427baeae57650e1901
+      image_digest: null
+      canonical_tag: gsentinelhealthos/outbox_scheduler:runtime-canonical-20260512
+      previous_latest_tag: gsentinelhealthos-outbox_scheduler:latest
+      previous_latest_image_id: sha256:33778722e6f67a2d33a905e265b70cde4aea88a591e22522e8edf000330d69c2
+      latest_trusted_for_runtime: false
+
+  booking_worker_0:
+    image: gsentinelhealthos/booking_worker_0:runtime-canonical-20260512
+    container_name: gs_booking_worker_0
+    restart: unless-stopped
+    command: ["python", "-m", "api.app.booking_queue_worker_main"]
+    networks:
+      - gs_prod
+    env_file: []
+    volumes: []
+    x-runtime-trace:
+      container: gs_booking_worker_0
+      status: running
+      health: none
+      real_image_id: sha256:cd2a08c7b2ab02b9ccc0b641786a99c8aa68c5a2228c4d3c31f20a54d03e93b4
+      image_digest: null
+      canonical_tag: gsentinelhealthos/booking_worker_0:runtime-canonical-20260512
+      previous_latest_tag: gsentinelhealthos-booking_worker_0:latest
+      previous_latest_image_id: sha256:78ad8bc25f175d4fc0851ebcfd81d8eb401acd14f5cad993102a3706b3e861c1
+      latest_trusted_for_runtime: false
+
+  booking_worker_1:
+    image: gsentinelhealthos/booking_worker_1:runtime-canonical-20260512
+    container_name: gs_booking_worker_1
+    restart: unless-stopped
+    command: ["python", "-m", "api.app.booking_queue_worker_main"]
+    networks:
+      - gs_prod
+    env_file: []
+    volumes: []
+    x-runtime-trace:
+      container: gs_booking_worker_1
+      status: running
+      health: none
+      real_image_id: sha256:d713bb4e4f6657b868b5ea197c689cd4a9e85197a25615f558401b738bf07bc2
+      image_digest: null
+      canonical_tag: gsentinelhealthos/booking_worker_1:runtime-canonical-20260512
+      previous_latest_tag: gsentinelhealthos-booking_worker_1:latest
+      previous_latest_image_id: sha256:472abe98d9d437ab4021a32767ff634a6472563634c0c070a3a42cc5b4ff8b81
+      latest_trusted_for_runtime: false
+
+  db:
+    image: postgres:16-alpine@sha256:5c4a21411ae06f964015aa9b5447b75f686dcded73d231289b75459d7c0b490a
+    container_name: gs_db
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=50", "-c", "shared_buffers=128MB"]
+    expose:
+      - "5432"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init-multiple-dbs.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    x-runtime-trace:
+      container: gs_db
+      status: running
+      health: healthy
+      real_image_id: sha256:667495ca2ac33180ad3690178da1bf274f481d0c43849d4c1941f0176983bd2e
+      image_digest: postgres@sha256:5c4a21411ae06f964015aa9b5447b75f686dcded73d231289b75459d7c0b490a
+      canonical_tag: postgres:16-alpine
+      latest_trusted_for_runtime: true
+
+  redis-master:
+    image: redis:8.0.2-alpine@sha256:48501c5ad00d5563bc30c075c7bcef41d7d98de3e9a1e6c752068c66f0a8463b
+    container_name: gs_redis_master
+    restart: unless-stopped
+    command: ["redis-server", "[redacted-auth-config-args]"]
+    expose:
+      - "6379"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes:
+      - redis_master_data:/data
+      - ./broker/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    x-runtime-trace:
+      container: gs_redis_master
+      status: running
+      health: healthy
+      real_image_id: sha256:e74faa347ab0b6a3c1b040834a35ea5f20e3aa02460db4bb9d5b4685f3dd3baf
+      image_digest: redis@sha256:48501c5ad00d5563bc30c075c7bcef41d7d98de3e9a1e6c752068c66f0a8463b
+      latest_trusted_for_runtime: true
+
+  redis-replica:
+    image: redis:8.0.2-alpine@sha256:48501c5ad00d5563bc30c075c7bcef41d7d98de3e9a1e6c752068c66f0a8463b
+    container_name: gs_redis_replica
+    restart: unless-stopped
+    command: ["redis-server", "[redacted-auth-config-args]"]
+    expose:
+      - "6379"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes:
+      - redis_replica_data:/data
+      - ./broker/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    x-runtime-trace:
+      container: gs_redis_replica
+      status: running
+      health: healthy
+      real_image_id: sha256:e74faa347ab0b6a3c1b040834a35ea5f20e3aa02460db4bb9d5b4685f3dd3baf
+      image_digest: redis@sha256:48501c5ad00d5563bc30c075c7bcef41d7d98de3e9a1e6c752068c66f0a8463b
+      latest_trusted_for_runtime: true
+
+  redis-sentinel-1:
+    image: redis:8.0.2-alpine@sha256:48501c5ad00d5563bc30c075c7bcef41d7d98de3e9a1e6c752068c66f0a8463b
+    container_name: gs_redis_sentinel_1
+    restart: unless-stopped
+    command: ["redis-server", "[redacted-sentinel-config-args]"]
+    expose:
+      - "6379"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes:
+      - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
+    x-runtime-trace:
+      container: gs_redis_sentinel_1
+      status: running
+      health: healthy
+      real_image_id: sha256:e74faa347ab0b6a3c1b040834a35ea5f20e3aa02460db4bb9d5b4685f3dd3baf
+      image_digest: redis@sha256:48501c5ad00d5563bc30c075c7bcef41d7d98de3e9a1e6c752068c66f0a8463b
+      latest_trusted_for_runtime: true
+
+  redis-sentinel-2:
+    image: redis:8.0.2-alpine@sha256:48501c5ad00d5563bc30c075c7bcef41d7d98de3e9a1e6c752068c66f0a8463b
+    container_name: gs_redis_sentinel_2
+    restart: unless-stopped
+    command: ["redis-server", "[redacted-sentinel-config-args]"]
+    expose:
+      - "6379"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes:
+      - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
+    x-runtime-trace:
+      container: gs_redis_sentinel_2
+      status: running
+      health: healthy
+      real_image_id: sha256:e74faa347ab0b6a3c1b040834a35ea5f20e3aa02460db4bb9d5b4685f3dd3baf
+      image_digest: redis@sha256:48501c5ad00d5563bc30c075c7bcef41d7d98de3e9a1e6c752068c66f0a8463b
+      latest_trusted_for_runtime: true
+
+  redis-sentinel-3:
+    image: redis:8.0.2-alpine@sha256:48501c5ad00d5563bc30c075c7bcef41d7d98de3e9a1e6c752068c66f0a8463b
+    container_name: gs_redis_sentinel_3
+    restart: unless-stopped
+    command: ["redis-server", "[redacted-sentinel-config-args]"]
+    expose:
+      - "6379"
+    networks:
+      - gs_prod
+    env_file: []
+    volumes:
+      - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
+    x-runtime-trace:
+      container: gs_redis_sentinel_3
+      status: running
+      health: healthy
+      real_image_id: sha256:e74faa347ab0b6a3c1b040834a35ea5f20e3aa02460db4bb9d5b4685f3dd3baf
+      image_digest: redis@sha256:48501c5ad00d5563bc30c075c7bcef41d7d98de3e9a1e6c752068c66f0a8463b
+      latest_trusted_for_runtime: true
+
+networks:
+  gs_prod:
+    name: gsentinelhealthos_gs_prod
+    external: true
+
+volumes:
+  postgres_data:
+    name: gsentinelhealthos_postgres_data
+    external: true
+  redis_master_data:
+    name: gsentinelhealthos_redis_master_data
+    external: true
+  redis_replica_data:
+    name: gsentinelhealthos_redis_replica_data
+    external: true
+  uploads_data:
+    name: gsentinelhealthos_uploads_data
+    external: true

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +14,14 @@ from cerebro_ai_med.models.registry import ActiveModelSpec, parse_active_spec, p
 from cerebro_ai_med.models.schemas import ModelInput, ModelOutput, RiskLevel
 
 
-ARTIFACT_DIR = Path(__file__).resolve().parent / "artifacts"
+def _resolve_artifact_dir() -> Path:
+    configured_path = os.getenv("MODEL_PATH", "").strip()
+    if configured_path:
+        return Path(configured_path).expanduser().resolve()
+    return Path(os.path.join(os.path.dirname(__file__), "artifacts")).resolve()
+
+
+ARTIFACT_DIR = _resolve_artifact_dir()
 REGISTRY_PATH = ARTIFACT_DIR / "metadata.json"
 
 

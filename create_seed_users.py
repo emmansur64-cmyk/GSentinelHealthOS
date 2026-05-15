@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+from uuid import uuid4
 from passlib.context import CryptContext
 from api.app.db.session import async_session_local
 from sqlalchemy import text
@@ -18,15 +19,18 @@ async def create_seed_users():
     admin_hash = pwd_context.hash(admin_password)
     doctor_hash = pwd_context.hash(doctor_password)
     
-    print(f"Admin hash: {admin_hash}")
-    print(f"Doctor hash: {doctor_hash}")
-    
     async with async_session_local() as session:
         await session.execute(text("""
-            INSERT INTO users (username, email, hashed_password, role, is_active)
-            VALUES (:username, :email, :hashed_password, :role, :is_active)
-            ON CONFLICT (username) DO NOTHING
+            INSERT INTO users (id, username, email, hashed_password, role, is_active)
+            VALUES (:id, :username, :email, :hashed_password, :role, :is_active)
+            ON CONFLICT (username) DO UPDATE SET
+                email = EXCLUDED.email,
+                hashed_password = EXCLUDED.hashed_password,
+                role = EXCLUDED.role,
+                is_active = EXCLUDED.is_active,
+                updated_at = CURRENT_TIMESTAMP
         """), {
+            "id": str(uuid4()),
             "username": "admin",
             "email": "admin@example.com",
             "hashed_password": admin_hash,
@@ -35,10 +39,16 @@ async def create_seed_users():
         })
         
         await session.execute(text("""
-            INSERT INTO users (username, email, hashed_password, role, is_active)
-            VALUES (:username, :email, :hashed_password, :role, :is_active)
-            ON CONFLICT (username) DO NOTHING
+            INSERT INTO users (id, username, email, hashed_password, role, is_active)
+            VALUES (:id, :username, :email, :hashed_password, :role, :is_active)
+            ON CONFLICT (username) DO UPDATE SET
+                email = EXCLUDED.email,
+                hashed_password = EXCLUDED.hashed_password,
+                role = EXCLUDED.role,
+                is_active = EXCLUDED.is_active,
+                updated_at = CURRENT_TIMESTAMP
         """), {
+            "id": str(uuid4()),
             "username": "doctor.demo",
             "email": "doctor@example.com",
             "hashed_password": doctor_hash,
@@ -46,7 +56,7 @@ async def create_seed_users():
             "is_active": True
         })
         
-        await session.flush()
+        await session.commit()
     
     print("✓ Seed users created successfully")
 

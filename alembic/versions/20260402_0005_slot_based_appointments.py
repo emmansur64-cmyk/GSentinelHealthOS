@@ -47,9 +47,6 @@ def upgrade() -> None:
         # Constraint 1: Only one slot per doctor per time
         sa.UniqueConstraint('doctor_id', 'start_time', name='uq_doctor_slot'),
         
-        # Foreign key to doctors table
-        sa.ForeignKeyConstraint(['doctor_id'], ['doctors.id'], ondelete='CASCADE', name='fk_slots_doctor'),
-        
         # Indexes for fast queries
         sa.Index('idx_slots_doctor_status', 'doctor_id', 'status'),
         sa.Index('idx_slots_doctor_time', 'doctor_id', 'start_time'),
@@ -72,9 +69,6 @@ def upgrade() -> None:
         
         # Foreign key to time_slots
         sa.ForeignKeyConstraint(['slot_id'], ['time_slots.id'], ondelete='RESTRICT', name='fk_appt_slot'),
-        
-        # Foreign key to patients table
-        sa.ForeignKeyConstraint(['patient_id'], ['patients.id'], ondelete='CASCADE', name='fk_appt_patient'),
         
         # Indexes
         sa.Index('idx_appt_patient', 'patient_id'),

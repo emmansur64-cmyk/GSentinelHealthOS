@@ -7,6 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.app.models import Patient
+from shared.security.secrets import hash_phone, normalize_phone
+from shared.utils import setup_logger
+
+
+logger = setup_logger(__name__)
 
 
 class ShadowProfileService:
@@ -68,7 +73,8 @@ class ShadowProfileService:
         """
         
         # Buscar paciente existente
-        stmt = select(Patient).where(Patient.phone == phone)
+        phone_hash = hash_phone(phone)
+        stmt = select(Patient).where(Patient.phone_hash == phone_hash)
         if client_id is not None and hasattr(Patient, "client_id"):
             stmt = stmt.where(Patient.client_id == client_id)
         if clinic_id is not None and hasattr(Patient, "clinic_id"):
@@ -81,7 +87,8 @@ class ShadowProfileService:
         
         # Crear shadow profile
         shadow_patient = Patient(
-            phone=phone,
+            phone=normalize_phone(phone),
+            phone_hash=phone_hash,
             name=name or "<pending>",  # Marcador de perfil incompleto
             email=email,
         )
@@ -100,9 +107,10 @@ class ShadowProfileService:
         
         except Exception as e:
             await self.db.rollback()
+            logger.error("Error al crear shadow profile: %s", e, exc_info=True)
             raise HTTPException(
                 status_code=500,
-                detail=f"Error al crear shadow profile: {str(e)}"
+                detail="Error interno del servidor"
             )
     
     async def get_by_phone(
@@ -115,7 +123,7 @@ class ShadowProfileService:
         Obtiene un paciente por teléfono.
         NO crea si no existe.
         """
-        stmt = select(Patient).where(Patient.phone == phone)
+        stmt = select(Patient).where(Patient.phone_hash == hash_phone(phone))
         if client_id is not None and hasattr(Patient, "client_id"):
             stmt = stmt.where(Patient.client_id == client_id)
         if clinic_id is not None and hasattr(Patient, "clinic_id"):

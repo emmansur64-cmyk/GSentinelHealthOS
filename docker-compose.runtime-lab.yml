@@ -1,0 +1,42 @@
+services:
+  postgres_runtime_lab:
+    image: postgres:16-alpine
+    container_name: gsentinel_postgres_runtime_lab
+    environment:
+      POSTGRES_DB: gsentinel_runtime_lab
+      POSTGRES_USER: gsentinel_lab
+      POSTGRES_PASSWORD: gsentinel_lab
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - runtime_lab_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gsentinel_lab -d gsentinel_runtime_lab"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - runtime_lab_net
+
+  redis_runtime_lab:
+    image: redis:8.0.2-alpine
+    container_name: gsentinel_redis_runtime_lab
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "-p", "6379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - runtime_lab_net
+
+networks:
+  runtime_lab_net:
+    name: gsentinel_runtime_lab_net
+    driver: bridge
+
+volumes:
+  runtime_lab_postgres_data:
+    name: gsentinel_runtime_lab_postgres_data

@@ -4,6 +4,7 @@ from typing import List, Optional
 from sqlalchemy import String, DateTime, ForeignKey, Text, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
+from shared.security.encrypted_types import EncryptedText
 
 class Base(DeclarativeBase):
     pass
@@ -26,7 +27,8 @@ class Patient(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    phone: Mapped[str] = mapped_column(String(20), unique=True, index=True) # Clave para WhatsApp
+    phone: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
+    phone_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True)
     
     appointments: Mapped[List["Appointment"]] = relationship("Appointment", back_populates="patient")

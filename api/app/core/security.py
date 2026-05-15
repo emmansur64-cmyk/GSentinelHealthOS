@@ -61,6 +61,7 @@ oauth2_scheme = OAuth2PasswordBearer(
 )
 
 AUTH_COOKIE_NAME = "gs_access_token"
+AUTH_CSRF_COOKIE_NAME = "gs_csrf_token"
 
 
 # ============ MODELOS ============
@@ -166,7 +167,15 @@ def create_access_token(
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(hours=JWT_EXPIRATION_HOURS)
     )
-    to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc), "type": "user"})
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": datetime.now(timezone.utc),
+            "type": "user",
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
+        }
+    )
     return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
@@ -181,7 +190,10 @@ def verify_jwt_token(token: str) -> TokenData:
         payload = jwt.decode(
             token,
             JWT_SECRET_KEY,
-            algorithms=[JWT_ALGORITHM]
+            algorithms=[JWT_ALGORITHM],
+            issuer=settings.jwt_issuer,
+            audience=settings.jwt_audience,
+            options={"require": ["exp", "iat", "sub"]},
         )
         subject: Optional[str] = payload.get("sub")
         scopes: list[str] = payload.get("scopes", [])
@@ -255,6 +267,23 @@ async def validate_api_key(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="X-Internal-Key inválida"
+        )
+
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        client_ip = forwarded_for.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client and request.client.host else "0.0.0.0"
+
+    allowed_ips = [
+        ip.strip()
+        for ip in ALLOWED_IPS_BY_SERVICE.get(service_name, [])
+        if ip and ip.strip()
+    ]
+    if allowed_ips and client_ip not in allowed_ips:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="IP no permitida para servicio interno",
         )
     
     return InternalAuth(

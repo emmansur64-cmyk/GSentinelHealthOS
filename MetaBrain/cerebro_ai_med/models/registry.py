@@ -54,13 +54,21 @@ def _semver_key(version: str) -> tuple[int, int, int]:
 
 
 def _resolve_artifact_path(raw_path: str, metadata_path: Path) -> Path:
+    allowed_root = metadata_path.parent.resolve()
     candidate = Path(raw_path)
     if not candidate.is_absolute():
-        candidate = (metadata_path.parent / candidate).resolve()
+        candidate = (allowed_root / candidate).resolve()
     else:
         candidate = candidate.resolve()
+        if allowed_root not in candidate.parents:
+            parts = candidate.parts
+            lowered = [part.lower() for part in parts]
+            if "artifacts" in lowered:
+                artifact_index = lowered.index("artifacts")
+                relative_parts = parts[artifact_index + 1 :]
+                if relative_parts:
+                    candidate = (allowed_root.joinpath(*relative_parts)).resolve()
 
-    allowed_root = metadata_path.parent.resolve()
     if allowed_root not in candidate.parents:
         raise RuntimeError("artifact_path_outside_registry_root")
     return candidate

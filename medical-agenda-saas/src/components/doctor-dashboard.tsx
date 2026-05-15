@@ -89,6 +89,13 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   });
 }
 
+async function fetchChatJson<T>(url: string, init?: RequestInit): Promise<T> {
+  return fetchJsonWithRetry<T>(url, init, {
+    retries: 0,
+    timeoutMs: 30_000,
+  });
+}
+
 export function DoctorDashboard({ doctorId }: { doctorId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -101,6 +108,7 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
   const [reprogramDuration, setReprogramDuration] = useState("30");
   const [followupDays, setFollowupDays] = useState("30");
   const [followupSource, setFollowupSource] = useState("manual");
+  const [chatHistoryLoading, setChatHistoryLoading] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -114,6 +122,8 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
   const [chatImageLoading, setChatImageLoading] = useState(false);
   const [chatImagePreviewUrl, setChatImagePreviewUrl] = useState<string | null>(null);
   const chatImageInputRef = useRef<HTMLInputElement | null>(null);
+  const chatRequestRef = useRef<{ requestId: string; controller: AbortController } | null>(null);
+  const chatHistoryRequestRef = useRef<AbortController | null>(null);
 
   const selectedAppointment = useMemo(
     () => appointments.find((appointment) => appointment.id === selectedAppointmentId) ?? null,
@@ -163,17 +173,27 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
   }, [selectedAppointment]);
 
   const loadChatHistory = useCallback(async () => {
-    setChatLoading(true);
+    chatHistoryRequestRef.current?.abort();
+    const controller = new AbortController();
+    chatHistoryRequestRef.current = controller;
+    setChatHistoryLoading(true);
     try {
       const params = new URLSearchParams({ doctor_id: doctorId, session_id: chatSessionId });
       if (chatPatientId) params.set("patient_id", chatPatientId);
       if (chatAppointmentId) params.set("appointment_id", chatAppointmentId);
-      const data = await fetchJson<ChatHistoryResponse>(`${DOCTOR_CHAT_PARAMS.route}?${params.toString()}`);
+      const data = await fetchJson<ChatHistoryResponse>(`${DOCTOR_CHAT_PARAMS.route}?${params.toString()}`, {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
       setChatMessages(data.messages);
     } catch (error) {
+      if (controller.signal.aborted) return;
       toast.error(error instanceof Error ? error.message : "No se pudo cargar el historial del chat clinico");
     } finally {
-      setChatLoading(false);
+      if (chatHistoryRequestRef.current === controller) {
+        chatHistoryRequestRef.current = null;
+        setChatHistoryLoading(false);
+      }
     }
   }, [doctorId, chatAppointmentId, chatPatientId, chatSessionId]);
 
@@ -206,8 +226,14 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
   }, [loadPatientContext, selectedAppointment]);
 
   useEffect(() => {
-    void loadChatHistory();
-  }, [loadChatHistory]);
+    if (chatOpen) {
+      void loadChatHistory();
+      return;
+    }
+    chatHistoryRequestRef.current?.abort();
+    chatHistoryRequestRef.current = null;
+    setChatHistoryLoading(false);
+  }, [chatOpen, loadChatHistory]);
 
   useEffect(() => {
     if (chatOpen) void loadChatSessions();
@@ -223,6 +249,15 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
     setChatImagePreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [chatImageFile]);
+
+  useEffect(() => {
+    return () => {
+      chatRequestRef.current?.controller.abort();
+      chatRequestRef.current = null;
+      chatHistoryRequestRef.current?.abort();
+      chatHistoryRequestRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const wsBase = process.env.NEXT_PUBLIC_REALTIME_WS_URL;
@@ -244,7 +279,7 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
           const targetDoctorId = payload?.payload?.doctor_id;
 
           if (eventType === "message") {
-            void loadChatHistory();
+            if (chatOpen) void loadChatHistory();
             return;
           }
 
@@ -272,7 +307,7 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
         socket.close();
       }
     };
-  }, [doctorId, loadChatHistory, loadToday]);
+  }, [chatOpen, doctorId, loadChatHistory, loadToday]);
 
   const optimisticReplace = (id: string, patch: Partial<Appointment>) => {
     setAppointments((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -364,6 +399,12 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
   };
 
   const startNewChat = async () => {
+    chatRequestRef.current?.controller.abort();
+    chatRequestRef.current = null;
+    chatHistoryRequestRef.current?.abort();
+    chatHistoryRequestRef.current = null;
+    setChatLoading(false);
+    setChatHistoryLoading(false);
     setChatSessionId(crypto.randomUUID());
     setChatMessages([]);
     setChatInput("");
@@ -371,6 +412,16 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
     setChatAppointmentId(null);
     setChatMenuOpen(false);
     toast.success("Nuevo chat iniciado");
+  };
+
+  const closeDoctorChat = () => {
+    chatRequestRef.current?.controller.abort();
+    chatRequestRef.current = null;
+    chatHistoryRequestRef.current?.abort();
+    chatHistoryRequestRef.current = null;
+    setChatLoading(false);
+    setChatHistoryLoading(false);
+    setChatOpen(false);
   };
 
   const openSavedChat = (session: ChatSession) => {
@@ -392,7 +443,15 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
 
       setChatSessions((prev) => prev.filter((item) => item.conversation_id !== session.conversation_id));
       if (session.session_id === chatSessionId) {
-        await startNewChat();
+        chatHistoryRequestRef.current?.abort();
+        chatHistoryRequestRef.current = null;
+        setChatHistoryLoading(false);
+        setChatSessionId(crypto.randomUUID());
+        setChatMessages([]);
+        setChatInput("");
+        setChatPatientId(null);
+        setChatAppointmentId(null);
+        setChatMenuOpen(false);
       }
       toast.success("Chat eliminado");
     } catch (error) {
@@ -401,11 +460,14 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
   };
 
   const sendDoctorChat = async () => {
-    if (!chatInput.trim()) return;
+    if (!chatInput.trim() || chatRequestRef.current) return;
 
     const outgoingText = chatInput.trim();
+    const requestId = crypto.randomUUID();
+    const controller = new AbortController();
+    chatRequestRef.current = { requestId, controller };
     const doctorMessage: ChatMessage = {
-      id: `doctor-${Date.now()}`,
+      id: `doctor-${requestId}`,
       role: "doctor",
       content: outgoingText,
       created_at: new Date().toISOString(),
@@ -420,8 +482,9 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
     const resolvedAppointmentId = chatAppointmentId ?? appointmentForPatient?.id;
 
     try {
-      const result = await fetchJson<DoctorChatResponse>(DOCTOR_CHAT_PARAMS.route, {
+      const result = await fetchChatJson<DoctorChatResponse>(DOCTOR_CHAT_PARAMS.route, {
         method: "POST",
+        signal: controller.signal,
         body: JSON.stringify({
           doctor_id: doctorId,
           message: outgoingText,
@@ -439,6 +502,7 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
                   doctor_name: row.doctor_name,
                 })),
                 metadata: {
+                  chat_request_id: requestId,
                   ...(appointmentForPatient
                     ? {
                         appointment_status: appointmentForPatient.status,
@@ -450,16 +514,19 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
               }
             : {
                 metadata: {
+                  chat_request_id: requestId,
                   [DOCTOR_CHAT_PARAMS.sessionMetadataKey]: chatSessionId,
                 },
               },
         }),
       });
 
+      if (chatRequestRef.current?.requestId !== requestId || controller.signal.aborted) return;
+
       setChatMessages((prev) => [
         ...prev,
         {
-          id: `metabrain-${Date.now()}`,
+          id: `metabrain-${requestId}`,
           role: "metabrain",
           content: result.response,
           created_at: new Date().toISOString(),
@@ -469,11 +536,15 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
       ]);
       void loadChatSessions();
     } catch (error) {
+      if (controller.signal.aborted) return;
       setChatMessages((prev) => prev.filter((message) => message.id !== doctorMessage.id));
       setChatInput(outgoingText);
       toast.error(error instanceof Error ? error.message : "No se pudo obtener respuesta de MetaBrain");
     } finally {
-      setChatLoading(false);
+      if (chatRequestRef.current?.requestId === requestId) {
+        chatRequestRef.current = null;
+        setChatLoading(false);
+      }
     }
   };
 
@@ -726,7 +797,7 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
               <Sparkles className="h-4 w-4 text-sky-600" />
               <p className="text-sm font-semibold text-slate-900">Chat IA</p>
             </div>
-            <Button variant="ghost" size="icon-sm" onClick={() => setChatOpen(false)} aria-label="Cerrar chat IA">
+            <Button variant="ghost" size="icon-sm" onClick={closeDoctorChat} aria-label="Cerrar chat IA">
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -787,7 +858,7 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
             ) : null}
 
             <div className="h-80 space-y-2 overflow-auto rounded-md border bg-slate-50 p-3">
-              {chatLoading && chatMessages.length === 0 ? (
+              {chatHistoryLoading && chatMessages.length === 0 ? (
                 <div className="flex items-center gap-2 text-sm text-slate-500">
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                   Cargando historial clinico...

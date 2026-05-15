@@ -348,16 +348,14 @@ def evaluate(
     # Generar flags descriptivos
     flags = _build_flags(best_level, age, chronic_text, symptoms_text, duration_days)
 
-    # Si no se disparó ninguna regla pero hay síntomas → verde por defecto
-    if not matched and symptoms:
-        best_level = "verde"
-        best_score = 0.30
-        matched.append("sintoma_generico")
-
-    # Si literalmente no hay síntomas → azul
-    if not symptoms:
+    # SEGURIDAD: si ninguna regla disparó, NO hay nivel de triage.
+    # Texto libre sin coincidencia clínica NO es un síntoma automático.
+    # INVARIANT B: general_query / texto ambiguo → nunca "sintoma_generico".
+    if not matched:
         best_level = "azul"
         best_score = 0.10
+        # El caller debe interpretar matched=[] y best_level="azul" como
+        # "no triage clínico activo", no como "verde / baja urgencia".
 
     return TriageResult(
         triage_level=best_level,

@@ -8,6 +8,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.app.core.security import InternalAuth, validate_api_key, validate_hybrid_auth
 from api.app.dependencies.db import get_db
 from api.app.dependencies.tenant import TenantContext, get_tenant_context_optional
 from api.app.services.patient_service import PatientService
@@ -24,6 +25,7 @@ async def create_patient(
     patient: PatientCreate,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     try:
         service = PatientService(db)
@@ -33,11 +35,10 @@ async def create_patient(
             client_id=tenant.client_id,
         )
         return db_patient
-    except ValueError as e:
-        logger.error(f"Error creando paciente: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error inesperado: {str(e)}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Datos invalidos")
+    except Exception:
+        logger.error("Error inesperado creando paciente")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
@@ -46,6 +47,7 @@ async def get_patient(
     patient_id: uuid.UUID,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     service = PatientService(db)
     db_patient = await service.get_patient(
@@ -64,6 +66,7 @@ async def list_patients(
     limit: int = 10,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     service = PatientService(db)
     return await service.list_patients(
@@ -80,8 +83,9 @@ async def get_or_create_patient_by_phone(
     create_if_missing: bool = True,
     db: AsyncSession = Depends(get_db),
     tenant: TenantContext = Depends(get_tenant_context_optional),
+    auth: InternalAuth = Depends(validate_api_key),
 ):
-    """Lookup por telefono para Gateway; crea shadow profile si se solicita."""
+    """Lookup por telefono para Gateway; crea shadow profile si se solicita - Requiere autenticación"""
 
     shadow_service = ShadowProfileService(db)
     if create_if_missing:
@@ -108,6 +112,7 @@ async def update_patient(
     patient: PatientUpdate,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     service = PatientService(db)
     db_patient = await service.update_patient(
@@ -126,6 +131,7 @@ async def upsert_whatsapp_patient(
     payload: WhatsAppPatientUpsert,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: InternalAuth = Depends(validate_api_key),
 ):
     if tenant.clinic_id is None:
         raise HTTPException(status_code=400, detail="clinic_id es obligatorio para WhatsApp")
@@ -143,6 +149,7 @@ async def delete_patient(
     patient_id: uuid.UUID,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ) -> None:
     service = PatientService(db)
     if not await service.delete_patient(

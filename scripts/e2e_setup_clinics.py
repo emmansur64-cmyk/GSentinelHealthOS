@@ -30,7 +30,7 @@ from psycopg.rows import dict_row
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from shared.security.secrets import encrypt_secret, is_secret_encryption_key_configured
+from shared.security.secrets import encrypt_secret, is_secret_encryption_key_configured, sha256_hex
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +251,7 @@ def _upsert_whatsapp_account(
         fixture.phone_number_id or f"PLACEHOLDER_PNID_{fixture.tag.upper()}",
         encrypted_token or fixture.access_token_placeholder,
         encrypted_secret or fixture.app_secret_placeholder,
-        fixture.verify_token, True, "active",
+        sha256_hex(fixture.verify_token) if fixture.verify_token else None, True, "active",
         datetime.utcnow(), datetime.utcnow(),
     ]
 

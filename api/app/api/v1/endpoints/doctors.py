@@ -8,6 +8,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.app.core.security import validate_hybrid_auth
 from api.app.dependencies.db import get_db
 from api.app.dependencies.tenant import TenantContext, get_tenant_context_optional
 from api.app.services.doctor_service import DoctorService
@@ -23,6 +24,7 @@ async def create_doctor(
     doctor: DoctorCreate,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     try:
         service = DoctorService(db)
@@ -32,11 +34,10 @@ async def create_doctor(
             client_id=tenant.client_id,
         )
         return db_doctor
-    except ValueError as e:
-        logger.error(f"Error creando doctor: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error inesperado: {str(e)}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Datos invalidos")
+    except Exception:
+        logger.error("Error inesperado creando doctor")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
@@ -45,6 +46,7 @@ async def get_doctor(
     doctor_id: uuid.UUID,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     service = DoctorService(db)
     db_doctor = await service.get_doctor(
@@ -63,6 +65,7 @@ async def list_doctors(
     limit: int = 10,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     service = DoctorService(db)
     return await service.list_doctors(
@@ -78,6 +81,7 @@ async def list_doctors_by_specialty(
     specialty: str,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     service = DoctorService(db)
     return await service.list_doctors_by_specialty(
@@ -93,6 +97,7 @@ async def update_doctor(
     doctor: DoctorUpdate,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     service = DoctorService(db)
     db_doctor = await service.update_doctor(
@@ -111,6 +116,7 @@ async def delete_doctor(
     doctor_id: uuid.UUID,
     tenant: TenantContext = Depends(get_tenant_context_optional),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ) -> None:
     service = DoctorService(db)
     if not await service.delete_doctor(

@@ -140,8 +140,8 @@ export async function POST(request: Request) {
     let created: Awaited<ReturnType<typeof prisma.appointment.create>> | null = null;
     let chosenStart: Date | null = null;
 
-    // Reintento corto por carrera concurrente: si el slot se ocupa, buscar el siguiente
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    // Un turno manual no debe moverse silenciosamente a otro horario.
+    for (let attempt = 0; attempt < 1; attempt += 1) {
       const preferredStart =
         attempt === 0 || !chosenStart
           ? requestedStart
@@ -167,6 +167,15 @@ export async function POST(request: Request) {
       chosenStart = candidateStart;
       const end = new Date(candidateStart.getTime() + parsed.data.duration * 60_000);
 
+      if (candidateStart.getTime() !== requestedStart.getTime()) {
+        return fail("El horario solicitado no esta disponible", 409, {
+          code: "REQUESTED_SLOT_UNAVAILABLE",
+          doctor_id: doctorId,
+          requested_datetime: requestedStart.toISOString(),
+          suggested_datetime: candidateStart.toISOString(),
+        });
+      }
+
       try {
         created = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
           await lockDoctorSchedule(tx, doctorId);
@@ -174,7 +183,7 @@ export async function POST(request: Request) {
           const overlapping = await tx.$queryRaw<{ id: string }[]>`
             SELECT id FROM appointments
             WHERE tenant_id = ${tenant.tenant.id}
-              AND doctor_id  = ${doctorId}::uuid
+              AND doctor_id  = ${doctorId}
               AND deleted_at IS NULL
               AND status NOT IN ('cancelled', 'no_show')
               AND datetime < ${end}::timestamptz
@@ -182,9 +191,7 @@ export async function POST(request: Request) {
             LIMIT 1
           `;
 
-          if (overlapping.length > 0) {
-            throw new Error("OVERLAP_RETRY");
-          }
+          if (overlapping.length > 0) throw new Error("OVERLAP_CONFLICT");
 
           return tx.appointment.create({
             data: {
@@ -204,7 +211,7 @@ export async function POST(request: Request) {
 
         break;
       } catch (error) {
-        if (!(error instanceof Error) || error.message !== "OVERLAP_RETRY") {
+        if (!(error instanceof Error) || error.message !== "OVERLAP_CONFLICT") {
           throw error;
         }
       }

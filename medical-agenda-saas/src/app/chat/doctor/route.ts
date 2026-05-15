@@ -26,13 +26,13 @@ const contextSchema = z.object({
 }).strict();
 
 const postSchema = z.object({
-  doctor_id: z.string().trim().uuid(),
+  doctor_id: z.string().trim().min(1).max(120),
   message: z.string().trim().min(1).max(4000),
   context: contextSchema.optional(),
 }).strict();
 
 const getSchema = z.object({
-  doctor_id: z.string().trim().uuid(),
+  doctor_id: z.string().trim().min(1).max(120),
   patient_id: z.string().trim().uuid().optional(),
   appointment_id: z.string().trim().uuid().optional(),
   session_id: z.string().trim().max(80).optional(),

@@ -497,26 +497,83 @@ function extractTimeRange(value: string): { start_time: string; end_time: string
   };
 }
 
+function extractStructuredMedicalSheetHeader(rawText: string): {
+  doctorName: string;
+  specialty: string;
+  licenseNumber: string;
+  month: string;
+  year: string;
+} {
+  let text = rawText
+    .toLowerCase()
+    .replace(/\r/g, " ")
+    .replace(/\n/g, " ")
+    .replace(/\s+/g, " ");
+
+  text = text
+    .replace(/aã\s*o/g, "año")
+    .replace(/a\s*ã\s*o/g, "año")
+    .replace(/\bano\b/g, "año")
+    .replace(/m[eé]dico/g, "medico")
+    .replace(/matr[ií]cula/g, "matricula")
+    .replace(/mi[eé]rcoles/g, "miercoles")
+    .replace(/s[áa]bado/g, "sabado")
+    .replace(/nombre del medico\s*:/g, "nombre del medico ")
+    .replace(/especialidad\s*:/g, "especialidad ")
+    .replace(/matricula\s*:/g, "matricula ")
+    .replace(/mes\s*:/g, "mes ")
+    .replace(/año\s*:/g, "año ")
+    .replace(/\s+/g, " ");
+
+  const doctorName = text.match(/nombre del medico\s+(.+?)\s+especialidad/)?.[1]?.trim() ?? "";
+  const specialty = text.match(/especialidad\s+(.+?)\s+matricula/)?.[1]?.trim() ?? "";
+  const licenseNumber = text.match(/matricula\s+(\d+)/)?.[1]?.trim() ?? "";
+  const month = text.match(/mes\s+([a-záéíóúñ]+)/)?.[1]?.trim() ?? "";
+  const year = text.match(/mes\s+[a-záéíóúñ]+.*?(\d{4})/)?.[1]?.trim() ?? "";
+
+  return {
+    doctorName,
+    specialty,
+    licenseNumber,
+    month,
+    year,
+  };
+}
+
 function findDoctorMatch(
   extraction: VisionDocumentExtraction | null,
   rawText: string,
   doctors: Array<{ user_id: string; matricula: string; user: { name: string } }>,
   agendaSettingsByUserId: Map<string, { appointment_duration: number }>,
 ): { doctorId?: string; slotDuration: number } {
+  const structuredHeader = extractStructuredMedicalSheetHeader(rawText);
+
+  const normalizedStructuredDoctorName = normalizeLooseText(structuredHeader.doctorName);
+  const normalizedStructuredLicense = normalizeLooseText(structuredHeader.licenseNumber);
   const normalizedDoctorName = normalizeLooseText(extraction?.doctor_name ?? "");
   const normalizedLicense = normalizeLooseText(extraction?.license_number ?? "");
   const normalizedRawText = normalizeLooseText(rawText);
 
   const matched = doctors.find((doctor) => {
     const normalizedName = normalizeLooseText(doctor.user.name);
-    const normalizedMatricula = normalizeLooseText(doctor.matricula);
+    const normalizedMatricula = normalizeLooseText(doctor.matricula ?? "");
 
-    return (
-      (normalizedLicense && normalizedMatricula === normalizedLicense) ||
-      (normalizedDoctorName && (normalizedName.includes(normalizedDoctorName) || normalizedDoctorName.includes(normalizedName))) ||
-      normalizedRawText.includes(normalizedName) ||
-      (normalizedMatricula.length > 0 && normalizedRawText.includes(normalizedMatricula))
-    );
+    const licenseMatches =
+      (normalizedStructuredLicense.length > 0 && normalizedMatricula === normalizedStructuredLicense) ||
+      (normalizedLicense.length > 0 && normalizedMatricula === normalizedLicense);
+
+    const structuredNameMatches =
+      normalizedStructuredDoctorName.length > 0 &&
+      (normalizedName.includes(normalizedStructuredDoctorName) || normalizedStructuredDoctorName.includes(normalizedName));
+
+    const visionNameMatches =
+      normalizedDoctorName.length > 0 &&
+      (normalizedName.includes(normalizedDoctorName) || normalizedDoctorName.includes(normalizedName));
+
+    const rawTextMatches = normalizedName.length > 0 && normalizedRawText.includes(normalizedName);
+    const rawLicenseMatches = normalizedMatricula.length > 0 && normalizedRawText.includes(normalizedMatricula);
+
+    return licenseMatches || structuredNameMatches || visionNameMatches || rawTextMatches || rawLicenseMatches;
   });
 
   return {
@@ -1078,8 +1135,17 @@ export async function POST(request: Request) {
       },
     });
 
-    const detected_doctor_name = visionExtraction?.doctor_name?.trim() || analysisValidated.data.provider?.professional_name?.trim() || "";
-    const detected_doctor_license = visionExtraction?.license_number?.trim() || analysisValidated.data.provider?.license_number?.trim() || "";
+    const structuredHeaderForResponse = extractStructuredMedicalSheetHeader(rawText);
+    const detected_doctor_name =
+      visionExtraction?.doctor_name?.trim() ||
+      structuredHeaderForResponse.doctorName ||
+      analysisValidated.data.provider?.professional_name?.trim() ||
+      "";
+    const detected_doctor_license =
+      visionExtraction?.license_number?.trim() ||
+      structuredHeaderForResponse.licenseNumber ||
+      analysisValidated.data.provider?.license_number?.trim() ||
+      "";
 
     const source: "vision" | "groq" | "metabrain_local" = medicalImagingAnalysis ? "vision" : agendaImportSource === "groq" ? "groq" : "metabrain_local";
     const metabrainDecision = buildAgendaImportGuidance({
@@ -1123,6 +1189,9 @@ export async function POST(request: Request) {
       matched_doctor_id: matchedDoctorId,
       detected_doctor_name,
       detected_doctor_license,
+      detected_specialty: visionExtraction?.specialty?.trim() || structuredHeaderForResponse.specialty || analysisValidated.data.provider?.specialty?.trim() || "",
+      detected_month: visionExtraction?.month?.trim() || structuredHeaderForResponse.month || "",
+      detected_year: visionExtraction?.year?.trim() || structuredHeaderForResponse.year || "",
     });
   } catch (error) {
     return fail("No se pudo procesar el documento", 500, error instanceof Error ? error.message : null);

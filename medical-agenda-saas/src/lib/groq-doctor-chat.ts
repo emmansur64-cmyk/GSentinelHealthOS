@@ -1,7 +1,13 @@
 import "server-only";
 
 import { logServer, logServerError } from "@/lib/server-logger";
+import type { DoctorProfileContext } from "@/lib/doctor-context";
 import type { MetaBrainDecision, MetaBrainDecisionInput } from "@/lib/metabrain";
+import type { MedicalConversationMemory } from "@/lib/medical-conversation-memory";
+import type { MedicalReasoningContext } from "@/lib/medical-reasoning";
+import type { MedicalSpecialtyProtocolContext } from "@/lib/medical-specialty-protocols";
+import type { MedicalRuntimeContext } from "@/lib/medical-runtime-context";
+import type { MedicalWebEvidenceFragment, MedicalWebRetrievalContext } from "@/lib/medical-web-retrieval";
 
 const TRUE_VALUES = new Set(["1", "true", "yes", "on"]);
 const FALSE_VALUES = new Set(["0", "false", "no", "off"]);
@@ -95,12 +101,18 @@ function getConfig(): GroqDoctorChatConfig {
 
 function buildSystemPrompt(): string {
   return [
-    "Eres un asistente clinico para un medico dentro de un sistema de agenda medica.",
-    "El chat es libre: responde la consulta real del medico sin forzar intents ni flujos cerrados.",
+    "Eres un asistente clinico interno para un medico. Siempre estas hablando con el medico, nunca con un paciente.",
+    "Este chat medico es independiente del canal de pacientes por WhatsApp. No gestiona turnos, citas, reservas ni reprogramaciones.",
+    "No ofrezcas programar citas, no sugieras reservar turnos y no hables como si el medico necesitara una cita con otro doctor.",
+    "El chat es libre: responde la consulta real del medico sobre casos clinicos, salud general, medicamentos, razonamiento clinico, seguimiento, estudios o comunicacion profesional.",
+    "Si el medico solo saluda, responde brevemente y ofrece ayudar con un caso clinico, una duda de salud, medicamentos o revision de informacion medica.",
     "Usa el contexto del paciente solo cuando este disponible y sea relevante.",
-    "Si el contexto incluye metadata.agenda, tenes acceso de lectura a esa agenda: usala para orientar disponibilidad, medicos y horarios reales.",
-    "No inventes horarios: si no hay open_slots o reglas suficientes, pedi confirmacion con secretaria o solicita mas datos.",
+    "Si el contexto incluye metadata.agenda, tratala solo como informacion operativa de referencia; no conviertas la respuesta en flujo de agenda.",
     "No inventes datos clinicos, estudios, antecedentes, dosis ni resultados. Si falta informacion, dilo.",
+    "Si el usuario pregunta fecha u hora, usa el RUNTIME CONTEXT provisto. No respondas que no tenes acceso a la fecha actual si el contexto esta presente.",
+    "Si recibes STRUCTURED MEDICAL REASONING, organiza la respuesta clinica con esas secciones y conserva sus limites de evidencia.",
+    "Si recibes SPECIALTY MEDICAL PROTOCOL, adapta tono, red flags, evidencia y estructura al protocolo indicado sin inventar datos.",
+    "Si recibes DOCTOR PROFILE CONTEXT, usalo solo para personalizar especialidad, idioma, region y preferencias del medico dentro del tenant actual.",
     "Responde en espanol claro, directo y util para trabajo clinico.",
     "No hagas marketing, no menciones que eres Groq y no prometas certeza diagnostica.",
     "Cuando haya riesgo de urgencia, prioriza conducta segura y evaluacion presencial.",
@@ -112,7 +124,6 @@ function formatContext(context: MetaBrainDecisionInput["context"]): string {
     ? {
         id: context.patient.id,
         name: context.patient.name,
-        phone: context.patient.phone,
         notes: clip(context.patient.notes, 800),
       }
     : null;
@@ -147,6 +158,203 @@ function formatContext(context: MetaBrainDecisionInput["context"]): string {
   );
 }
 
+function isMedicalWebEvidenceFragment(value: unknown): value is MedicalWebEvidenceFragment {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<MedicalWebEvidenceFragment>;
+  return (
+    typeof record.source === "string" &&
+    typeof record.sourceType === "string" &&
+    typeof record.title === "string" &&
+    typeof record.url === "string" &&
+    typeof record.fragment === "string" &&
+    (record.date === null || typeof record.date === "string") &&
+    (record.confidence === "medium" || record.confidence === "high")
+  );
+}
+
+function getMedicalWebRetrievalContext(context: MetaBrainDecisionInput["context"]): MedicalWebRetrievalContext | null {
+  const value = context.metadata?.medical_web_retrieval;
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<MedicalWebRetrievalContext>;
+  if (typeof record.instruction !== "string" || !Array.isArray(record.sources)) return null;
+  const sources = record.sources.filter(isMedicalWebEvidenceFragment);
+  if (sources.length === 0) return null;
+  return {
+    instruction: record.instruction,
+    query: typeof record.query === "string" ? record.query : "",
+    sources,
+  };
+}
+
+function getMedicalRuntimeContext(context: MetaBrainDecisionInput["context"]): MedicalRuntimeContext | null {
+  const value = context.metadata?.medical_runtime_context;
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<MedicalRuntimeContext>;
+  if (typeof record.instruction !== "string" || !record.time || typeof record.time !== "object") return null;
+  return record as MedicalRuntimeContext;
+}
+
+function getMedicalConversationMemory(context: MetaBrainDecisionInput["context"]): MedicalConversationMemory | null {
+  const value = context.metadata?.medical_conversation_memory;
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<MedicalConversationMemory>;
+  if (typeof record.instruction !== "string" || typeof record.summary !== "string") return null;
+  return record as MedicalConversationMemory;
+}
+
+function getDoctorProfileContext(context: MetaBrainDecisionInput["context"]): DoctorProfileContext | null {
+  const value = context.metadata?.doctor_profile_context;
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<DoctorProfileContext>;
+  if (typeof record.instruction !== "string" || !record.scope || !record.doctor) return null;
+  return record as DoctorProfileContext;
+}
+
+function getMedicalReasoningContext(context: MetaBrainDecisionInput["context"]): MedicalReasoningContext | null {
+  const value = context.metadata?.medical_reasoning;
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<MedicalReasoningContext>;
+  if (typeof record.instruction !== "string" || !Array.isArray(record.requiredSections)) return null;
+  return record as MedicalReasoningContext;
+}
+
+function getMedicalSpecialtyProtocolContext(
+  context: MetaBrainDecisionInput["context"],
+): MedicalSpecialtyProtocolContext | null {
+  const value = context.metadata?.medical_specialty_protocol;
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<MedicalSpecialtyProtocolContext>;
+  if (typeof record.instruction !== "string" || typeof record.specialty !== "string") return null;
+  return record as MedicalSpecialtyProtocolContext;
+}
+
+function formatMedicalConversationMemory(memory: MedicalConversationMemory): string {
+  return JSON.stringify(
+    {
+      instruccion_obligatoria: memory.instruction,
+      alcance: {
+        conversation_id: memory.scope.conversationId,
+        patient_scoped: Boolean(memory.scope.patientId),
+        appointment_scoped: Boolean(memory.scope.appointmentId),
+      },
+      politica: memory.policy,
+      resumen_comprimido: clip(memory.summary, 2000),
+      decisiones_recientes: memory.recentDecisions,
+      medicamentos_mencionados: memory.medicationMentions,
+      hipotesis_recientes: memory.hypotheses,
+      especialidad_contexto: memory.specialtyContext,
+      conversacion_activa: memory.activeConversation,
+      expira_en: memory.expiresAt,
+      fallback: memory.fallback,
+      errores: memory.errors,
+    },
+    null,
+    2,
+  );
+}
+
+function formatDoctorProfileContext(context: DoctorProfileContext): string {
+  return JSON.stringify(
+    {
+      instruccion_obligatoria: context.instruction,
+      scope: context.scope,
+      medico: context.doctor,
+      clinica: context.clinic,
+      locale: context.locale,
+      contexto_especialidad: context.specialtyContext,
+      guias_regionales: context.regionalGuidelines,
+      preferencias: context.preferences,
+      compatibilidad: context.compatibility,
+      aislamiento: context.isolation,
+      fallback: context.fallback,
+      errores: context.errors,
+    },
+    null,
+    2,
+  );
+}
+
+function formatMedicalRuntimeContext(runtime: MedicalRuntimeContext): string {
+  return JSON.stringify(
+    {
+      instruccion_obligatoria: runtime.instruction,
+      fecha_hora: runtime.time,
+      clima: runtime.weather,
+      alertas_ambientales: runtime.environmentalAlerts,
+      epidemiologia_auxiliar: runtime.epidemiology,
+      fallback: runtime.fallback,
+      errores: runtime.errors,
+    },
+    null,
+    2,
+  );
+}
+
+function formatMedicalWebEvidence(retrieval: MedicalWebRetrievalContext): string {
+  const sources = retrieval.sources.slice(0, 5).map((item, index) => ({
+    id: `EVIDENCIA_${index + 1}`,
+    fuente: item.source,
+    tipo: item.sourceType,
+    titulo: clip(item.title, 180),
+    url: item.url,
+    fecha: item.date,
+    fragmento: clip(item.fragment, 650),
+    confianza: item.confidence,
+  }));
+
+  return JSON.stringify(
+    {
+      instruccion_obligatoria: retrieval.instruction,
+      consulta_generica: retrieval.query,
+      evidencia_filtrada: sources,
+    },
+    null,
+    2,
+  );
+}
+
+function formatMedicalReasoning(reasoning: MedicalReasoningContext): string {
+  return JSON.stringify(
+    {
+      instruccion_obligatoria: reasoning.instruction,
+      especialidad: reasoning.specialty,
+      severidad: reasoning.severity,
+      secciones_obligatorias: reasoning.requiredSections,
+      guia_especialidad: reasoning.specialtyGuidance,
+      escalamiento_urgencia: reasoning.emergencyEscalation,
+      politica_evidencia: reasoning.evidencePolicy,
+      fallback: reasoning.fallback,
+      errores: reasoning.errors,
+    },
+    null,
+    2,
+  );
+}
+
+function formatMedicalSpecialtyProtocol(protocol: MedicalSpecialtyProtocolContext): string {
+  return JSON.stringify(
+    {
+      instruccion_obligatoria: protocol.instruction,
+      especialidad: protocol.specialty,
+      etiqueta: protocol.label,
+      nivel_riesgo: protocol.riskLevel,
+      tono: protocol.tone,
+      estilo_razonamiento: protocol.reasoningStyle,
+      focos_protocolo: protocol.protocolFocus,
+      red_flags: protocol.redFlags,
+      politica_evidencia: protocol.evidencePolicy,
+      estructura_clinica: protocol.structureHints,
+      modificadores_riesgo: protocol.riskModifiers,
+      modificadores_urgencia: protocol.emergencyModifiers,
+      compatibilidad: protocol.compatibility,
+      fallback: protocol.fallback,
+      errores: protocol.errors,
+    },
+    null,
+    2,
+  );
+}
+
 function buildMessages(input: MetaBrainDecisionInput): GroqChatMessage[] {
   const historyMessages = input.context.conversation_history.slice(-8).flatMap<GroqChatMessage>((entry) => [
     {
@@ -158,6 +366,60 @@ function buildMessages(input: MetaBrainDecisionInput): GroqChatMessage[] {
       content: clip(entry.response, 1200),
     },
   ]);
+  const medicalConversationMemory = getMedicalConversationMemory(input.context);
+  const memoryMessage: GroqChatMessage[] = medicalConversationMemory
+    ? [
+        {
+          role: "user",
+          content: `MEMORIA CLINICA CONVERSACIONAL:\n${formatMedicalConversationMemory(medicalConversationMemory)}`,
+        },
+      ]
+    : [];
+  const doctorProfileContext = getDoctorProfileContext(input.context);
+  const doctorProfileMessage: GroqChatMessage[] = doctorProfileContext
+    ? [
+        {
+          role: "user",
+          content: `DOCTOR PROFILE CONTEXT:\n${formatDoctorProfileContext(doctorProfileContext)}`,
+        },
+      ]
+    : [];
+  const medicalRuntimeContext = getMedicalRuntimeContext(input.context);
+  const runtimeMessage: GroqChatMessage[] = medicalRuntimeContext
+    ? [
+        {
+          role: "user",
+          content: `RUNTIME CONTEXT:\n${formatMedicalRuntimeContext(medicalRuntimeContext)}`,
+        },
+      ]
+    : [];
+  const medicalWebRetrieval = getMedicalWebRetrievalContext(input.context);
+  const evidenceMessage: GroqChatMessage[] = medicalWebRetrieval
+    ? [
+        {
+          role: "user",
+          content: `EVIDENCIA MEDICA EXTERNA CONTROLADA:\n${formatMedicalWebEvidence(medicalWebRetrieval)}`,
+        },
+      ]
+    : [];
+  const medicalReasoning = getMedicalReasoningContext(input.context);
+  const reasoningMessage: GroqChatMessage[] = medicalReasoning
+    ? [
+        {
+          role: "user",
+          content: `STRUCTURED MEDICAL REASONING:\n${formatMedicalReasoning(medicalReasoning)}`,
+        },
+      ]
+    : [];
+  const medicalSpecialtyProtocol = getMedicalSpecialtyProtocolContext(input.context);
+  const specialtyProtocolMessage: GroqChatMessage[] = medicalSpecialtyProtocol
+    ? [
+        {
+          role: "user",
+          content: `SPECIALTY MEDICAL PROTOCOL:\n${formatMedicalSpecialtyProtocol(medicalSpecialtyProtocol)}`,
+        },
+      ]
+    : [];
 
   return [
     {
@@ -168,6 +430,12 @@ function buildMessages(input: MetaBrainDecisionInput): GroqChatMessage[] {
       role: "user",
       content: `Contexto clinico disponible:\n${formatContext(input.context)}`,
     },
+    ...doctorProfileMessage,
+    ...memoryMessage,
+    ...runtimeMessage,
+    ...evidenceMessage,
+    ...specialtyProtocolMessage,
+    ...reasoningMessage,
     ...historyMessages,
     {
       role: "user",

@@ -54,9 +54,6 @@ def upgrade() -> None:
         sa.CheckConstraint("role IN ('admin', 'doctor', 'receptionist')", name="ck_users_role_valid"),
     ]
 
-    if create_doctor_fk:
-        user_columns.append(sa.ForeignKeyConstraint(["doctor_id"], ["doctors.id"]))
-
     op.create_table("users", *user_columns)
     op.create_index("ix_users_username", "users", ["username"], unique=True)
     op.create_index("ix_users_role", "users", ["role"], unique=False)

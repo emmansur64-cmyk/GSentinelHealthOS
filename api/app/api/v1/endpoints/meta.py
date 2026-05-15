@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import hashlib
+import hmac as _hmac
+import secrets
+import time
 import uuid
 from typing import Any
 
@@ -12,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
 from api.app.core import settings
+from api.app.core.security import UserAuth, get_current_user
 from api.app.dependencies.db import get_db
 from api.app.models import ClientWhatsAppAccount, Clinic
 from shared.security.secrets import MissingSecretEncryptionKeyError, SecretEncryptionError, encrypt_secret
@@ -29,6 +34,49 @@ def _safe_external_body(body: str, *, max_length: int = 500) -> str:
     if len(redacted) > max_length:
         return f"{redacted[:max_length]}...[truncated]"
     return redacted
+
+
+_OAUTH_STATE_TTL_SECONDS = 600  # 10 minutos
+
+
+def _oauth_state_key() -> bytes:
+    return (settings.jwt_secret or "").encode()
+
+
+def generate_oauth_state(clinic_id: str) -> str:
+    """Genera un state CSRF-safe: clinic_id|timestamp|nonce|HMAC-SHA256."""
+    nonce = secrets.token_hex(16)
+    ts = str(int(time.time()))
+    payload = f"{clinic_id}|{ts}|{nonce}"
+    sig = _hmac.new(_oauth_state_key(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}|{sig}"
+
+
+def verify_oauth_state(state: str) -> str:
+    """Valida el state CSRF y retorna clinic_id. Raises HTTPException si falla."""
+    parts = state.split("|")
+    if len(parts) != 4:
+        raise HTTPException(status_code=400, detail="state invalido")
+    clinic_id_str, ts_str, nonce, sig = parts
+    payload = f"{clinic_id_str}|{ts_str}|{nonce}"
+    expected = _hmac.new(_oauth_state_key(), payload.encode(), hashlib.sha256).hexdigest()
+    if not _hmac.compare_digest(sig, expected):
+        raise HTTPException(status_code=400, detail="state invalido o manipulado")
+    try:
+        ts = int(ts_str)
+        if abs(time.time() - ts) > _OAUTH_STATE_TTL_SECONDS:
+            raise HTTPException(status_code=400, detail="state expirado")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="state invalido") from exc
+    return clinic_id_str
+
+
+class EmbeddedSignupInitiateRequest(BaseModel):
+    clinic_id: str
+
+
+class EmbeddedSignupInitiateResponse(BaseModel):
+    state: str
 
 
 class EmbeddedSignupCallbackRequest(BaseModel):
@@ -158,10 +206,11 @@ async def _handle_embedded_signup_callback(
 ) -> EmbeddedSignupCallbackResponse:
     _validate_meta_settings()
 
+    clinic_id_str = verify_oauth_state(state)
     try:
-        clinic_id = uuid.UUID(state)
+        clinic_id = uuid.UUID(clinic_id_str)
     except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="state debe ser un clinic_id UUID valido") from exc
+        raise HTTPException(status_code=400, detail="state invalido: clinic_id malformado") from exc
 
     clinic = await db.get(Clinic, clinic_id)
     if clinic is None:
@@ -181,7 +230,8 @@ async def _handle_embedded_signup_callback(
     except MissingSecretEncryptionKeyError as exc:
         raise HTTPException(status_code=503, detail="SECRET_ENCRYPTION_KEY faltante; no se puede guardar el token") from exc
     except SecretEncryptionError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.error("Error cifrando credenciales Meta: %s", exc, exc_info=True)
+        raise HTTPException(status_code=400, detail="No se pudieron procesar las credenciales de Meta") from exc
 
     phone_number_id = str(assets["phone_number_id"])
     existing = (
@@ -243,10 +293,30 @@ async def _handle_embedded_signup_callback(
     )
 
 
+@router.post("/embedded-signup/initiate", response_model=EmbeddedSignupInitiateResponse)
+async def embedded_signup_initiate(
+    payload: EmbeddedSignupInitiateRequest,
+    _current_user: UserAuth = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> EmbeddedSignupInitiateResponse:
+    """Genera un state CSRF-safe para iniciar Meta Embedded Signup."""
+    try:
+        clinic_id = uuid.UUID(payload.clinic_id)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="clinic_id invalido") from exc
+
+    clinic = await db.get(Clinic, clinic_id)
+    if clinic is None:
+        raise HTTPException(status_code=404, detail="Clinica no encontrada")
+
+    return EmbeddedSignupInitiateResponse(state=generate_oauth_state(str(clinic_id)))
+
+
 @router.post("/embedded-signup/callback", response_model=EmbeddedSignupCallbackResponse)
 async def embedded_signup_callback_post(
     request: Request,
     db: AsyncSession = Depends(get_db),
+    _current_user: UserAuth = Depends(get_current_user),
 ) -> EmbeddedSignupCallbackResponse:
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
@@ -269,5 +339,6 @@ async def embedded_signup_callback_get(
     code: str = Query(...),
     state: str = Query(...),
     db: AsyncSession = Depends(get_db),
+    _current_user: UserAuth = Depends(get_current_user),
 ) -> EmbeddedSignupCallbackResponse:
     return await _handle_embedded_signup_callback(code=code, state=state, db=db)

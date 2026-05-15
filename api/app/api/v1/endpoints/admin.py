@@ -32,11 +32,14 @@ from shared.security.secrets import (
     decrypt_secret,
     encrypt_secret,
     is_secret_encryption_key_configured,
+    sha256_hex,
 )
+from shared.utils import setup_logger
 from api.app.models import Appointment, BotLesson, Client, ClientWhatsAppAccount, Clinic, GoogleOutbox
 from api.app.models.time_slot_simple import SpecialtyPriorityPolicy
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+logger = setup_logger(__name__)
 _role_guard = RoleChecker(["admin", "receptionist"])
 _doctor_role_guard = RoleChecker(["admin", "doctor"])
 _admin_guard = RoleChecker(["admin"])
@@ -187,6 +190,14 @@ def _ensure_token_write_allowed(has_sensitive_update: bool) -> None:
     raise HTTPException(
         status_code=400,
         detail="SECRET_ENCRYPTION_KEY faltante; configurela para guardar tokens",
+    )
+
+
+def _raise_whatsapp_secret_error(exc: Exception) -> None:
+    logger.error("Error procesando credenciales de WhatsApp: %s", exc, exc_info=True)
+    raise HTTPException(
+        status_code=400,
+        detail="No se pudieron procesar las credenciales de WhatsApp",
     )
 
 
@@ -620,9 +631,9 @@ async def create_client_whatsapp_account(
         access_token_encrypted = encrypt_secret(payload.access_token) if payload.access_token else None
         app_secret_encrypted = encrypt_secret(payload.app_secret) if payload.app_secret else None
     except MissingSecretEncryptionKeyError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _raise_whatsapp_secret_error(exc)
     except SecretEncryptionError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _raise_whatsapp_secret_error(exc)
 
     account = ClientWhatsAppAccount(
         client_id=client_id,
@@ -636,7 +647,7 @@ async def create_client_whatsapp_account(
         display_phone_number=payload.display_phone_number,
         access_token_encrypted=access_token_encrypted,
         app_secret_encrypted=app_secret_encrypted,
-        verify_token=payload.verify_token,
+        verify_token=sha256_hex(payload.verify_token) if payload.verify_token else None,
         webhook_enabled=payload.webhook_enabled,
         status=payload.status.strip().lower(),
     )
@@ -718,7 +729,7 @@ async def patch_client_whatsapp_account(
     if payload.display_phone_number is not None:
         row.display_phone_number = payload.display_phone_number
     if payload.verify_token is not None:
-        row.verify_token = payload.verify_token
+        row.verify_token = sha256_hex(payload.verify_token)
     if payload.webhook_enabled is not None:
         row.webhook_enabled = payload.webhook_enabled
     if payload.status is not None:
@@ -730,9 +741,9 @@ async def patch_client_whatsapp_account(
         if payload.app_secret is not None:
             row.app_secret_encrypted = encrypt_secret(payload.app_secret)
     except MissingSecretEncryptionKeyError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _raise_whatsapp_secret_error(exc)
     except SecretEncryptionError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _raise_whatsapp_secret_error(exc)
 
     try:
         await db.commit()

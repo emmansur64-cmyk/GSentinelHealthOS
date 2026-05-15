@@ -14,6 +14,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.app.core.security import validate_hybrid_auth
 from api.app.db.session import get_db
 from api.app.models.time_slot_simple import TimeSlot
 from api.app.services.time_slot_service_simple import TimeSlotService
@@ -51,7 +52,7 @@ from api.app.schemas.time_slot_schemas_simple import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/slots", tags=["slots"])
+router = APIRouter(prefix="/slots", tags=["slots"])
 
 
 # ============================================================================
@@ -61,7 +62,8 @@ router = APIRouter(prefix="/api/v1/slots", tags=["slots"])
 @router.post("/generate", response_model=GenerateSlotsResponse, status_code=201)
 async def generate_slots(
     request: GenerateSlotsRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Generate slots for a doctor on a specific date.
     
@@ -105,7 +107,8 @@ async def generate_slots(
 async def get_available_slots(
     doctor_id: int = Query(..., description="Doctor ID"),
     date: str = Query(..., description="Date in YYYY-MM-DD format"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Get all available slots for a doctor on a date.
     
@@ -141,7 +144,8 @@ async def get_available_slots(
 @router.post("/book", response_model=BookSlotResponse, status_code=201)
 async def book_slot(
     request: BookSlotRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Book a slot for a patient.
     
@@ -169,10 +173,10 @@ async def book_slot(
     except ValueError as exc:
         detail = str(exc)
         if detail in {"slot_not_available", "slot_conflict"}:
-            raise HTTPException(status_code=409, detail=detail)
+            raise HTTPException(status_code=409, detail="No se pudo reservar el slot")
         if detail == "slot_not_found":
-            raise HTTPException(status_code=404, detail=detail)
-        raise HTTPException(status_code=400, detail=detail)
+            raise HTTPException(status_code=404, detail="Slot no encontrado")
+        raise HTTPException(status_code=400, detail="Solicitud invalida para reservar slot")
     
     return BookSlotResponse(
         success=True,
@@ -186,6 +190,7 @@ async def book_slot(
 async def book_next_by_priority(
     request: BookNextByPriorityRequest,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Auto-select and book best slot based on priority policy."""
     gateway = SqlAlchemySlotBookingGateway(db)
@@ -205,8 +210,8 @@ async def book_next_by_priority(
 
     if not result.success:
         if "invalid" in result.error.lower() or "must" in result.error.lower():
-            raise HTTPException(status_code=400, detail=result.error)
-        raise HTTPException(status_code=409, detail=result.error)
+            raise HTTPException(status_code=400, detail="Solicitud invalida para reservar slot")
+        raise HTTPException(status_code=409, detail="Conflicto al reservar slot")
 
     return BookSlotResponse(
         success=True,
@@ -223,6 +228,7 @@ async def get_best_slot_for_priority(
     priority: str = Query("normal", description="normal | urgent"),
     allow_reassign: bool = Query(False, description="Allow reassignment for urgent"),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Return best candidate slot according to priority policy."""
     try:
@@ -249,6 +255,7 @@ async def get_reassignment_audit(
     doctor_id: int = Query(..., description="Doctor ID"),
     limit: int = Query(50, ge=1, le=200, description="Max records"),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Compliance endpoint: who displaced whom for urgent bookings."""
     gateway = SqlAlchemySlotBookingGateway(db)
@@ -268,6 +275,7 @@ async def get_urgent_sla_metrics(
     doctor_id: int = Query(..., description="Doctor ID"),
     days: int = Query(30, ge=1, le=365, description="Window in days"),
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Return urgent wait SLA and displacement percentage for a doctor."""
     gateway = SqlAlchemySlotBookingGateway(db)
@@ -289,7 +297,8 @@ async def get_urgent_sla_metrics(
 @router.post("/appointments/{appointment_id}/cancel", response_model=CancelAppointmentResponse)
 async def cancel_appointment(
     appointment_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Cancel an appointment and release the slot.
     
@@ -306,10 +315,10 @@ async def cancel_appointment(
     except ValueError as exc:
         detail = str(exc)
         if detail == "appointment_not_found":
-            raise HTTPException(status_code=404, detail=detail)
+            raise HTTPException(status_code=404, detail="Cita no encontrada")
         if detail == "appointment_already_cancelled":
-            raise HTTPException(status_code=409, detail=detail)
-        raise HTTPException(status_code=400, detail=detail)
+            raise HTTPException(status_code=409, detail="La cita ya fue cancelada")
+        raise HTTPException(status_code=400, detail="Solicitud invalida para cancelar cita")
     
     return CancelAppointmentResponse(
         success=True,
@@ -323,6 +332,7 @@ async def reschedule_appointment(
     appointment_id: int,
     request: RescheduleAppointmentRequest,
     db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Reschedule a slot-based appointment to a new slot atomically."""
     gateway = SqlAlchemySlotBookingGateway(db)
@@ -337,10 +347,10 @@ async def reschedule_appointment(
 
     if not result.success:
         if "not found" in result.error.lower():
-            raise HTTPException(status_code=404, detail=result.error)
+            raise HTTPException(status_code=404, detail="Cita no encontrada")
         if "not available" in result.error.lower() or "conflicts" in result.error.lower():
-            raise HTTPException(status_code=409, detail=result.error)
-        raise HTTPException(status_code=400, detail=result.error)
+            raise HTTPException(status_code=409, detail="Conflicto al reprogramar cita")
+        raise HTTPException(status_code=400, detail="Solicitud invalida para reprogramar cita")
 
     return RescheduleAppointmentResponse(success=True, slot_id=result.slot_id, error="")
 
@@ -353,7 +363,8 @@ async def reschedule_appointment(
 async def get_utilization(
     doctor_id: int = Query(..., description="Doctor ID"),
     date: str = Query(..., description="Date in YYYY-MM-DD format"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    _auth: dict = Depends(validate_hybrid_auth),
 ):
     """Get slot utilization stats for a doctor on a date.
     
@@ -366,7 +377,7 @@ async def get_utilization(
     try:
         slot_date = datetime.strptime(date, "%Y-%m-%d").date()
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format (use YYYY-MM-DD)")
+        raise HTTPException(status_code=400, detail="Formato de fecha invalido (usar YYYY-MM-DD)")
     
     stats = await TimeSlotService.get_doctor_utilization(
         db=db,

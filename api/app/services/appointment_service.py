@@ -246,15 +246,17 @@ class AppointmentService:
                     detail="Conflicto transaccional concurrente al reservar cita; reintente"
                 )
 
+            logger.error("Error al crear cita (DBAPIError): %s", e, exc_info=True)
             raise HTTPException(
                 status_code=500,
-                detail=f"Error al crear cita: {str(e)}"
+                detail="Error interno del servidor"
             )
         except Exception as e:
             await self.db.rollback()
+            logger.error("Error al crear cita: %s", e, exc_info=True)
             raise HTTPException(
                 status_code=500,
-                detail=f"Error al crear cita: {str(e)}"
+                detail="Error interno del servidor"
             )
     
     async def get_appointment(
@@ -387,7 +389,8 @@ class AppointmentService:
             raise
         except Exception as exc:
             await self.db.rollback()
-            raise HTTPException(status_code=500, detail=f"Error al cancelar cita: {str(exc)}")
+            logger.error("Error al cancelar cita: %s", exc, exc_info=True)
+            raise HTTPException(status_code=500, detail="Error interno del servidor")
 
     async def confirm_appointment(
         self,
@@ -482,7 +485,8 @@ class AppointmentService:
             raise
         except Exception as exc:
             await self.db.rollback()
-            raise HTTPException(status_code=500, detail=f"Error al reprogramar cita: {str(exc)}")
+            logger.error("Error al reprogramar cita: %s", exc, exc_info=True)
+            raise HTTPException(status_code=500, detail="Error interno del servidor")
     
     # ============ MÉTODOS PRIVADOS ============
     

@@ -35,8 +35,6 @@ def upgrade() -> None:
                     buffer_minutes INTEGER NOT NULL DEFAULT 0,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    CONSTRAINT fk_doctor_schedule_config_doctor
-                        FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE CASCADE,
                     CONSTRAINT ck_buffer_minutes_range
                         CHECK (buffer_minutes >= 0 AND buffer_minutes <= 120)
                 )
@@ -56,7 +54,6 @@ def upgrade() -> None:
                 sa.Column("buffer_minutes", sa.Integer(), nullable=False, server_default="0"),
                 sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
                 sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-                sa.ForeignKeyConstraint(["doctor_id"], ["doctors.id"], ondelete="CASCADE"),
                 sa.CheckConstraint("buffer_minutes >= 0 AND buffer_minutes <= 120", name="ck_buffer_minutes_range"),
             )
             op.create_index("idx_doctor_schedule_config_doctor", "doctor_schedule_config", ["doctor_id"], unique=False)

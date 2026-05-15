@@ -130,7 +130,11 @@ class SemanticMemory:
 
         lock = self._get_session_lock(session_id)
         async with lock:
-            distributed_token = await self._acquire_distributed_lock(session_id)
+            try:
+                distributed_token = await self._acquire_distributed_lock(session_id)
+            except Exception as exc:
+                logger.warning("SemanticMemory.store: Redis no disponible, skip session=%s: %s", session_id, exc)
+                return
             if not distributed_token:
                 logger.warning("No se pudo adquirir lock distribuido session=%s", session_id)
                 return

@@ -6,6 +6,11 @@ import { fail, ok } from "@/lib/api-response";
 import { prisma } from "@/lib/prisma";
 import { encryptText } from "@/lib/security/encryption";
 import { requireSuperAdminApi, writeAdminAudit, getRequestIp } from "@/lib/super-admin";
+import crypto from "node:crypto";
+
+function hashVerifyToken(value: string): string {
+  return crypto.createHash("sha256").update(value.trim(), "utf8").digest("hex");
+}
 
 const upsertSchema = z.object({
   phone_number_id: z.string().trim().min(4).max(40),
@@ -85,8 +90,8 @@ export async function POST(
         metaBusinessId: null,
         displayPhoneNumber: display_phone_number ?? null,
         accessTokenEncrypted: encryptText(access_token),
-        appSecret: app_secret ?? null,
-        verifyToken: verify_token ?? null,
+        appSecret: app_secret ? encryptText(app_secret) : null,
+        verifyToken: verify_token ? hashVerifyToken(verify_token) : null,
         isActive: is_active,
         status: is_active ? "connected" : "disconnected",
       },
@@ -96,8 +101,8 @@ export async function POST(
         wabaId: waba_id,
         displayPhoneNumber: display_phone_number ?? null,
         accessTokenEncrypted: encryptText(access_token),
-        appSecret: app_secret ?? null,
-        verifyToken: verify_token ?? null,
+        appSecret: app_secret ? encryptText(app_secret) : null,
+        verifyToken: verify_token ? hashVerifyToken(verify_token) : null,
         isActive: is_active,
         status: is_active ? "connected" : "disconnected",
       },

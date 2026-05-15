@@ -28,14 +28,14 @@ class DoctorService:
         client_id: uuid.UUID | None = None,
     ) -> Doctor:
         """Crea un nuevo doctor."""
-        logger.info(f"Creando doctor: {doctor_data.email}")
-        
+        logger.info("Creando doctor (nuevo registro)")
+
         if not validate_email(doctor_data.email):
-            raise ValueError(f"Email inválido: {doctor_data.email}")
-        
+            raise ValueError("Email inválido")
+
         if not validate_license_number(doctor_data.license_number):
             raise ValueError("Número de matrícula inválido")
-        
+
         # Verificar que no exista
         existing_stmt = select(Doctor).where(Doctor.email == str(doctor_data.email))
         if client_id is not None and hasattr(Doctor, "client_id"):
@@ -44,7 +44,7 @@ class DoctorService:
             existing_stmt = existing_stmt.where(Doctor.clinic_id == clinic_id)
         existing = (await self.db.execute(existing_stmt)).scalar_one_or_none()
         if existing:
-            raise ValueError(f"Doctor con email {doctor_data.email} ya existe")
+            raise ValueError("Doctor con ese email ya existe")
         
         db_doctor = Doctor(**doctor_data.model_dump())
         if client_id is not None and hasattr(db_doctor, "client_id"):

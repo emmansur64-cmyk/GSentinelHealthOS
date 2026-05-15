@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import unicodedata
 
 from services.nlg_service.app.generator import NLGGenerator, GeneratedMessage
 from services.nlg_service.app.planner import MessagePlanner
@@ -149,6 +150,14 @@ class NLGEngine:
                 if isinstance(reformulation.metadata, dict)
                 else None,
             }
+
+            final_text, sanity_metadata = self._apply_medical_sanity_check(
+                text=final_text,
+                decision_output=decision_output,
+            )
+            metadata["sanity_check"] = sanity_metadata
+            if sanity_metadata.get("fallback_applied"):
+                variants_used.append("sanity_check:fallback_summary")
             
             logger.info(
                 "message_generated_success",
@@ -228,3 +237,108 @@ class NLGEngine:
         if isinstance(raw, int) and raw > 0:
             return raw
         return max(1, history_size + 1)
+
+    def _apply_medical_sanity_check(
+        self,
+        *,
+        text: str,
+        decision_output: DecisionOutput,
+    ) -> tuple[str, dict[str, object]]:
+        urgent_context = self._is_urgent_context(decision_output)
+        has_urgent_language = self._contains_urgent_language(text)
+        has_low_risk_language = self._contains_low_risk_language(text)
+
+        if (urgent_context or has_urgent_language) and has_low_risk_language:
+            logger.warning(
+                "nlg_medical_contradiction_detected",
+                extra={
+                    "risk_level": decision_output.risk_level,
+                    "clinical_flag": decision_output.clinical_flag,
+                    "triage_level": decision_output.triage_level,
+                },
+            )
+            return self._fallback_summary(decision_output), {
+                "fallback_applied": True,
+                "reason": "urgent_text_with_low_risk_language",
+            }
+
+        return text, {
+            "fallback_applied": False,
+            "reason": None,
+        }
+
+    def _is_urgent_context(self, decision_output: DecisionOutput) -> bool:
+        urgency_score = getattr(decision_output, "urgency_score", None)
+        if isinstance(urgency_score, (int, float)) and urgency_score > 7:
+            return True
+        return (
+            decision_output.risk_level == "high"
+            or decision_output.clinical_flag == "urgent"
+            or decision_output.triage_level == "red"
+        )
+
+    def _fallback_summary(self, decision_output: DecisionOutput) -> str:
+        if decision_output.clinical_flag == "urgent" or decision_output.risk_level == "high":
+            action = "requiere evaluacion medica urgente"
+        elif decision_output.clinical_flag == "priority":
+            action = "requiere evaluacion medica prioritaria"
+        else:
+            action = "requiere seguimiento clinico segun evolucion"
+
+        risk_label = {
+            "high": "alto",
+            "medium": "moderado",
+            "low": "bajo",
+        }.get(decision_output.risk_level, decision_output.risk_level)
+        clinical_flag = {
+            "urgent": "urgente",
+            "priority": "prioritaria",
+            "routine": "rutinaria",
+        }.get(decision_output.clinical_flag, decision_output.clinical_flag)
+        explanation_labels = {
+            "critical_symptoms": "sintomas que requieren evaluacion inmediata",
+            "pneumonia_possible": "posible compromiso respiratorio",
+            "fracture_possible": "posible lesion osea",
+            "normal_findings": "hallazgos informados como no criticos",
+        }
+        explanations = "; ".join(
+            explanation_labels.get(explanation, explanation.replace("_", " "))
+            for explanation in decision_output.explanations[:2]
+        )
+        detail = f" Los factores considerados incluyen: {explanations}." if explanations else ""
+        return (
+            f"La evaluacion automatizada clasifica el caso como riesgo {risk_label} "
+            f"con prioridad clinica {clinical_flag}; {action}.{detail} "
+            "Esta orientacion es preliminar y debe validarse con un profesional medico."
+        )
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        normalized = unicodedata.normalize("NFKD", text.lower())
+        return "".join(char for char in normalized if not unicodedata.combining(char))
+
+    def _contains_urgent_language(self, text: str) -> bool:
+        normalized = self._normalize_text(text)
+        urgent_terms = (
+            "urgente",
+            "atencion inmediata",
+            "evaluacion inmediata",
+            "evaluacion urgente",
+            "requiere atencion",
+            "requiere revision medica pronta",
+        )
+        return any(term in normalized for term in urgent_terms)
+
+    def _contains_low_risk_language(self, text: str) -> bool:
+        normalized = self._normalize_text(text)
+        low_risk_terms = (
+            "sin hallazgos criticos",
+            "sin hallazgos de alarma",
+            "sin signos de alarma",
+            "no se identifican indicadores criticos",
+            "no se detectan indicadores criticos",
+            "no presenta signos de alarma",
+            "dentro de lo esperado",
+            "evaluacion normal",
+        )
+        return any(term in normalized for term in low_risk_terms)

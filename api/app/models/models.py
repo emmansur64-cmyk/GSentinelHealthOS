@@ -2,9 +2,11 @@
 
 from datetime import datetime
 from uuid import uuid4
-from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Text, Integer, JSON, Index, UniqueConstraint, CheckConstraint
+from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Text, Integer, JSON, Index, UniqueConstraint, CheckConstraint, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
+from shared.security.encrypted_types import EncryptedText
+from shared.security.secrets import hash_phone, normalize_phone
 
 Base = declarative_base()
 
@@ -19,8 +21,9 @@ class Patient(Base):
     clinic_id = Column(UUID(as_uuid=True), ForeignKey("clinics.id"), nullable=True, index=True)
     name = Column(String(100), nullable=False)
     full_name = Column(String(255), nullable=True)
-    dni = Column(String(20), nullable=True, index=True)
-    phone = Column(String(20), nullable=False, unique=True, index=True)  # E.164 format
+    dni = Column(EncryptedText(), nullable=True, index=True)
+    phone = Column(EncryptedText(), nullable=False)
+    phone_hash = Column(String(64), nullable=False, unique=True, index=True)
     email = Column(String(255), nullable=True, unique=True, index=True)
     age = Column(Integer, nullable=True)
     
@@ -90,13 +93,13 @@ class Appointment(Base):
     
     # Datos de cita
     date_time = Column(DateTime, nullable=False, index=True)  # Hora exacta
-    reason = Column(Text, nullable=True)
+    reason = Column(EncryptedText(), nullable=True)
     specialty = Column(String(120), nullable=True, index=True)
     source = Column(String(50), nullable=True, index=True)
     whatsapp_conversation_id = Column(String(120), nullable=True, index=True)
     patient_full_name = Column(String(255), nullable=True)
-    patient_dni = Column(String(20), nullable=True)
-    patient_phone = Column(String(30), nullable=True)
+    patient_dni = Column(EncryptedText(), nullable=True)
+    patient_phone = Column(EncryptedText(), nullable=True)
     patient_email = Column(String(255), nullable=True)
     patient_age = Column(Integer, nullable=True)
     
@@ -104,7 +107,7 @@ class Appointment(Base):
     status = Column(String(20), nullable=False, default="scheduled")  # scheduled, completed, cancelled
     
     # Notas
-    notes = Column(Text, nullable=True)
+    notes = Column(EncryptedText(), nullable=True)
 
     # Integracion Google Calendar
     google_event_id = Column(String(255), nullable=True, unique=True, index=True)
@@ -215,6 +218,22 @@ class GoogleCalendarChannel(Base):
     last_notification_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow())
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
+
+
+@event.listens_for(Patient, "before_insert")
+def _patient_before_insert(_mapper, _connection, target) -> None:
+    if target.phone:
+        normalized = normalize_phone(target.phone)
+        target.phone = normalized
+        target.phone_hash = hash_phone(normalized)
+
+
+@event.listens_for(Patient, "before_update")
+def _patient_before_update(_mapper, _connection, target) -> None:
+    if target.phone:
+        normalized = normalize_phone(target.phone)
+        target.phone = normalized
+        target.phone_hash = hash_phone(normalized)
 
 
 class BotLesson(Base):

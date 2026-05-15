@@ -50,6 +50,13 @@ export async function POST(request: Request) {
     }
 
     const autoScheduled = slot.start.getTime() !== requestedDate.getTime();
+    if (autoScheduled) {
+      return fail("El horario solicitado para seguimiento no esta disponible", 409, {
+        code: "REQUESTED_SLOT_UNAVAILABLE",
+        requested_datetime: requestedDate.toISOString(),
+        suggested_datetime: slot.start.toISOString(),
+      });
+    }
 
     const followup = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await lockDoctorSchedule(tx, sourceAppointment.doctor_id);
@@ -58,7 +65,7 @@ export async function POST(request: Request) {
       const overlapping = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM appointments
         WHERE tenant_id = ${tenant.tenant.id}
-          AND doctor_id = ${sourceAppointment.doctor_id}::uuid
+          AND doctor_id = ${sourceAppointment.doctor_id}
           AND deleted_at IS NULL
           AND status NOT IN ('cancelled', 'no_show')
           AND datetime < ${end}::timestamptz

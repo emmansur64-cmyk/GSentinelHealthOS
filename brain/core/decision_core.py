@@ -25,10 +25,18 @@ from dataclasses import dataclass, field
 import logging
 from typing import Any, Dict, List, Optional
 
+from brain.contracts.routing import (
+    AssistantMode,
+    ConversationalContract,
+    NON_TRIAGE_INTENTS,
+    SAFE_FALLBACK_RESPONSE,
+    build_contract,
+)
 from brain.core.clinical_detector import is_clinical_case
 from brain.core.clinical_parser import parse_case
 from brain.decision_engine import triage_engine
 from brain.decision_engine.local_engine import run_decision, run_dialogue, run_inference
+from brain.routing.triage_eligibility import TriageEligibilityValidator
 from MetaBrain.nlu_engine import NLUEngine
 
 logger = logging.getLogger(__name__)
@@ -121,18 +129,42 @@ async def detect_intent(
 def evaluate_triage(
     user_input: str,
     context: Dict[str, Any],
+    explicit_symptoms: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Evalúa el nivel de triage clínico.
 
-    Ejecuta el pipeline completo:
-      triage_engine.evaluate() → run_inference() → run_decision()
+    SEGURIDAD: Solo llama cuando el TriageEligibilityValidator confirmó elegibilidad.
+    Los síntomas se extraen del contexto estructurado (explicit_symptoms) o del
+    campo 'symptoms' del contexto. NUNCA se usa user_input como síntoma.
+
+    Args:
+        user_input:         Texto del usuario (NO usado como síntoma).
+        context:            Contexto de sesión con síntomas estructurados.
+        explicit_symptoms:  Síntomas ya validados por TriageEligibilityValidator.
 
     Returns:
         Contrato de decision-service enriquecido:
         { risk_level, triage_level, flags, recommendations, action_required,
           _raw_triage: TriageResult }
     """
-    symptoms: List[str] = context.get("symptoms") or [user_input]
+    # SEGURIDAD: usar solo síntomas explícitos validados.
+    # NUNCA user_input como síntoma (elimina el bug original).
+    if explicit_symptoms is not None:
+        symptoms = explicit_symptoms
+    else:
+        raw_symptoms = context.get("symptoms")
+        if isinstance(raw_symptoms, list) and raw_symptoms:
+            symptoms = [str(s) for s in raw_symptoms if s]
+        elif isinstance(raw_symptoms, str) and raw_symptoms.strip():
+            symptoms = [raw_symptoms.strip()]
+        else:
+            # Sin síntomas explícitos → no hay triage real posible
+            symptoms = []
+
+    if not symptoms:
+        logger.debug("evaluate_triage: sin síntomas explícitos → fallback vacío")
+        return dict(_FALLBACK_TRIAGE)
+
     age: Optional[int] = context.get("age") if isinstance(context.get("age"), int) else None
     chronic: List[str] = context.get("chronic_conditions", []) or []
     duration: Optional[float] = context.get("duration_days")
@@ -481,17 +513,20 @@ async def process_input(
     *,
     confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
     nlu_result: Optional[Dict[str, Any]] = None,
+    contract: Optional["ConversationalContract"] = None,
 ) -> Dict[str, Any]:
-    """Pipeline unificado de decisión clínica.
+    """Pipeline unificado de decisión clínica con role isolation.
 
     Args:
         user_input:           Texto del usuario.
         context:              Contexto de sesión/conversación.
         confidence_threshold: Umbral mínimo de confianza para inferencia ML.
         nlu_result:           Resultado NLU pre-calculado (opcional).
-                              Si se provee, se omite la llamada a NLUEngine.
+        contract:             ConversationalContract con mode, capabilities y role.
+                              Si no se provee, se construye uno desde el contexto.
+                              Si el contexto tampoco lo tiene → GENERIC_NON_CLINICAL.
 
-    Returns::
+    Returns:
         {
             "intent":             str,
             "confidence":         float,
@@ -499,10 +534,33 @@ async def process_input(
             "triage":             dict  (contrato decision-service + _raw_triage),
             "response":           str,
             "dialogue":           dict  (contrato dialogue-engine completo),
+            "_routing_trace":     dict  (audit trail del routing),
         }
     """
-    if is_clinical_case(user_input):
-        return await process_clinical_case(user_input, context)
+    # ── Resolver contrato conversacional ──────────────────────────────────────
+    if contract is None:
+        contract = build_contract(
+            mode_raw=context.get("_contract_mode"),
+            actor_role_raw=context.get("_contract_actor_role"),
+            doctor_id=context.get("doctor_id") or context.get("_doctor_id"),
+            patient_id=context.get("patient_id") or context.get("_patient_id"),
+            request_id=context.get("request_id") or context.get("_request_id"),
+        )
+
+    logger.debug(
+        "decision_core.process_input: mode=%s triage_allowed=%s",
+        contract.mode.value, contract.triage_allowed,
+    )
+
+    # ── Casos clínicos estructurados: solo para modos con clinical_reasoning ──
+    if is_clinical_case(user_input) and contract.capabilities.clinical_reasoning_allowed:
+        result = await process_clinical_case(user_input, context)
+        result["_routing_trace"] = {
+            "path": "clinical_case_structured",
+            "mode": contract.mode.value,
+            "triage_allowed": contract.triage_allowed,
+        }
+        return result
 
     # ── Paso 1: Intent detection ───────────────────────────────────────────────
     try:
@@ -525,28 +583,79 @@ async def process_input(
     # Enriquecer contexto con entidades extraídas por el dialogue-engine
     enriched_context: Dict[str, Any] = {**context, **dialogue_output.get("context", {})}
 
-    # ── Paso 2: Confidence-aware routing → triage + response ──────────────────
-    if (
-        requires_inference
-        and confidence < confidence_threshold
-        and intent not in _INTENTS_NO_INFERENCE
-    ):
+    # Inyectar contrato en el contexto enriquecido para propagación downstream
+    enriched_context.update(contract.to_context_dict())
+
+    triage: Dict[str, Any] = dict(_FALLBACK_TRIAGE)
+    routing_trace: Dict[str, Any] = {
+        "mode": contract.mode.value,
+        "intent": intent,
+        "confidence": confidence,
+        "triage_allowed_by_contract": contract.triage_allowed,
+    }
+
+    # ── Paso 2: TRIAGE GATE — con role isolation ───────────────────────────────
+    #
+    # INVARIANT A: DOCTOR_PROFESSIONAL → NUNCA triage automático.
+    # INVARIANT B: NON_TRIAGE_INTENTS (general_query, etc.) → NUNCA triage.
+    # INVARIANT C: Solo TRIAGE_ELIGIBLE pasa al motor de triage.
+    #
+    triage_ran = False
+
+    if not contract.triage_allowed:
+        # Contrato bloquea triage: respuesta conversacional directa
+        routing_trace["triage_gate"] = "BLOCKED_BY_CONTRACT"
+        routing_trace["triage_gate_reason"] = f"mode={contract.mode.value}"
+        triage = dict(_FALLBACK_TRIAGE)
+
+    elif intent in NON_TRIAGE_INTENTS:
+        # INVARIANT B: intent no clínico → sin triage
+        routing_trace["triage_gate"] = "BLOCKED_BY_INTENT"
+        routing_trace["triage_gate_reason"] = f"non_triage_intent={intent}"
+        triage = dict(_FALLBACK_TRIAGE)
+
+    elif requires_inference and confidence < confidence_threshold and intent not in _INTENTS_NO_INFERENCE:
         # Confianza insuficiente → pedir aclaración sin ejecutar triage
         triage = dict(_FALLBACK_TRIAGE, flags=["needs_clarification"])
-        response = generate_response("needs_clarification", triage, enriched_context)
-        logger.debug(
-            "decision_core: confidence baja (%.2f < %.2f) para intent=%s → aclaración",
-            confidence, confidence_threshold, intent,
-        )
+        routing_trace["triage_gate"] = "BLOCKED_LOW_CONFIDENCE"
+        routing_trace["triage_gate_reason"] = f"confidence={confidence:.2f}<{confidence_threshold}"
+
     else:
-        # ── Paso 3: Triage evaluation ──────────────────────────────────────────
-        try:
-            triage = evaluate_triage(user_input, enriched_context)
-        except Exception as exc:
-            logger.error("decision_core.evaluate_triage falló: %s", exc)
+        # Validar elegibilidad completa
+        from brain.routing.triage_eligibility import TriageEligibilityValidator
+        eligibility = TriageEligibilityValidator.validate(
+            contract=contract,
+            intent=intent,
+            confidence=confidence,
+            context=enriched_context,
+        )
+        routing_trace["triage_eligibility"] = eligibility.to_trace()
+
+        if eligibility.is_triage_eligible:
+            try:
+                triage = evaluate_triage(
+                    user_input,
+                    enriched_context,
+                    explicit_symptoms=eligibility.explicit_symptoms,
+                )
+                triage_ran = True
+                routing_trace["triage_gate"] = "EXECUTED"
+            except Exception as exc:
+                logger.error("decision_core.evaluate_triage falló: %s", exc)
+                triage = dict(_FALLBACK_TRIAGE)
+                routing_trace["triage_gate"] = "ERROR"
+        else:
+            routing_trace["triage_gate"] = f"NOT_ELIGIBLE:{eligibility.state.value}"
             triage = dict(_FALLBACK_TRIAGE)
 
-        # ── Paso 4: Response generation ────────────────────────────────────────
+    routing_trace["triage_executed"] = triage_ran
+
+    # ── Paso 3: Response generation ────────────────────────────────────────────
+    if not triage_ran and intent in NON_TRIAGE_INTENTS:
+        # Para intents claramente no clínicos: usar "needs_clarification" como
+        # señal al LinguisticEngine para respuesta conversacional limpia
+        response = generate_response(intent, dict(_FALLBACK_TRIAGE), enriched_context)
+    else:
         response = generate_response(intent, triage, enriched_context)
 
     return {
@@ -556,4 +665,5 @@ async def process_input(
         "triage": triage,
         "response": response,
         "dialogue": dialogue_output,
+        "_routing_trace": routing_trace,
     }

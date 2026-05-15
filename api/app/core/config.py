@@ -51,6 +51,14 @@ class Settings(BaseSettings):
         default="",
         alias="DATABASE_URL"
     )
+    database_connect_timeout_seconds: int = Field(
+        default=5,
+        alias="DATABASE_CONNECT_TIMEOUT_SECONDS"
+    )
+    database_pool_size: int = Field(
+        default=10,
+        alias="DATABASE_POOL_SIZE"
+    )
 
     # === REDIS / COLAS ===
     redis_url: str = Field(
@@ -68,7 +76,11 @@ class Settings(BaseSettings):
     )
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     jwt_expiration_hours: int = Field(default=24, alias="JWT_EXPIRATION_HOURS")
+    jwt_issuer: str = Field(default="gsentinel-api", alias="JWT_ISSUER")
+    jwt_audience: str = Field(default="gsentinel-clients", alias="JWT_AUDIENCE")
+    rate_limit_per_minute: int = Field(default=200, alias="RATE_LIMIT_PER_MINUTE")
     auth_cookie_secure: bool = Field(default=False, alias="AUTH_COOKIE_SECURE")
+    auth_cookie_samesite: str = Field(default="lax", alias="AUTH_COOKIE_SAMESITE")
     gateway_api_key: str = Field(default="", alias="GATEWAY_API_KEY")
     brain_api_key: str = Field(default="", alias="BRAIN_API_KEY")
 
@@ -180,6 +192,14 @@ class Settings(BaseSettings):
             raise ValueError(f"{info.field_name.upper()} es obligatorio")
         if normalized in _PLACEHOLDER_SECRETS:
             raise ValueError(f"{info.field_name.upper()} no puede usar un placeholder inseguro")
+        return normalized
+
+    @field_validator("auth_cookie_samesite")
+    @classmethod
+    def validate_auth_cookie_samesite(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"lax", "strict", "none"}:
+            raise ValueError("AUTH_COOKIE_SAMESITE debe ser lax, strict o none")
         return normalized
 
 

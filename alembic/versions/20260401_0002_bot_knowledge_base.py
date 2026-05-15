@@ -49,9 +49,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name="pk_bot_knowledge_base"),
     ]
 
-    if create_doctor_fk:
-        columns.append(sa.ForeignKeyConstraint(["doctor_id"], ["doctors.id"], name="fk_bot_knowledge_base_doctor_id"))
-
     op.create_table("bot_knowledge_base", *columns)
     op.create_index("ix_bot_knowledge_base_pattern", "bot_knowledge_base", ["pattern"], unique=False)
     op.create_index("ix_bot_knowledge_base_doctor_id", "bot_knowledge_base", ["doctor_id"], unique=False)

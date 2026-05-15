@@ -1,7 +1,7 @@
 param(
     [string]$ProjectRoot = "E:\GSentinelHealthOS",
-    [string]$VpsUser = "emmansur64",
-    [string]$VpsHost = "34.39.235.83",
+    [string]$VpsUser = "vps-6ea98779.vps.ovh.ca",
+    [string]$VpsHost = "167.114.3.50",
     [string]$RemotePackagePath = "/tmp/gsentinel-deploy.tgz",
     [string]$SshIdentityFile = "",
     [switch]$BatchMode

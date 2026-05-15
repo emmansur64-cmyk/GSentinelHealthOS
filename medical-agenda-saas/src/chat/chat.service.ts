@@ -7,6 +7,12 @@ import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
 import { logServer } from "@/lib/server-logger";
 import { getTenantIdFromContext } from "@/lib/tenant-context";
 import { incDoctorChatFallback } from "@/lib/observability/metrics";
+import { loadDoctorContext } from "@/lib/doctor-context";
+import { buildMedicalConversationMemory } from "@/lib/medical-conversation-memory";
+import { buildMedicalReasoningContext } from "@/lib/medical-reasoning";
+import { buildMedicalSpecialtyProtocolContext } from "@/lib/medical-specialty-protocols";
+import { buildMedicalRuntimeContext } from "@/lib/medical-runtime-context";
+import { buildMedicalWebRetrievalContext } from "@/lib/medical-web-retrieval";
 import { DOCTOR_CHAT_PARAMS } from "@/chat/doctor-chat-params";
 
 type DoctorChatContextInput = {
@@ -61,6 +67,16 @@ function normalizeChatSessionId(value: unknown): string | null {
   return text.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || null;
 }
 
+function normalizeChatRequestId(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  return text.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 120) || null;
+}
+
+function isDoctorChatClearAction(action: string | null | undefined): boolean {
+  return action === DOCTOR_CHAT_PARAMS.clearAction || action === "doctor_chat.clear_requested";
+}
+
 function buildConversationId(
   doctorId: string,
   patientId?: string | null,
@@ -69,6 +85,49 @@ function buildConversationId(
 ): string {
   const base = `${DOCTOR_CHAT_PARAMS.conversationPrefix}:${doctorId}:patient:${patientId ?? "general"}:appointment:${appointmentId ?? "none"}`;
   return sessionId ? `${base}:chat:${sessionId}` : base;
+}
+
+async function findCompletedDoctorChatByRequestId(input: {
+  tenantId: string;
+  conversationId: string;
+  requestId: string;
+}): Promise<MetaBrainDecision | null> {
+  const latestClear = await prisma.auditLog.findFirst({
+    where: {
+      tenant_id: input.tenantId,
+      entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
+      entity_id: input.conversationId,
+      action: { in: [DOCTOR_CHAT_PARAMS.clearAction, "doctor_chat.clear_requested"] },
+    },
+    orderBy: { created_at: "desc" },
+    select: { created_at: true },
+  });
+  const rows = await prisma.auditLog.findMany({
+    where: {
+      tenant_id: input.tenantId,
+      action: DOCTOR_CHAT_PARAMS.exchangeAction,
+      entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
+      entity_id: input.conversationId,
+      ...(latestClear ? { created_at: { gt: latestClear.created_at } } : {}),
+    },
+    orderBy: { created_at: "desc" },
+    take: 25,
+  });
+
+  for (const row of rows) {
+    const before = row.payload_before as Record<string, unknown> | null;
+    const after = row.payload_after as Record<string, unknown> | null;
+    if (normalizeChatRequestId(before?.request_id) !== input.requestId || !after) continue;
+
+    return {
+      action: String(after.action ?? "GUIDE_NEXT_STEP"),
+      response: String(after.response ?? ""),
+      confidence: Number(after.confidence ?? 0),
+      source: normalizeMetaBrainSource(String(after.source ?? "RULES")),
+    };
+  }
+
+  return null;
 }
 
 async function resolveClinicalContext(doctorId: string, context?: DoctorChatContextInput) {
@@ -106,11 +165,23 @@ async function resolveClinicalContext(doctorId: string, context?: DoctorChatCont
 
   const sessionId = normalizeChatSessionId(context?.metadata?.[DOCTOR_CHAT_PARAMS.sessionMetadataKey]);
   const conversationId = buildConversationId(doctorId, patient?.id ?? patientId, appointmentId, sessionId);
+  const latestClear = await prisma.auditLog.findFirst({
+    where: {
+      tenant_id: tenantId,
+      entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
+      entity_id: conversationId,
+      action: { in: [DOCTOR_CHAT_PARAMS.clearAction, "doctor_chat.clear_requested"] },
+    },
+    orderBy: { created_at: "desc" },
+    select: { created_at: true },
+  });
   const conversationHistory = await prisma.auditLog.findMany({
     where: {
       tenant_id: tenantId,
       entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
       entity_id: conversationId,
+      action: DOCTOR_CHAT_PARAMS.exchangeAction,
+      ...(latestClear ? { created_at: { gt: latestClear.created_at } } : {}),
     },
     orderBy: { created_at: "asc" },
     take: 10,
@@ -180,20 +251,29 @@ export async function getDoctorChatHistory(input: {
       tenant_id: tenantId,
       entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
       entity_id: resolved.conversationId,
+      action: { in: [DOCTOR_CHAT_PARAMS.exchangeAction, DOCTOR_CHAT_PARAMS.clearAction, "doctor_chat.clear_requested"] },
     },
     orderBy: { created_at: "asc" },
     take: 25,
   });
+  const latestClearAt = rows.reduce<Date | null>((latest, row) => {
+    if (!isDoctorChatClearAction(row.action)) return latest;
+    if (!latest || row.created_at > latest) return row.created_at;
+    return latest;
+  }, null);
 
-  const entries: ChatHistoryEntry[] = rows.map((row) => ({
-    id: row.id,
-    doctor_message: String((row.payload_before as Record<string, unknown> | null)?.message ?? ""),
-    response: String((row.payload_after as Record<string, unknown> | null)?.response ?? ""),
-    confidence: Number((row.payload_after as Record<string, unknown> | null)?.confidence ?? 0),
-    source: String((row.payload_after as Record<string, unknown> | null)?.source ?? "RULES") as MetaBrainSource,
-    action: String((row.payload_after as Record<string, unknown> | null)?.action ?? "GUIDE_NEXT_STEP"),
-    created_at: row.created_at.toISOString(),
-  }));
+  const entries: ChatHistoryEntry[] = rows
+    .filter((row) => row.action === DOCTOR_CHAT_PARAMS.exchangeAction)
+    .filter((row) => !latestClearAt || row.created_at > latestClearAt)
+    .map((row) => ({
+      id: row.id,
+      doctor_message: String((row.payload_before as Record<string, unknown> | null)?.message ?? ""),
+      response: String((row.payload_after as Record<string, unknown> | null)?.response ?? ""),
+      confidence: Number((row.payload_after as Record<string, unknown> | null)?.confidence ?? 0),
+      source: String((row.payload_after as Record<string, unknown> | null)?.source ?? "RULES") as MetaBrainSource,
+      action: String((row.payload_after as Record<string, unknown> | null)?.action ?? "GUIDE_NEXT_STEP"),
+      created_at: row.created_at.toISOString(),
+    }));
 
   return {
     conversation_id: resolved.conversationId,
@@ -223,16 +303,26 @@ export async function listDoctorChatSessions(input: { doctorId: string }): Promi
       entity_id: {
         startsWith: `${DOCTOR_CHAT_PARAMS.conversationPrefix}:${input.doctorId}:`,
       },
+      action: { in: [DOCTOR_CHAT_PARAMS.exchangeAction, DOCTOR_CHAT_PARAMS.clearAction, "doctor_chat.clear_requested"] },
     },
     orderBy: { created_at: "desc" },
     take: 200,
   });
 
   const sessions = new Map<string, ChatSessionEntry>();
+  const clearedAt = new Map<string, Date>();
 
   for (const row of rows) {
     const conversationId = row.entity_id ?? "";
     if (!conversationId) continue;
+    if (isDoctorChatClearAction(row.action)) {
+      const previous = clearedAt.get(conversationId);
+      if (!previous || row.created_at > previous) clearedAt.set(conversationId, row.created_at);
+      continue;
+    }
+    if (row.action !== DOCTOR_CHAT_PARAMS.exchangeAction) continue;
+    const latestClear = clearedAt.get(conversationId);
+    if (latestClear && row.created_at <= latestClear) continue;
 
     const parsed = parseConversationId(conversationId);
     const message = String((row.payload_before as Record<string, unknown> | null)?.message ?? "").trim();
@@ -269,12 +359,24 @@ export async function clearDoctorChatHistory(input: {
 }) {
   const tenantId = getTenantIdFromContext() ?? "default";
   const resolved = await resolveClinicalContext(input.doctorId, input.context);
+  const latestClear = await prisma.auditLog.findFirst({
+    where: {
+      tenant_id: tenantId,
+      entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
+      entity_id: resolved.conversationId,
+      action: { in: [DOCTOR_CHAT_PARAMS.clearAction, "doctor_chat.clear_requested"] },
+    },
+    orderBy: { created_at: "desc" },
+    select: { created_at: true },
+  });
 
   const existingCount = await prisma.auditLog.count({
     where: {
       tenant_id: tenantId,
       entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
       entity_id: resolved.conversationId,
+      action: DOCTOR_CHAT_PARAMS.exchangeAction,
+      ...(latestClear ? { created_at: { gt: latestClear.created_at } } : {}),
     },
   });
 
@@ -286,11 +388,11 @@ export async function clearDoctorChatHistory(input: {
       action_type: "UPDATE",
       entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
       entity_id: resolved.conversationId,
-      metadata_json: {
-        operation: "clear_requested",
-        preserved_history: true,
-        previous_message_count: existingCount,
-      },
+        metadata_json: {
+          operation: "clear_requested",
+          preserved_history: true,
+          previous_message_count: existingCount,
+        },
     },
   });
 
@@ -301,26 +403,26 @@ export async function clearDoctorChatHistory(input: {
     entityType: DOCTOR_CHAT_PARAMS.auditEntityType,
     payloadBefore: {
       doctor_id: input.doctorId,
-      deleted_count: 0,
+      deleted_count: existingCount,
       previous_message_count: existingCount,
     },
     payloadAfter: {
-      cleared: false,
+      cleared: true,
       marker_written: true,
-      deleted_count: 0,
+      deleted_count: existingCount,
     },
   });
 
   logServer("info", "doctor_chat.cleared", {
     doctor_id: input.doctorId,
     conversation_id: resolved.conversationId,
-    deleted_count: 0,
+    deleted_count: existingCount,
     previous_message_count: existingCount,
   });
 
   return {
     conversation_id: resolved.conversationId,
-    deleted_count: 0,
+    deleted_count: existingCount,
     marker_written: true,
   };
 }
@@ -328,7 +430,80 @@ export async function clearDoctorChatHistory(input: {
 export async function handleDoctorChat(
   input: DoctorChatRequest,
 ): Promise<MetaBrainDecision & { conversation_id: string; degraded: boolean }> {
+  const tenantId = getTenantIdFromContext() ?? "default";
   const resolved = await resolveClinicalContext(input.doctorId, input.context);
+  const requestId = normalizeChatRequestId(resolved.metadata?.chat_request_id);
+
+  if (requestId) {
+    const existingDecision = await findCompletedDoctorChatByRequestId({
+      tenantId,
+      conversationId: resolved.conversationId,
+      requestId,
+    });
+    if (existingDecision) {
+      logServer("info", "doctor_chat.idempotent_replay", {
+        doctor_id: input.doctorId,
+        conversation_id: resolved.conversationId,
+        request_id: requestId,
+      });
+      return {
+        ...existingDecision,
+        conversation_id: resolved.conversationId,
+        degraded: false,
+      };
+    }
+  }
+
+  const medicalRuntimeContext = await buildMedicalRuntimeContext({
+    tenantId,
+    doctorUserId: input.actorUserId ?? input.doctorId,
+    conversationId: resolved.conversationId,
+    message: input.message,
+  });
+
+  const medicalConversationMemory = await buildMedicalConversationMemory({
+    tenantId,
+    doctorUserId: input.actorUserId ?? input.doctorId,
+    conversationId: resolved.conversationId,
+    patientId: resolved.patient?.id ?? null,
+    appointmentId: resolved.appointment?.id ?? null,
+    currentMessage: input.message,
+    exchanges: resolved.conversationHistory.map((entry, index) => ({
+      id: `${resolved.conversationId}:${index}`,
+      doctorMessage: entry.doctor_message,
+      assistantResponse: entry.response,
+      action: entry.action ?? "GUIDE_NEXT_STEP",
+      source: entry.source,
+      createdAt: entry.created_at,
+    })),
+  });
+
+  const medicalWebRetrieval = await buildMedicalWebRetrievalContext({
+    tenantId,
+    doctorUserId: input.actorUserId ?? input.doctorId,
+    conversationId: resolved.conversationId,
+    message: input.message,
+    clinicalState: resolved.clinicalState,
+  });
+  const doctorProfileContext = await loadDoctorContext({
+    tenantId,
+    doctorUserId: input.actorUserId ?? input.doctorId,
+    metadata: resolved.metadata,
+    hasRetrievalEvidence: Boolean(medicalWebRetrieval?.sources.length),
+    hasRuntimeContext: Boolean(medicalRuntimeContext),
+  });
+  const medicalReasoning = buildMedicalReasoningContext({
+    message: input.message,
+    clinicalState: resolved.clinicalState,
+    hasRetrievalEvidence: Boolean(medicalWebRetrieval?.sources.length),
+    hasPatientContext: Boolean(resolved.patient || resolved.appointment || resolved.clinicalState),
+  });
+  const medicalSpecialtyProtocol = buildMedicalSpecialtyProtocolContext({
+    message: input.message,
+    clinicalState: resolved.clinicalState,
+    hasRetrievalEvidence: Boolean(medicalWebRetrieval?.sources.length),
+    hasRuntimeContext: Boolean(medicalRuntimeContext),
+  });
 
   const sharedContext = {
     doctor_id: input.doctorId,
@@ -347,6 +522,12 @@ export async function handleDoctorChat(
     metadata: safeJson({
       ...resolved.metadata,
       conversation_id: resolved.conversationId,
+      ...(medicalConversationMemory ? { medical_conversation_memory: medicalConversationMemory } : {}),
+      ...(medicalRuntimeContext ? { medical_runtime_context: medicalRuntimeContext } : {}),
+      ...(medicalWebRetrieval ? { medical_web_retrieval: medicalWebRetrieval } : {}),
+      doctor_profile_context: doctorProfileContext,
+      ...(medicalReasoning ? { medical_reasoning: medicalReasoning } : {}),
+      ...(medicalSpecialtyProtocol ? { medical_specialty_protocol: medicalSpecialtyProtocol } : {}),
     }),
   };
 
@@ -361,6 +542,10 @@ export async function handleDoctorChat(
     : await callBrainDecide({
         role: "DOCTOR",
         message: input.message,
+        // Contrato conversacional obligatorio: aísla el médico del pipeline de triage.
+        // INVARIANT A: doctor_professional NUNCA entra a triage automático.
+        assistant_mode: "doctor_professional",
+        actor_role: "doctor",
         context: sharedContext,
       });
 
@@ -391,6 +576,7 @@ export async function handleDoctorChat(
     entityId: resolved.conversationId,
     entityType: DOCTOR_CHAT_PARAMS.auditEntityType,
     payloadBefore: {
+      request_id: requestId,
       doctor_id: input.doctorId,
       message: input.message,
       context: safeJson({

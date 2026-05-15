@@ -17,7 +17,7 @@ class PatientBase(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     name: str = Field(..., min_length=2, max_length=255)
-    email: EmailStr
+    email: Optional[EmailStr] = None
     phone: Optional[str] = Field(default=None, pattern=r"^\+?[1-9]\d{7,14}$")
     date_of_birth: Optional[datetime] = None
     medical_history: Optional[str] = Field(default=None, max_length=2000)

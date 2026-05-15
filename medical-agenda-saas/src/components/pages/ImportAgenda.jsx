@@ -263,7 +263,15 @@ export default function ImportAgenda() {
     let rows_with_detected = normalizeRows(parsedRows);
 
     // Pre-asignar doctor detectado a todas las filas sin doctor_id
-    if (detected_doctor_name && !matched_doctor_id) {
+    // PRIORIDAD: matched_doctor_id > placeholder (detected_doctor_name)
+    if (matched_doctor_id) {
+      // Si existe matched_doctor_id, asignarlo a TODAS las filas sin doctor_id
+      rows_with_detected = rows_with_detected.map((row) => ({
+        ...row,
+        doctor_id: row.doctor_id || matched_doctor_id,
+      }));
+    } else if (detected_doctor_name) {
+      // Si NO hay matched_doctor_id pero sí detected_doctor_name, usar placeholder
       const placeholder_id = `__detected__${detected_doctor_name.replace(/\s+/g, "_")}`;
       rows_with_detected = rows_with_detected.map((row) => ({
         ...row,
@@ -277,6 +285,7 @@ export default function ImportAgenda() {
       rows: rows_with_detected,
       detected_doctor_name,
       detected_doctor_license,
+      matched_doctor_id,
     };
   };
 
@@ -290,7 +299,7 @@ export default function ImportAgenda() {
     setStep(2);
 
     try {
-      const { analysis, source, rows, detected_doctor_name, detected_doctor_license } = await processWithBackend(selectedFile);
+      const { analysis, source, rows, detected_doctor_name, detected_doctor_license, matched_doctor_id } = await processWithBackend(selectedFile);
       setAnalysisMeta({
         source,
         document_type: analysis.document_type,
@@ -302,6 +311,7 @@ export default function ImportAgenda() {
         specialty: analysis.provider?.specialty ?? "",
         detected_doctor_name,
         detected_doctor_license,
+        matched_doctor_id,
       });
 
       if (rows.length === 0) {

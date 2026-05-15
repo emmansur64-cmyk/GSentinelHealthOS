@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -w \"\\\\n%{http_code}\" http://127.0.0.1:8000/api/v1/patients/)",
+      "Bash(curl -s http://127.0.0.1:8000/openapi.json)",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); paths=list\\(data.get\\('paths',{}\\).keys\\(\\)\\); [print\\(p\\) for p in sorted\\(paths\\)]\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/api/v1/appointments/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -X POST http://127.0.0.1:8000/api/v1/appointments -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/api/v1/admin/clients)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/api/v1/dashboard/stats)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/api/v1/brain/decide)",
+      "Bash(docker build *)"
+    ]
+  }
+}

@@ -7,6 +7,10 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from shared.utils import setup_logger
+
+
+logger = setup_logger(__name__)
 
 
 def _error_payload(status_code: int, message: str, request: Request) -> dict[str, str | int]:
@@ -26,10 +30,15 @@ def register_exception_handlers(app: FastAPI) -> None:
         status_code = exc.status_code
         if status_code not in (400, 404):
             status_code = exc.status_code
-        payload = _error_payload(status_code, str(exc.detail), request)
-        return JSONResponse(status_code=status_code, content=payload)
+        message = str(exc.detail)
+        if status_code >= 500:
+            logger.error("HTTPException interno en %s: %s", request.url.path, message)
+            message = "Error interno del servidor"
+        payload = _error_payload(status_code, message, request)
+        return JSONResponse(status_code=status_code, content=payload, headers=getattr(exc, "headers", None))
 
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
-        payload = _error_payload(400, str(exc), request)
+        logger.error("ValueError en %s: %s", request.url.path, exc, exc_info=True)
+        payload = _error_payload(400, "Solicitud invalida", request)
         return JSONResponse(status_code=400, content=payload)

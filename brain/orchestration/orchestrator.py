@@ -47,8 +47,14 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
+from brain.contracts.routing import (
+    AssistantMode,
+    SAFE_FALLBACK_RESPONSE,
+    build_contract,
+)
 from brain.core.decision_core import process_input as _decision_core_process
 from brain.decision_engine import triage_engine
+from brain.routing.role_router import RoleRouter
 from brain.orchestration.clients import (
     DecisionClient,
     DialogueClient,
@@ -170,26 +176,18 @@ _FALLBACK_DIALOGUE: Dict[str, Any] = {
 
 
 def _fallback_decision(user_input: str = "", context: Dict[str, Any] | None = None) -> Dict[str, Any]:
-    """Evalúa triage incluso en camino de error.
+    """Retorna un fallback de decisión seguro sin triage clínico.
 
-    Reemplaza el dict estático ``_FALLBACK_DECISION`` por una llamada real a
-    ``triage_engine.evaluate_input()`` para que el resultado nunca sea un
-    ``"unknown"`` cuando hay síntomas disponibles en el contexto o en el input.
+    SEGURIDAD: NUNCA evalúa triage en el camino de error.
+    El user_input en el camino de error NO es un síntoma.
+    El modo SAFE_FALLBACK no permite triage.
     """
-    ctx = context or {}
-    symptoms: list = ctx.get("symptoms") or ([user_input] if user_input else [])
-    triage_out = triage_engine.evaluate_input({
-        "symptoms": symptoms,
-        "age": ctx.get("age"),
-        "duration": ctx.get("duration_days"),
-        "chronic_conditions": ctx.get("chronic_conditions") or [],
-    })
     return {
-        "risk_level": _RISK_LEVEL_MAP.get(triage_out["triage_level"], "unknown"),
-        "triage_level": triage_out["triage_level"],
-        "flags": ["triage_fallback_evaluated"],
-        "recommendations": [triage_out["action"]],
-        "action_required": triage_out["triage_level"] in {"rojo", "naranja"},
+        "risk_level": "unknown",
+        "triage_level": "unknown",
+        "flags": ["safe_fallback"],
+        "recommendations": [],
+        "action_required": False,
         "_fallback": True,
     }
 
@@ -264,6 +262,8 @@ class IntelligentOrchestrator:
         user_input: str,
         session_id: Optional[str] = None,
         extra_context: Optional[Dict[str, Any]] = None,
+        assistant_mode: Optional[str] = None,
+        actor_role: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Maneja una solicitud completa del usuario.
 
@@ -289,15 +289,36 @@ class IntelligentOrchestrator:
         t_start = time.monotonic()
         services_called: List[str] = []
 
+        # ── Construir contrato conversacional desde el primer momento ─────────
+        incoming_ctx = extra_context if isinstance(extra_context, dict) else {}
+        mode_raw = (
+            assistant_mode
+            or incoming_ctx.get("assistant_mode")
+            or incoming_ctx.get("_contract_mode")
+        )
+        role_raw = (
+            actor_role
+            or incoming_ctx.get("actor_role")
+            or incoming_ctx.get("_contract_actor_role")
+        )
+        contract = build_contract(
+            mode_raw=mode_raw,
+            actor_role_raw=role_raw,
+            request_id=request_id,
+            doctor_id=incoming_ctx.get("doctor_id"),
+            patient_id=incoming_ctx.get("patient_id") or incoming_ctx.get("patient", {}).get("id") if isinstance(incoming_ctx.get("patient"), dict) else incoming_ctx.get("patient_id"),
+        )
+
         logger.info(
-            "[%s] Request iniciado | session=%s | input_len=%d",
+            "[%s] Request iniciado | session=%s | input_len=%d | mode=%s | triage_allowed=%s",
             request_id, session_id or "new", len(user_input),
+            contract.mode.value, contract.triage_allowed,
         )
 
         # ── Paso 1: Sesión + turn count ───────────────────────────────────────
         session_id, session_state = await self._sessions.get_or_create(session_id)
         session_state.setdefault("history", [])
-        incoming_context = extra_context if isinstance(extra_context, dict) else {}
+        incoming_context = incoming_ctx
         self._hydrate_history_from_context(session_state, incoming_context)
         turn_count = await self._sessions.increment_turn(session_id, session_state)
         input_type = detect_input_type(user_input)
@@ -389,11 +410,14 @@ class IntelligentOrchestrator:
                 "turn_count": turn_count,
                 "input_type": input_type,
                 "relevant_memories": relevant_memories,
+                # Inyectar contrato para propagación al decision_core
+                **contract.to_context_dict(),
             }
             core_result = await _decision_core_process(
                 user_input,
                 core_context,
                 confidence_threshold=self._confidence_threshold,
+                contract=contract,
             )
             services_called.append("decision-core")
 
@@ -408,10 +432,12 @@ class IntelligentOrchestrator:
                 core_result["triage"], turn_count
             )
 
+            routing_trace = core_result.get("_routing_trace", {})
             logger.info(
                 "[%s] decision-core → intent=%s confidence=%.2f next_step=%s "
-                "requires_inference=%s turn=%d",
+                "requires_inference=%s turn=%d mode=%s triage_gate=%s",
                 request_id, intent, confidence, next_step, requires_inference, turn_count,
+                contract.mode.value, routing_trace.get("triage_gate", "N/A"),
             )
 
             if is_emergency_input:
@@ -467,6 +493,9 @@ class IntelligentOrchestrator:
                 "services_called": services_called,
                 "latency_ms": latency_ms,
                 "context_type": context_type,
+                "assistant_mode": contract.mode.value,
+                "actor_role": contract.actor_role.value,
+                "triage_allowed": contract.triage_allowed,
             },
         }
 

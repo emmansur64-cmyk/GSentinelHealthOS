@@ -11,8 +11,10 @@ from api.app.core import validate_api_key
 from api.app.db.session import get_db
 from api.app.services.google_calendar_service import GoogleCalendarService
 from api.app.services.google_calendar_webhook_service import GoogleCalendarWebhookService
+from shared.utils import setup_logger
 
 router = APIRouter(prefix="/webhooks/google-calendar", tags=["webhooks-google-calendar"])
+logger = setup_logger(__name__)
 
 
 class GoogleWatchStartRequest(BaseModel):
@@ -88,7 +90,8 @@ async def receive_google_calendar_webhook(
             webhook_token=x_goog_channel_token,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
+        logger.warning("google_calendar_webhook_invalid: %s", exc)
+        raise HTTPException(status_code=403, detail="Webhook de Google Calendar invalido")
 
     # Google sends an initial "sync" state to acknowledge channel creation.
     if (x_goog_resource_state or "").lower() == "sync":

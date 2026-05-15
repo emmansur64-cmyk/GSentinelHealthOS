@@ -12,11 +12,11 @@
       ],
       "artifacts": {
         "text": {
-          "path": "E:\\MetaBrain\\cerebro_ai_med\\models\\artifacts\\text\\3.0.0\\text_risk_pipeline.joblib",
+          "path": "text/3.0.0/text_risk_pipeline.joblib",
           "sha256": "c013204048ccbd95d9f49a0ed5dcbaff58c3d48ba0c1ce354349021d13218390"
         },
         "image": {
-          "path": "E:\\MetaBrain\\cerebro_ai_med\\models\\artifacts\\image\\3.0.0\\image_risk_pipeline.joblib",
+          "path": "image/3.0.0/image_risk_pipeline.joblib",
           "sha256": "25a20bd6775ed9b3288960088a632717f77929e9e8a80c5d073eb04248bfa0d4"
         }
       },
