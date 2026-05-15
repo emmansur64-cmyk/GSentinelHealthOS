@@ -1,8 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AiAnalysisResult, BrainDecision, IncidentPayload } from '../common/types/brain.types';
 import { FallbackProvider } from './providers/fallback.provider';
-import { GroqProvider } from './providers/groq.provider';
+import { GroqProvider, MEDICAL_GROQ_PROVIDER } from './providers/groq.provider';
 import { KnowledgeRetriever } from '../knowledge/knowledge.retriever';
 import { MedicalAnswer } from '../knowledge/types';
 import { ClassificationService, MedicalUserRole, RoleClassificationResult } from './classification.service';
@@ -20,6 +20,7 @@ export class AiService {
     private readonly knowledgeRetriever: KnowledgeRetriever,
     private readonly classificationService: ClassificationService,
     private readonly medicalImagingService: MedicalImagingService,
+    @Inject(MEDICAL_GROQ_PROVIDER) private readonly medicalGroqProvider: GroqProvider,
   ) {}
 
   async suggestEnhancement(input: IncidentPayload, decision: BrainDecision): Promise<string> {
@@ -69,7 +70,7 @@ export class AiService {
     const prompt = buildMedicalTextRefinerPrompt(normalized);
 
     try {
-      const refined = await this.groqProvider.run(prompt);
+      const refined = await this.medicalGroqProvider.run(prompt);
       const output = refined.trim();
       return output || normalized;
     } catch (err) {
@@ -169,7 +170,7 @@ export class AiService {
     ].join('\n');
 
     try {
-      const raw = await this.groqProvider.run(prompt);
+      const raw = await this.medicalGroqProvider.run(prompt);
       const parsed = this.extractMedicalJson(raw);
       const safeAnswer =
         classification.role === 'PATIENT'

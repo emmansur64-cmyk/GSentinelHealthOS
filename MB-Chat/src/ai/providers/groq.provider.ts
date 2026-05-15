@@ -36,17 +36,26 @@ const AI_SAFE_FALLBACK: AiAnalysisResult = {
   source: 'ai_fallback',
 };
 
+export const MEDICAL_GROQ_PROVIDER = 'MEDICAL_GROQ_PROVIDER';
+
 @Injectable()
 export class GroqProvider {
   private readonly logger = new Logger(GroqProvider.name);
-  private readonly apiKey = process.env.GROQ_API_KEY;
-  private readonly modelChain: readonly string[] = buildModelChain();
+  private readonly apiKey: string | undefined;
+  private readonly apiKeyEnvVar: string;
+  private readonly modelChain: readonly string[];
 
   // Per-model circuit breaker state
   private readonly circuits = new Map<string, CircuitState>();
 
   // LRU-style bounded response cache (keyed by prompt SHA-256)
   private readonly cache = new Map<string, CacheEntry>();
+
+  constructor(apiKeyEnvVar = 'GROQ_API_KEY') {
+    this.apiKeyEnvVar = apiKeyEnvVar;
+    this.apiKey = process.env[apiKeyEnvVar];
+    this.modelChain = buildModelChain();
+  }
 
   // ── Circuit breaker ──────────────────────────────────────────────────────────
 
@@ -168,7 +177,7 @@ export class GroqProvider {
   // ── Public: run (hint generation) ───────────────────────────────────────────
 
   async run(prompt: string): Promise<string> {
-    if (!this.apiKey) throw new Error('Missing GROQ_API_KEY');
+    if (!this.apiKey) throw new Error(`Missing ${this.apiKeyEnvVar}`);
 
     const attempted = new Set<string>();
 
