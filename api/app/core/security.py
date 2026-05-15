@@ -87,6 +87,7 @@ class TokenData(BaseModel):
 class InternalAuth(BaseModel):
     """Contexto de autenticación para servicios internos."""
     service: str  # "gateway", "brain", "api"
+    scopes: list[str] = []
     is_internal: bool = True
 
 
@@ -226,6 +227,7 @@ def verify_jwt_token(token: str) -> TokenData:
 # ============ DEPENDENCIAS ============
 
 async def validate_api_key(
+    request: Request,
     x_internal_key: Optional[str] = Header(None)
 ) -> InternalAuth:
     """
@@ -255,7 +257,24 @@ async def validate_api_key(
             detail="X-Internal-Key inválida"
         )
     
-    return InternalAuth(service=service_name, is_internal=True)
+    return InternalAuth(
+        service=service_name,
+        scopes=API_KEY_SCOPES.get(service_name, []),
+        is_internal=True,
+    )
+
+
+def ensure_required_scope(required_scope: Optional[str], auth_data: Dict[str, Any]) -> None:
+    """Rechaza credenciales internas o JWT sin el scope requerido."""
+    if not required_scope:
+        return
+
+    scopes = auth_data.get("scopes") or []
+    if required_scope not in scopes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Scope requerido: {required_scope}",
+        )
 
 
 async def get_current_user(
@@ -305,9 +324,10 @@ async def get_current_user_optional(
 
 
 async def validate_hybrid_auth(
-    request: Optional[Request] = None,
+    request: Request,
     x_internal_key: Optional[str] = Header(None),
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
+    required_scope: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Validación híbrida: Permite API Key (servicios) O JWT (usuarios).
@@ -322,29 +342,31 @@ async def validate_hybrid_auth(
     """
     # Intenta API Key primero
     if x_internal_key:
-        try:
-            service_auth = await validate_api_key(x_internal_key)
-            return {
-                "auth_type": "service",
-                "service": service_auth.service,
-                "is_internal": True
-            }
-        except HTTPException:
-            pass  # Si falla, continúa a JWT
-    
+        service_auth = await validate_api_key(request=request, x_internal_key=x_internal_key)
+        auth_data = {
+            "auth_type": "service",
+            "service": service_auth.service,
+            "scopes": service_auth.scopes,
+            "is_internal": True,
+        }
+        ensure_required_scope(required_scope, auth_data)
+        return auth_data
+
     # Intenta JWT por Authorization header o cookie de sesión
     jwt_token: Optional[str] = None
+    if authorization is not None and not isinstance(authorization, str):
+        authorization = None
     if authorization:
         parts = authorization.split()
         if len(parts) == 2 and parts[0].lower() == "bearer":
             jwt_token = parts[1]
-    if jwt_token is None and request is not None:
+    if jwt_token is None:
         jwt_token = request.cookies.get(AUTH_COOKIE_NAME)
 
     if jwt_token:
         try:
             token_data = verify_jwt_token(jwt_token)
-            return {
+            auth_data = {
                 "auth_type": "user",
                 "user_id": token_data.subject,
                 "username": token_data.username,
@@ -355,6 +377,8 @@ async def validate_hybrid_auth(
                 "scopes": token_data.scopes,
                 "is_internal": False
             }
+            ensure_required_scope(required_scope, auth_data)
+            return auth_data
         except HTTPException:
             pass  # Si falla, continúa a error final
     
@@ -374,11 +398,7 @@ def check_permissions(
     """
     Verifica si la autenticación tiene el permiso requerido.
     
-    Los servicios internos (gateway, brain) tienen todos los permisos.
-    Los usuarios normales se validan contra sus scopes.
+    Servicios internos y usuarios se validan contra scopes declarados.
     """
-    if auth_data.get("is_internal"):
-        return True  # Servicios internos: acceso total
-    
     scopes = auth_data.get("scopes", [])
     return required_scope in scopes

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -21,6 +22,23 @@ from shared.utils import setup_logger
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 logger = setup_logger(__name__)
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _legacy_processing_enabled() -> bool:
+    return _env_flag("ENABLE_PY_WHATSAPP_WEBHOOK_PROCESSING", default=False)
+
+
+async def _require_legacy_processing_enabled() -> None:
+    if not _legacy_processing_enabled():
+        logger.warning("deprecated_whatsapp_webhook_blocked")
+        raise HTTPException(status_code=410, detail="deprecated_whatsapp_webhook_disabled")
 
 
 def _safe_external_body(body: str, *, max_length: int = 500) -> str:
@@ -77,13 +95,17 @@ class WhatsAppWebhookAck(BaseModel):
     received_at: str
 
 
-@router.get("/whatsapp")
+@router.get("/whatsapp", dependencies=[Depends(_require_legacy_processing_enabled)])
 async def verify_whatsapp_webhook(
     hub_mode: str | None = Query(default=None, alias="hub.mode"),
     hub_verify_token: str | None = Query(default=None, alias="hub.verify_token"),
     hub_challenge: str | None = Query(default=None, alias="hub.challenge"),
 ) -> PlainTextResponse:
     """Handshake de verificacion requerido por Meta al registrar el webhook."""
+    if not _legacy_processing_enabled():
+        logger.warning("deprecated_whatsapp_webhook_verify_blocked")
+        raise HTTPException(status_code=410, detail="deprecated_whatsapp_webhook_disabled")
+
     if hub_mode != "subscribe":
         raise HTTPException(status_code=403, detail="invalid_mode")
 
@@ -98,12 +120,20 @@ async def verify_whatsapp_webhook(
     return PlainTextResponse(content=hub_challenge, status_code=200)
 
 
-@router.post("/whatsapp", response_model=WhatsAppWebhookAck)
+@router.post(
+    "/whatsapp",
+    response_model=WhatsAppWebhookAck,
+    dependencies=[Depends(_require_legacy_processing_enabled)],
+)
 async def receive_whatsapp_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> WhatsAppWebhookAck:
     """Endpoint oficial para recibir eventos de WhatsApp Cloud API."""
+    if not _legacy_processing_enabled():
+        logger.warning("deprecated_whatsapp_webhook_receive_blocked")
+        raise HTTPException(status_code=410, detail="deprecated_whatsapp_webhook_disabled")
+
     clinic_id = request.headers.get("X-Clinic-Id", "").strip() or "default"
 
     body = await request.body()

@@ -63,7 +63,8 @@ async def create_appointment(
     auth_data = await validate_hybrid_auth(
         request=request,
         x_internal_key=x_internal_key,
-        authorization=authorization
+        authorization=authorization,
+        required_scope="appointments:create",
     )
     
     # Determinar origen
@@ -110,6 +111,7 @@ async def enqueue_appointment(
         request=request,
         x_internal_key=x_internal_key,
         authorization=authorization,
+        required_scope="appointments:create",
     )
     created_by = "gateway" if auth_data["auth_type"] == "service" else "dashboard"
 
@@ -138,6 +140,7 @@ async def get_enqueue_result(
         request=request,
         x_internal_key=x_internal_key,
         authorization=authorization,
+        required_scope="appointments:read",
     )
     service = BookingQueueService()
     result = await service.get_result(request_id)
@@ -165,7 +168,8 @@ async def get_patient_appointments(
     await validate_hybrid_auth(
         request=request,
         x_internal_key=x_internal_key,
-        authorization=authorization
+        authorization=authorization,
+        required_scope="appointments:read",
     )
 
     return await appointment_service.get_patient_appointments(
@@ -195,7 +199,8 @@ async def get_appointment(
     await validate_hybrid_auth(
         request=request,
         x_internal_key=x_internal_key,
-        authorization=authorization
+        authorization=authorization,
+        required_scope="appointments:read",
     )
     
     return await appointment_service.get_appointment(
@@ -228,7 +233,8 @@ async def get_doctor_appointments(
     auth_data = await validate_hybrid_auth(
         request=request,
         x_internal_key=x_internal_key,
-        authorization=authorization
+        authorization=authorization,
+        required_scope="appointments:read",
     )
 
     # Ownership: un doctor autenticado solo puede ver sus propias citas.
@@ -313,7 +319,12 @@ async def confirm_appointment(
     x_internal_key: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
 ) -> AppointmentResponse:
-    await validate_hybrid_auth(request=request, x_internal_key=x_internal_key, authorization=authorization)
+    await validate_hybrid_auth(
+        request=request,
+        x_internal_key=x_internal_key,
+        authorization=authorization,
+        required_scope="appointments:read",
+    )
     return await appointment_service.confirm_appointment(
         appointment_id,
         client_id=tenant.client_id,
@@ -336,7 +347,12 @@ async def reschedule_appointment(
     x_internal_key: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
 ) -> AppointmentResponse:
-    await validate_hybrid_auth(request=request, x_internal_key=x_internal_key, authorization=authorization)
+    await validate_hybrid_auth(
+        request=request,
+        x_internal_key=x_internal_key,
+        authorization=authorization,
+        required_scope="appointments:create",
+    )
     return await appointment_service.reschedule_appointment(
         appointment_id=appointment_id,
         new_date_time=payload.new_date_time,
@@ -365,7 +381,12 @@ async def validate_slot_gateway(
     """
     
     # Validación SOLO de API Key (sin JWT)
-    service_auth = await validate_api_key(x_internal_key)
+    service_auth = await validate_api_key(request=request, x_internal_key=x_internal_key)
+    if "appointments:validate-slot" not in service_auth.scopes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Scope requerido: appointments:validate-slot",
+        )
     
     try:
         # Intenta verificar el slot (lanzará excepción si hay conflicto)
