@@ -66,7 +66,12 @@ function clip(value: unknown, max = 1400): string {
 }
 
 function resolveApiKey(): string {
-  const directKey = (process.env.DOCTOR_CHAT_GROQ_API_KEY ?? process.env.GROQ_API_KEY ?? "").trim();
+  const directKey = (
+    process.env.DOCTOR_CHAT_GROQ_API_KEY ??
+    process.env.GROQ_API_KEY_CHAT ??
+    process.env.GROQ_API_KEY ??
+    ""
+  ).trim();
   if (directKey) return directKey;
 
   const documentBaseUrl = String(process.env.DOCUMENT_AI_BASE_URL ?? "").toLowerCase();
@@ -90,6 +95,7 @@ function getConfig(): GroqDoctorChatConfig {
     ),
     model:
       (process.env.DOCTOR_CHAT_GROQ_MODEL ??
+        process.env.GROQ_MODEL_CHAT ??
         process.env.GROQ_MODEL ??
         process.env.NLG_GROQ_MODEL ??
         "llama-3.3-70b-versatile").trim(),
