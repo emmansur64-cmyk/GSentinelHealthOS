@@ -10,7 +10,7 @@ async function bootstrap(): Promise<void> {
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 
   await app.listen(port);
-  Logger.log(`MetaBrain escuchando en puerto ${port}`, 'Bootstrap');
+  Logger.log(`MB-Secretaria escuchando en puerto ${port}`, 'Bootstrap');
 }
 
 void bootstrap();

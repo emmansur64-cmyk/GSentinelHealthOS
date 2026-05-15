@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { IncidentPayload } from '../../common/types/brain.types';
+import { SecretaryAdministrativePayload } from '../../common/types/secretaria.types';
 
 @Injectable()
 export class BookingRules {
-  evaluate(input: IncidentPayload): string[] {
+  evaluate(input: SecretaryAdministrativePayload): string[] {
     const reasons: string[] = [];
 
     if (input.source.toLowerCase().includes('booking') && !input.metadata?.tenantId) {

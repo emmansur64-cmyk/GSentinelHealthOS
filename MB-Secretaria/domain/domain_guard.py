@@ -15,8 +15,12 @@ ALLOWED_ASSISTANT_MODES: Final[frozenset[str]] = frozenset(
 ALLOWED_CAPABILITIES: Final[frozenset[str]] = frozenset(
     {
         "agenda_api.client",
+        "agenda_api_prepare_payload",
         "availability.normalization",
+        "availability_normalization",
+        "audit_report_generation",
         "document_parsing",
+        "schedule_preview",
         "spreadsheet_ingestion",
         "secretary_ingestion",
         "contracts",
@@ -37,8 +41,23 @@ DISABLED_CAPABILITIES: Final[frozenset[str]] = frozenset(
         "clinical_support",
         "patient_facing_chat",
         "patient_triage_auto",
+        "triage",
+        "clinical_triage",
+        "imaging",
+        "medical_imaging",
+        "radiology",
+        "dicom",
+        "whatsapp",
+        "whatsapp_webhook",
+        "whatsapp_send",
         "whatsapp_transport",
         "whatsapp_booking",
+        "direct_db_mutation",
+        "db.direct_write",
+        "prisma.write",
+        "raw_sql",
+        "patient_medical_advice",
+        "emergency_classification",
     }
 )
 

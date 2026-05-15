@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { IncidentPayload } from '../../common/types/brain.types';
+import { SecretaryAdministrativePayload } from '../../common/types/secretaria.types';
 
 @Injectable()
 export class ScheduleValidator {
-  normalize(input: IncidentPayload): IncidentPayload {
+  normalize(input: SecretaryAdministrativePayload): SecretaryAdministrativePayload {
     return {
       ...input,
       metadata: {

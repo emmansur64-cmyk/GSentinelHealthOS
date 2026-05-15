@@ -1,1 +1,0 @@
-"""Semantic memory layer namespace."""

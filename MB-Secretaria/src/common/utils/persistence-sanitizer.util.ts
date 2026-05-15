@@ -1,7 +1,7 @@
 const REDACTED = '[REDACTED]';
 
 const SECRET_KEY_RE = /(authorization|bearer|token|api[_-]?key|apikey|secret|password|passwd|cookie|set-cookie)/i;
-const IMAGE_KEY_RE = /(image[_-]?base64|base64[_-]?image|raw[_-]?image|image_bytes|dicom_bytes)/i;
+const FILE_PAYLOAD_KEY_RE = /(file[_-]?base64|base64[_-]?file|raw[_-]?file|file_bytes|document_bytes)/i;
 const SECRET_VALUE_RE = /\b(?:api[_-]?key|secret|token|password|passwd|authorization|bearer)\s*[:=]\s*["']?[^"'\s,;]{4,}/gi;
 const JWT_RE = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g;
 const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
@@ -35,7 +35,7 @@ function sanitizeUnknown(value: unknown): unknown {
 }
 
 function shouldRedactByKey(key: string): boolean {
-  return SECRET_KEY_RE.test(key) || IMAGE_KEY_RE.test(key);
+  return SECRET_KEY_RE.test(key) || FILE_PAYLOAD_KEY_RE.test(key);
 }
 
 function sanitizeString(value: string): string {

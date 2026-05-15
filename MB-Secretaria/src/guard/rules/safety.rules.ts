@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { IncidentPayload } from '../../common/types/brain.types';
+import { SecretaryAdministrativePayload } from '../../common/types/secretaria.types';
 
 interface PatternGroup {
   category: string;
@@ -82,7 +82,7 @@ export class SafetyRules {
     },
   ];
 
-  evaluate(input: IncidentPayload): string[] {
+  evaluate(input: SecretaryAdministrativePayload): string[] {
     const candidates = this.gatherTextCandidates(input);
 
     for (const { category, patterns } of SafetyRules.PATTERN_GROUPS) {
@@ -105,7 +105,7 @@ export class SafetyRules {
     return raw.trim().replace(/\s+/g, ' ');
   }
 
-  private gatherTextCandidates(input: IncidentPayload): string[] {
+  private gatherTextCandidates(input: SecretaryAdministrativePayload): string[] {
     const candidates: string[] = [
       this.normalize(`${input.message} ${input.stack ?? ''}`),
     ];

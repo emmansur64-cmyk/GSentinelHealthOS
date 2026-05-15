@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { IncidentPayload } from '../../common/types/brain.types';
+import { SecretaryAdministrativePayload } from '../../common/types/secretaria.types';
 
 @Injectable()
 export class DataRules {
-  evaluate(input: IncidentPayload): string[] {
+  evaluate(input: SecretaryAdministrativePayload): string[] {
     const reasons: string[] = [];
 
     if (!input.id || !input.message || !input.source || !input.timestamp) {

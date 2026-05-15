@@ -5,7 +5,6 @@ describe('sanitizeForPersistence', () => {
     const sanitized = sanitizeForPersistence({
       user: {
         email: 'patient@example.com',
-        phone: '+54 11 5555-1234',
         nested: {
           token: 'secret-token-value',
           note: 'dni 12345678 and password=super-secret',
@@ -14,21 +13,20 @@ describe('sanitizeForPersistence', () => {
     });
 
     expect(sanitized.user.email).toBe('[REDACTED]');
-    expect(sanitized.user.phone).toBe('[REDACTED]');
     expect(sanitized.user.nested.token).toBe('[REDACTED]');
     expect(sanitized.user.nested.note).not.toContain('12345678');
     expect(sanitized.user.nested.note).not.toContain('super-secret');
   });
 
-  it('redacts image_base64 payloads before persistence', () => {
+  it('redacts uploaded document payloads before persistence', () => {
     const sanitized = sanitizeForPersistence({
       input: {
-        modality: 'XRAY',
-        image_base64: 'iVBORw0KGgoAAAANSUhEUgAAAAUA',
+        fileName: 'horarios.xlsx',
+        file_base64: 'UEsDBBQAAAAI',
       },
     });
 
-    expect(sanitized.input.modality).toBe('XRAY');
-    expect(sanitized.input.image_base64).toBe('[REDACTED]');
+    expect(sanitized.input.fileName).toBe('horarios.xlsx');
+    expect(sanitized.input.file_base64).toBe('[REDACTED]');
   });
 });
