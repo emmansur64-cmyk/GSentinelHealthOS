@@ -1,6 +1,6 @@
-import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, HttpCode, Post, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { MedicalAssistantService } from './medical-assistant.service';
-import { MedicalAssistantRequest, MedicalAssistantResponse } from './medical-assistant.types';
+import { MedicalAssistantChatDto, MedicalAssistantRequest, MedicalAssistantResponse } from './medical-assistant.types';
 import { ApiKeyGuard } from '../ingress/guards/api-key.guard';
 
 @UseGuards(ApiKeyGuard)
@@ -10,7 +10,25 @@ export class MedicalAssistantController {
 
   @Post('chat')
   @HttpCode(200)
-  async clinicalChat(@Body() body: MedicalAssistantRequest): Promise<MedicalAssistantResponse> {
-    return this.medicalAssistantService.handleMedicalChatMessage(body);
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      stopAtFirstError: true,
+      exceptionFactory: () => new BadRequestException({
+        statusCode: 400,
+        message: 'Invalid chat request payload.',
+        error: 'Bad Request',
+      }),
+    }),
+  )
+  async clinicalChat(@Body() body: MedicalAssistantChatDto): Promise<MedicalAssistantResponse> {
+    const normalizedInput: MedicalAssistantRequest = {
+      ...body,
+      message: body.message ?? body.query ?? '',
+    };
+
+    return this.medicalAssistantService.handleMedicalChatMessage(normalizedInput);
   }
 }
