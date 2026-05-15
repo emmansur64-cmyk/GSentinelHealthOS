@@ -15,12 +15,19 @@ import os
 import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from brain.core.config import settings
+from brain.contracts.core_contracts import (
+    ContractValidationError,
+    default_forbidden_tools_for_mode,
+    normalize_assistant_mode,
+    validate_runtime_brain_request,
+)
 from brain.orchestration.clients import (
     DecisionClient,
     DialogueClient,
@@ -52,6 +59,24 @@ class OrchestrationRequest(BaseModel):
         default_factory=dict,
         description="Contexto clínico y conversacional adicional enviado por el caller.",
     )
+    assistant_mode: Optional[str] = Field(
+        default=None,
+        description=(
+            "Modo del asistente. Valores: doctor_professional | patient_assistant | "
+            "patient_triage | receptionist | administrative | generic_non_clinical. "
+            "Si es null o inválido → generic_non_clinical (más restrictivo)."
+        ),
+    )
+    actor_role: Optional[str] = Field(
+        default=None,
+        description="Rol del actor: doctor | patient | receptionist | admin | system.",
+    )
+    request_id: Optional[str] = Field(default=None, description="Request ID legacy/opcional.")
+    tenant_id: Optional[str] = Field(default=None, description="Tenant ID legacy/opcional.")
+    actor_id: Optional[str] = Field(default=None, description="Actor ID legacy/opcional.")
+    channel: Optional[str] = Field(default=None, description="Canal runtime (web_chat, whatsapp, api).")
+    allowed_tools: Optional[list[str]] = Field(default=None, description="Allowlist opcional de herramientas.")
+    forbidden_tools: Optional[list[str]] = Field(default=None, description="Denylist opcional de herramientas.")
 
 
 class OrchestrationMetadata(BaseModel):
@@ -66,6 +91,9 @@ class OrchestrationMetadata(BaseModel):
     services_called: list[str]
     latency_ms: int
     context_type: Optional[str] = None
+    assistant_mode: Optional[str] = None
+    actor_role: Optional[str] = None
+    triage_allowed: Optional[bool] = None
 
 
 class OrchestrationResponse(BaseModel):
@@ -176,6 +204,35 @@ def _get_orchestrator(request: Request) -> IntelligentOrchestrator:
     return request.app.state.orchestrator
 
 
+def _build_orchestrate_contract_payload(body: OrchestrationRequest) -> dict[str, Any]:
+    context = body.context or {}
+    mode = normalize_assistant_mode(body.assistant_mode or context.get("assistant_mode"))
+    actor_role = str(body.actor_role or context.get("actor_role") or "system")
+
+    payload: dict[str, Any] = {
+        "request_id": str(body.request_id or context.get("request_id") or uuid4()),
+        "tenant_id": str(body.tenant_id or context.get("tenant_id") or "unknown_tenant"),
+        "actor_id": str(
+            body.actor_id
+            or context.get("actor_id")
+            or context.get("doctor_id")
+            or context.get("patient_id")
+            or "unknown_actor"
+        ),
+        "actor_role": actor_role,
+        "assistant_mode": mode,
+        "channel": str(body.channel or context.get("channel") or "web_chat"),
+        "message": body.user_input,
+        "allowed_tools": list(body.allowed_tools or context.get("allowed_tools") or []),
+        "forbidden_tools": list(
+            body.forbidden_tools
+            or context.get("forbidden_tools")
+            or default_forbidden_tools_for_mode(mode)
+        ),
+    }
+    return payload
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.get("/health", tags=["ops"])
@@ -206,9 +263,52 @@ async def orchestrate(
     Los fallbacks garantizan que siempre retorna una respuesta, incluso si algún
     servicio downstream falla.
     """
+    contract_payload = _build_orchestrate_contract_payload(body)
+    try:
+        validated_mode = validate_runtime_brain_request(contract_payload)
+    except ContractValidationError as exc:
+        logger.warning(
+            "Contract validation blocked /orchestrate request_id=%s mode=%s reason=%s",
+            contract_payload.get("request_id"),
+            contract_payload.get("assistant_mode"),
+            str(exc),
+        )
+        return OrchestrationResponse(
+            message="Solicitud bloqueada por guardas de seguridad del asistente.",
+            session_id=body.session_id or f"blocked-{contract_payload['request_id']}",
+            metadata=OrchestrationMetadata(
+                risk_level="unknown",
+                triage_level="none",
+                flags=["contract_validation_blocked"],
+                confidence=0.0,
+                inference_cached=False,
+                turn_count=0,
+                explanation_count=0,
+                request_id=contract_payload["request_id"],
+                services_called=["contract_validation"],
+                latency_ms=0,
+                context_type=None,
+                assistant_mode=contract_payload["assistant_mode"],
+                actor_role=contract_payload["actor_role"],
+                triage_allowed=False,
+            ),
+        )
+
+    runtime_context = {
+        **(body.context or {}),
+        "request_id": contract_payload["request_id"],
+        "tenant_id": contract_payload["tenant_id"],
+        "actor_id": contract_payload["actor_id"],
+        "channel": contract_payload["channel"],
+        "allowed_tools": contract_payload["allowed_tools"],
+        "forbidden_tools": contract_payload["forbidden_tools"],
+    }
+
     result = await orchestrator.handle_request(
         user_input=body.user_input,
         session_id=body.session_id,
-        extra_context=body.context,
+        extra_context=runtime_context,
+        assistant_mode=validated_mode,
+        actor_role=contract_payload["actor_role"],
     )
     return OrchestrationResponse(**result)

@@ -4,7 +4,9 @@ import pytest
 
 from brain.contracts.core_contracts import (
     ContractValidationError,
+    default_forbidden_tools_for_mode,
     evaluate_mode_guard,
+    validate_runtime_brain_request,
     validate_brain_core_response,
     validate_chat_brain_request,
     validate_secretary_brain_request,
@@ -127,11 +129,71 @@ def test_mode_guard_blocks_cross_domain_tools() -> None:
     result = evaluate_mode_guard("doctor_professional", "appointment.write")
     assert result.allowed is False
 
+    result = evaluate_mode_guard("doctor_professional", "whatsapp_send")
+    assert result.allowed is False
+
+    result = evaluate_mode_guard("doctor_professional", "spreadsheet_ingest")
+    assert result.allowed is False
+
     result = evaluate_mode_guard("appointment_booking", "clinical.diagnosis")
+    assert result.allowed is False
+
+    result = evaluate_mode_guard("appointment_booking", "full_clinical_history_access")
+    assert result.allowed is False
+
+    result = evaluate_mode_guard("appointment_booking", "spreadsheet_ingest")
     assert result.allowed is False
 
     result = evaluate_mode_guard("secretary_ingestion", "clinical.history.full_access")
     assert result.allowed is False
 
+    result = evaluate_mode_guard("secretary_ingestion", "clinical_diagnosis")
+    assert result.allowed is False
+
+    result = evaluate_mode_guard("secretary_ingestion", "whatsapp_send")
+    assert result.allowed is False
+
     result = evaluate_mode_guard("doctor_professional", "clinical.chat_response")
     assert result.allowed is True
+
+
+def test_runtime_request_unknown_mode_fails_closed() -> None:
+    payload = _base_chat_payload()
+    payload["assistant_mode"] = "unknown_mode"
+
+    with pytest.raises(ContractValidationError, match="assistant_mode is unknown"):
+        validate_runtime_brain_request(payload)
+
+
+def test_runtime_request_legacy_without_mode_defaults_restrictive_generic() -> None:
+    payload = {
+        "request_id": "req-legacy-1",
+        "tenant_id": "tenant-1",
+        "actor_id": "legacy-actor",
+        "actor_role": "system",
+        "assistant_mode": None,
+        "channel": "web_chat",
+        "message": "hola",
+        "allowed_tools": [],
+        "forbidden_tools": default_forbidden_tools_for_mode("generic_non_clinical"),
+    }
+
+    mode = validate_runtime_brain_request(payload)
+    assert mode == "generic_non_clinical"
+
+
+def test_runtime_request_legacy_generic_rejects_broad_permissions() -> None:
+    payload = {
+        "request_id": "req-legacy-2",
+        "tenant_id": "tenant-1",
+        "actor_id": "legacy-actor",
+        "actor_role": "system",
+        "assistant_mode": None,
+        "channel": "web_chat",
+        "message": "quiero acciones",
+        "allowed_tools": ["appointment.write"],
+        "forbidden_tools": default_forbidden_tools_for_mode("generic_non_clinical"),
+    }
+
+    with pytest.raises(ContractValidationError, match="allowed_tools contains prohibited tools"):
+        validate_runtime_brain_request(payload)

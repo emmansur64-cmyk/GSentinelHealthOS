@@ -18,11 +18,20 @@ Respuesta:
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from api.app.core.security import InternalAuth, validate_api_key
+from brain.contracts.core_contracts import (
+    ContractValidationError,
+    ModeGuardResult,
+    default_forbidden_tools_for_mode,
+    evaluate_mode_guard,
+    normalize_assistant_mode,
+    validate_runtime_brain_request,
+)
 from MetaBrain.nlu_engine import NLUEngine
 from shared.utils import setup_logger
 
@@ -69,6 +78,14 @@ class DecideRequest(BaseModel):
     role: str = Field(..., description="Rol del solicitante: DOCTOR | PATIENT | SYSTEM")
     message: str = Field(..., min_length=1, max_length=4000)
     context: DecideContext = Field(default_factory=DecideContext)
+    assistant_mode: str | None = Field(default=None, description="Modo asistente legacy/opcional")
+    actor_role: str | None = Field(default=None, description="Rol runtime opcional")
+    tenant_id: str | None = Field(default=None, description="Tenant runtime opcional")
+    actor_id: str | None = Field(default=None, description="Actor runtime opcional")
+    channel: str | None = Field(default=None, description="Canal runtime opcional")
+    allowed_tools: list[str] | None = Field(default=None, description="Allowlist de herramientas")
+    forbidden_tools: list[str] | None = Field(default=None, description="Denylist de herramientas")
+    request_id: str | None = Field(default=None, description="Request ID opcional")
 
 
 class DecideResponse(BaseModel):
@@ -151,6 +168,61 @@ def _build_clinical_response(
     return " ".join(parts)
 
 
+def _map_role_to_actor_role(role: str) -> str:
+    normalized = (role or "").strip().upper()
+    if normalized == "DOCTOR":
+        return "doctor"
+    if normalized == "PATIENT":
+        return "patient"
+    return "system"
+
+
+def _derive_assistant_mode(payload: DecideRequest) -> str:
+    explicit_mode = normalize_assistant_mode(payload.assistant_mode)
+    if payload.assistant_mode:
+        return explicit_mode
+    if (payload.role or "").strip().upper() == "DOCTOR":
+        return "doctor_professional"
+    return explicit_mode
+
+
+def _tool_for_intent(intent: str) -> str | None:
+    intent_tool_map = {
+        "book_appointment": "appointment.write",
+        "cancel_appointment": "appointment.write",
+        "check_availability": "appointment.search_availability",
+        "general_query": None,
+        "SYSTEM_RESET": None,
+    }
+    return intent_tool_map.get(intent)
+
+
+def _build_decide_contract_payload(payload: DecideRequest) -> dict[str, Any]:
+    metadata = payload.context.metadata or {}
+    mode = _derive_assistant_mode(payload)
+    actor_role = str(payload.actor_role or _map_role_to_actor_role(payload.role))
+    return {
+        "request_id": str(payload.request_id or metadata.get("request_id") or uuid4()),
+        "tenant_id": str(payload.tenant_id or metadata.get("tenant_id") or "unknown_tenant"),
+        "actor_id": str(
+            payload.actor_id
+            or payload.context.doctor_id
+            or metadata.get("actor_id")
+            or f"{actor_role}_legacy"
+        ),
+        "actor_role": actor_role,
+        "assistant_mode": mode,
+        "channel": str(payload.channel or metadata.get("channel") or "web_chat"),
+        "message": payload.message,
+        "allowed_tools": list(payload.allowed_tools or metadata.get("allowed_tools") or []),
+        "forbidden_tools": list(
+            payload.forbidden_tools
+            or metadata.get("forbidden_tools")
+            or default_forbidden_tools_for_mode(mode)
+        ),
+    }
+
+
 # ─── Endpoint ─────────────────────────────────────────────────────────────────
 
 @router.post(
@@ -173,6 +245,25 @@ async def brain_decide(
             detail="Solo servicios con scope 'brain' o 'gateway' pueden invocar este endpoint",
         )
 
+    contract_payload = _build_decide_contract_payload(payload)
+    try:
+        validated_mode = validate_runtime_brain_request(contract_payload)
+    except ContractValidationError as exc:
+        logger.warning(
+            "Contract validation blocked /brain/decide request_id=%s mode=%s reason=%s",
+            contract_payload.get("request_id"),
+            contract_payload.get("assistant_mode"),
+            str(exc),
+        )
+        return DecideResponse(
+            action="CONTRACT_BLOCKED",
+            response="Solicitud bloqueada por guardas de seguridad del asistente.",
+            confidence=0.0,
+            source="CONTRACT_GUARD",
+            entities={"blocked": True, "assistant_mode": contract_payload.get("assistant_mode")},
+            model_version="contract-guard-v1",
+        )
+
     try:
         analysis = await NLUEngine.analyze(
             payload.message,
@@ -190,6 +281,26 @@ async def brain_decide(
     confidence: float = float(analysis.get("confidence") or 0.0)
     source: str = str(analysis.get("source") or "rules")
 
+    requested_tool = _tool_for_intent(intent)
+    if requested_tool:
+        guard_result: ModeGuardResult = evaluate_mode_guard(validated_mode, requested_tool)
+        if not guard_result.allowed:
+            logger.warning(
+                "Mode guard blocked /brain/decide request_id=%s mode=%s tool=%s reason=%s",
+                contract_payload.get("request_id"),
+                validated_mode,
+                requested_tool,
+                guard_result.reason,
+            )
+            return DecideResponse(
+                action="CONTRACT_BLOCKED",
+                response="La acción solicitada no está permitida para el modo actual.",
+                confidence=0.0,
+                source="CONTRACT_GUARD",
+                entities={"blocked_tool": requested_tool, "assistant_mode": validated_mode},
+                model_version="contract-guard-v1",
+            )
+
     clinical_response = _build_clinical_response(
         payload.message,
         intent,
@@ -200,11 +311,12 @@ async def brain_decide(
     model_version = "metabrain-v1"
 
     logger.info(
-        "brain/decide: intent=%s source=%s confidence=%.2f role=%s",
+        "brain/decide: intent=%s source=%s confidence=%.2f role=%s mode=%s",
         intent,
         source,
         confidence,
         payload.role,
+        validated_mode,
     )
 
     return DecideResponse(

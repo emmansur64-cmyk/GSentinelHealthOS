@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import os
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
@@ -15,6 +16,13 @@ from api.app.eventing.realtime_notifications import broadcast_realtime_event
 from api.app.models import ClientWhatsAppAccount
 from api.app.services.shadow_profile_service import ShadowProfileService
 from api.app.services.whatsapp_webhook_service import WhatsAppWebhookService
+from brain.contracts.core_contracts import (
+    ContractValidationError,
+    ModeGuardResult,
+    default_forbidden_tools_for_mode,
+    evaluate_mode_guard,
+    validate_runtime_brain_request,
+)
 import httpx
 from shared.config import WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_VERIFY_TOKEN
 from shared.security.secrets import SecretEncryptionError, decrypt_secret
@@ -49,6 +57,16 @@ def _safe_external_body(body: str, *, max_length: int = 500) -> str:
     if len(redacted) > max_length:
         return f"{redacted[:max_length]}...[truncated]"
     return redacted
+
+
+def _tool_for_whatsapp_intent(intent: str) -> str | None:
+    mapping = {
+        "book_appointment": "appointment.search_availability",
+        "reschedule_appointment": "appointment.search_availability",
+        "cancel_appointment": "appointment.search_availability",
+        "general_query": None,
+    }
+    return mapping.get(intent)
 
 
 async def _send_whatsapp_reply(
@@ -195,6 +213,40 @@ async def receive_whatsapp_webhook(
     )
 
     intent = webhook_service.detect_intent(parsed.text)
+
+    contract_payload = {
+        "request_id": parsed.message_id or str(uuid4()),
+        "tenant_id": clinic_id,
+        "actor_id": parsed.phone,
+        "actor_role": "patient",
+        "assistant_mode": "appointment_booking",
+        "channel": "whatsapp",
+        "message": parsed.text,
+        "allowed_tools": [],
+        "forbidden_tools": default_forbidden_tools_for_mode("appointment_booking"),
+    }
+    try:
+        validated_mode = validate_runtime_brain_request(contract_payload)
+    except ContractValidationError as exc:
+        logger.warning(
+            "Contract validation blocked WhatsApp webhook request_id=%s reason=%s",
+            contract_payload["request_id"],
+            str(exc),
+        )
+        raise HTTPException(status_code=422, detail="contract_validation_blocked") from exc
+
+    requested_tool = _tool_for_whatsapp_intent(intent)
+    if requested_tool:
+        guard: ModeGuardResult = evaluate_mode_guard(validated_mode, requested_tool)
+        if not guard.allowed:
+            logger.warning(
+                "Mode guard blocked WhatsApp webhook request_id=%s tool=%s reason=%s",
+                contract_payload["request_id"],
+                requested_tool,
+                guard.reason,
+            )
+            raise HTTPException(status_code=403, detail="mode_guard_blocked")
+
     patient_name = getattr(patient, "name", None) or "paciente"
     auto_reply = webhook_service.build_auto_reply(intent, patient_name)
 

@@ -14,6 +14,7 @@ from typing import Any, Iterable, Mapping
 CHAT_ASSISTANT_MODES = {"doctor_professional", "clinical_support"}
 SECRETARY_ASSISTANT_MODE = "secretary_ingestion"
 WHATSAPP_ASSISTANT_MODE = "appointment_booking"
+GENERIC_ASSISTANT_MODE = "generic_non_clinical"
 
 CHAT_CHANNEL = "web_chat"
 SECRETARY_CHANNELS = {"web_upload", "admin_panel"}
@@ -46,6 +47,20 @@ WHATSAPP_PROHIBITED_TOOLS = {
 KNOWN_ASSISTANT_MODES = CHAT_ASSISTANT_MODES | {
     SECRETARY_ASSISTANT_MODE,
     WHATSAPP_ASSISTANT_MODE,
+    GENERIC_ASSISTANT_MODE,
+}
+
+GENERIC_PROHIBITED_TOOLS = {
+    "appointment_write",
+    "appointment.write",
+    "whatsapp_send",
+    "whatsapp.send",
+    "spreadsheet_ingest",
+    "clinical_diagnosis",
+    "clinical.diagnosis",
+    "full_clinical_history_access",
+    "clinical.history.full_access",
+    "triage.patient_facing",
 }
 
 
@@ -57,6 +72,26 @@ class ContractValidationError(ValueError):
 class ModeGuardResult:
     allowed: bool
     reason: str
+
+
+def normalize_assistant_mode(raw_mode: Any) -> str:
+    mode = str(raw_mode or "").strip()
+    if not mode:
+        return GENERIC_ASSISTANT_MODE
+    return mode
+
+
+def default_forbidden_tools_for_mode(mode: str) -> list[str]:
+    normalized_mode = normalize_assistant_mode(mode)
+    if normalized_mode in CHAT_ASSISTANT_MODES:
+        return sorted(CHAT_PROHIBITED_TOOLS)
+    if normalized_mode == SECRETARY_ASSISTANT_MODE:
+        return sorted(SECRETARY_PROHIBITED_TOOLS)
+    if normalized_mode == WHATSAPP_ASSISTANT_MODE:
+        return sorted(WHATSAPP_PROHIBITED_TOOLS)
+    if normalized_mode == GENERIC_ASSISTANT_MODE:
+        return sorted(GENERIC_PROHIBITED_TOOLS)
+    return []
 
 
 def _require_fields(payload: Mapping[str, Any], required: Iterable[str]) -> None:
@@ -175,6 +210,56 @@ def validate_whatsapp_brain_request(payload: Mapping[str, Any]) -> None:
     _validate_forbidden_tools(allowed_tools, forbidden_tools, WHATSAPP_PROHIBITED_TOOLS)
 
 
+def validate_generic_brain_request(payload: Mapping[str, Any]) -> None:
+    _require_fields(
+        payload,
+        [
+            "request_id",
+            "tenant_id",
+            "actor_id",
+            "actor_role",
+            "assistant_mode",
+            "channel",
+            "message",
+        ],
+    )
+    if payload.get("assistant_mode") != GENERIC_ASSISTANT_MODE:
+        raise ContractValidationError("generic assistant_mode must be generic_non_clinical")
+
+    allowed_tools = _to_tool_set(payload, "allowed_tools")
+    forbidden_tools = _to_tool_set(payload, "forbidden_tools")
+    _validate_forbidden_tools(allowed_tools, forbidden_tools, GENERIC_PROHIBITED_TOOLS)
+
+
+def validate_runtime_brain_request(payload: Mapping[str, Any]) -> str:
+    """Validate request payload for runtime entrypoints with fail-closed mode handling.
+
+    Returns the normalized assistant_mode when validation passes.
+    """
+    mode = normalize_assistant_mode(payload.get("assistant_mode"))
+
+    if mode in CHAT_ASSISTANT_MODES:
+        validate_chat_brain_request({**payload, "assistant_mode": mode})
+    elif mode == SECRETARY_ASSISTANT_MODE:
+        validate_secretary_brain_request({**payload, "assistant_mode": mode})
+    elif mode == WHATSAPP_ASSISTANT_MODE:
+        validate_whatsapp_brain_request({**payload, "assistant_mode": mode})
+    elif mode == GENERIC_ASSISTANT_MODE:
+        validate_generic_brain_request({**payload, "assistant_mode": mode})
+    else:
+        raise ContractValidationError("assistant_mode is unknown; fail closed")
+
+    allowed_tools = _to_tool_set(payload, "allowed_tools")
+    for tool in allowed_tools:
+        guard = evaluate_mode_guard(mode, tool)
+        if not guard.allowed:
+            raise ContractValidationError(
+                f"mode guard rejected tool '{tool}' for mode '{mode}': {guard.reason}"
+            )
+
+    return mode
+
+
 def validate_brain_action(action: str) -> None:
     if action not in BRAIN_ACTION_ALLOWLIST:
         raise ContractValidationError(f"brain action not allowed: {action}")
@@ -213,19 +298,30 @@ def evaluate_mode_guard(mode: str, requested_tool: str) -> ModeGuardResult:
     normalized_mode = str(mode or "").strip()
     normalized_tool = str(requested_tool or "").strip()
 
-    if normalized_mode == "doctor_professional" and normalized_tool in {"triage.patient_facing", "appointment.write"}:
+    if normalized_mode == "doctor_professional" and normalized_tool in {
+        "triage.patient_facing",
+        "appointment.write",
+        "whatsapp_send",
+        "spreadsheet_ingest",
+    }:
         return ModeGuardResult(False, "doctor_professional cannot run patient triage or write agenda")
 
     if normalized_mode == "appointment_booking" and normalized_tool in {
+        "clinical_diagnosis",
         "clinical.diagnosis",
+        "full_clinical_history_access",
         "clinical.history.full_access",
         "clinical.deep_tool",
+        "spreadsheet_ingest",
     }:
         return ModeGuardResult(False, "appointment_booking cannot perform clinical actions")
 
     if normalized_mode == "secretary_ingestion" and normalized_tool in {
+        "full_clinical_history_access",
         "clinical.history.full_access",
+        "clinical_diagnosis",
         "clinical.diagnosis",
+        "whatsapp_send",
         "whatsapp.send",
     }:
         return ModeGuardResult(False, "secretary_ingestion cannot access full clinical context")
