@@ -156,6 +156,9 @@ def test_mode_guard_blocks_cross_domain_tools() -> None:
     result = evaluate_mode_guard("doctor_professional", "clinical.chat_response")
     assert result.allowed is True
 
+    result = evaluate_mode_guard("appointment_booking", "appointment.write")
+    assert result.allowed is True
+
 
 def test_runtime_request_unknown_mode_fails_closed() -> None:
     payload = _base_chat_payload()

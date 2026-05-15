@@ -7,6 +7,15 @@ import { findNextAvailableSlot } from "@/lib/smart-schedule";
 import { detectBlockingNegation } from "@/lib/nlp";
 import { generateWhatsAppMetaBrainReply } from "@/lib/whatsapp/metabrain-assistant";
 import {
+  createAppointmentViaAgendaApi,
+  isAgendaApiAuthorityEnabled,
+  validateAvailabilityViaAgendaApi,
+} from "@/lib/agenda-api-client";
+import {
+  evaluateAgendaReadAuthority,
+  evaluateAgendaWriteAuthority,
+} from "@/lib/agenda-api-authority";
+import {
   CONSULTATION_TYPE_DURATION,
   getConsultationDuration,
   normalizeConsultationType,
@@ -386,6 +395,35 @@ async function handleCreateAppointment(
     maxSearchDays: 30,
   });
 
+  if (slot && isAgendaApiAuthorityEnabled()) {
+    const readDecision = evaluateAgendaReadAuthority({
+      operation: "availability.lookup",
+      viaAgendaApi: true,
+    });
+    if (readDecision.allowed) {
+      const availability = await validateAvailabilityViaAgendaApi({
+        tenantId,
+        doctorId: doctor.user_id,
+        dateTimeIso: slot.start.toISOString(),
+      });
+
+      if (!availability.ok) {
+        logServer("warn", "agenda_authority.availability_fallback_legacy", {
+          operation: "availability.lookup",
+          caller: "whatsapp.conversation_engine",
+          reason: availability.error ?? "agenda_api_unavailable",
+        });
+      } else if (!availability.data?.available) {
+        return {
+          reply: `No encontre turnos disponibles con ${doctor.user.name} en los proximos 30 dias. Queres intentar con otro doctor?`,
+          intent: "create_appointment",
+          action: "no_slot_authority_denied",
+          newContext: { patient_id: patient.id },
+        };
+      }
+    }
+  }
+
   if (!slot) {
     return {
       reply: `No encontre turnos disponibles con ${doctor.user.name} en los proximos 30 dias. Queres intentar con otro doctor?`,
@@ -451,6 +489,84 @@ async function handleConfirmAppointment(
   const duration = context.duration ?? DEFAULT_DURATION;
   const candidateEnd = new Date(candidateStart.getTime() + duration * 60_000);
   const idempotencyKey = `wa-${phone}-${context.proposed_time}`;
+
+  if (isAgendaApiAuthorityEnabled()) {
+    const writeViaAuthority = evaluateAgendaWriteAuthority({
+      operation: "appointment.create",
+      assistantMode: "appointment_booking",
+      viaAgendaApi: true,
+    });
+
+    if (writeViaAuthority.allowed) {
+      const authorityResult = await createAppointmentViaAgendaApi({
+        tenantId,
+        doctorId: context.doctor_id,
+        patientId: context.patient_id,
+        dateTimeIso: candidateStart.toISOString(),
+        durationMinutes: duration,
+        reason: `WhatsApp booking (${context.tipo_consulta ?? "control"})`,
+        idempotencyKey,
+      });
+
+      if (authorityResult.ok && authorityResult.data) {
+        const dateStr = candidateStart.toLocaleDateString("es-AR", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        });
+        const timeStr = candidateStart.toLocaleTimeString("es-AR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
+
+        return {
+          reply: `Turno confirmado!\n\n` +
+            `Doctor: *${context.doctor_name ?? ""}*\n` +
+            `Fecha: *${dateStr}*\n` +
+            `Hora: *${timeStr}*\n` +
+            `Duracion: ${duration} min\n\n` +
+            `Te esperamos! Si necesitas cancelar, escribi "cancelar turno".`,
+          intent: "confirm",
+          action: "appointment_created_via_agenda_api",
+          newContext: {
+            pending_appointment_id: authorityResult.data.id,
+          },
+        };
+      }
+
+      logServer("warn", "agenda_authority.create_fallback_legacy", {
+        operation: "appointment.create",
+        caller: "whatsapp.conversation_engine",
+        assistant_mode: "appointment_booking",
+        reason: authorityResult.error ?? "agenda_api_unavailable",
+      });
+    }
+  }
+
+  const legacyWriteDecision = evaluateAgendaWriteAuthority({
+    operation: "appointment.create",
+    assistantMode: "appointment_booking",
+    viaAgendaApi: false,
+  });
+
+  if (legacyWriteDecision.requiresLegacyBypassWarning) {
+    logServer("warn", "agenda_authority.legacy_bypass", {
+      operation: "appointment.create",
+      caller: "whatsapp.conversation_engine",
+      assistant_mode: "appointment_booking",
+      reason: legacyWriteDecision.reason,
+    });
+  }
+
+  if (!legacyWriteDecision.allowed) {
+    return {
+      reply: "No pude confirmar el turno porque la autoridad de agenda bloqueo la operacion. Intenta nuevamente en unos minutos.",
+      intent: "confirm",
+      action: "authority_blocked",
+      newContext: context,
+    };
+  }
 
   // ===== IDEMPOTENCIA: Verificar si ya se creó este turno =====
   const existingByKey = await tx.appointment.findFirst({
@@ -722,6 +838,28 @@ async function handleCancelAppointment(
     };
   }
 
+  const cancelDecision = evaluateAgendaWriteAuthority({
+    operation: "appointment.cancel",
+    assistantMode: "appointment_booking",
+    viaAgendaApi: false,
+  });
+  if (cancelDecision.requiresLegacyBypassWarning) {
+    logServer("warn", "agenda_authority.legacy_bypass", {
+      operation: "appointment.cancel",
+      caller: "whatsapp.conversation_engine",
+      assistant_mode: "appointment_booking",
+      reason: cancelDecision.reason,
+    });
+  }
+  if (!cancelDecision.allowed) {
+    return {
+      reply: "No pude cancelar el turno porque la autoridad de agenda bloqueo la operacion.",
+      intent: "cancel_appointment",
+      action: "authority_blocked",
+      newContext: context,
+    };
+  }
+
   await tx.appointment.updateMany({
     where: { id: nextAppointment.id, tenant_id: tenantId },
     data: { status: "cancelled" },
@@ -794,6 +932,28 @@ async function handleRescheduleAppointment(
   }
 
   // Cancelar el turno actual
+  const rescheduleDecision = evaluateAgendaWriteAuthority({
+    operation: "appointment.reschedule",
+    assistantMode: "appointment_booking",
+    viaAgendaApi: false,
+  });
+  if (rescheduleDecision.requiresLegacyBypassWarning) {
+    logServer("warn", "agenda_authority.legacy_bypass", {
+      operation: "appointment.reschedule",
+      caller: "whatsapp.conversation_engine",
+      assistant_mode: "appointment_booking",
+      reason: rescheduleDecision.reason,
+    });
+  }
+  if (!rescheduleDecision.allowed) {
+    return {
+      reply: "No pude reprogramar porque la autoridad de agenda bloqueo la operacion.",
+      intent: "reschedule_appointment",
+      action: "authority_blocked",
+      newContext: context,
+    };
+  }
+
   await tx.appointment.updateMany({
     where: { id: nextAppointment.id, tenant_id: tenantId },
     data: { status: "cancelled" },
