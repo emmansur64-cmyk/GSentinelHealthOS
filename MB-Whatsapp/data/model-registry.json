@@ -1,0 +1,31 @@
+{
+  "versions": [
+    {
+      "version": "1.0.0",
+      "path": "models/incident-classifier-v1.0.0.onnx",
+      "status": "production",
+      "createdAt": "2024-01-15T10:00:00Z",
+      "metadata": {
+        "inputShape": [1, 10],
+        "outputShape": [1, 3],
+        "classes": ["restart_postgres", "retry_with_backoff", "clear_cache"],
+        "accuracy": 0.92,
+        "framework": "onnx"
+      }
+    },
+    {
+      "version": "1.1.0",
+      "path": "models/incident-classifier-v1.1.0.onnx",
+      "status": "staging",
+      "createdAt": "2024-01-20T14:30:00Z",
+      "metadata": {
+        "inputShape": [1, 12],
+        "outputShape": [1, 4],
+        "classes": ["restart_postgres", "retry_with_backoff", "clear_cache", "scale_up"],
+        "accuracy": 0.95,
+        "framework": "onnx"
+      }
+    }
+  ],
+  "lastUpdated": "2024-01-20T14:30:00Z"
+}

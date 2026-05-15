@@ -1,0 +1,35 @@
+{
+  "version": "v10",
+  "timestamp": "2026-04-19T20:19:37.684722",
+  "confidence": 0.4,
+  "checks": {
+    "accuracy": {
+      "pass": true,
+      "prod": 1.0,
+      "candidate": 0.9722222222222222,
+      "improvement": -0.02777777777777779,
+      "note": "Small degradation, but within tolerance"
+    },
+    "overfitting": {
+      "pass": true,
+      "prod": 0.0,
+      "candidate": 0.02777777777777779,
+      "improvement": -0.02777777777777779,
+      "note": "Slightly more overfitting, but acceptable"
+    },
+    "stability": {
+      "pass": false,
+      "prod": 0.0,
+      "candidate": 0.04130756442702395,
+      "reason": "CV stability significantly worse"
+    },
+    "data": {
+      "pass": true,
+      "prod": 1,
+      "candidate": 168,
+      "message": "More or equal training samples"
+    }
+  },
+  "recommendation": "REVIEW",
+  "severity": "MANUAL_REVIEW_REQUIRED"
+}

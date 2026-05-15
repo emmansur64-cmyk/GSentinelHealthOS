@@ -1,0 +1,2162 @@
+[
+  {
+    "incidentId": "incident-synth-00001",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-05T21:55:35Z"
+  },
+  {
+    "incidentId": "incident-synth-00002",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-05T22:09:26Z"
+  },
+  {
+    "incidentId": "incident-synth-00003",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-05T22:31:38Z"
+  },
+  {
+    "incidentId": "incident-synth-00004",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-05T22:51:38Z"
+  },
+  {
+    "incidentId": "incident-synth-00005",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-05T22:59:53Z"
+  },
+  {
+    "incidentId": "incident-synth-00006",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-05T23:20:38Z"
+  },
+  {
+    "incidentId": "incident-synth-00007",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-05T23:35:55Z"
+  },
+  {
+    "incidentId": "incident-synth-00008",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-05T23:59:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00009",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T00:05:35Z"
+  },
+  {
+    "incidentId": "incident-synth-00010",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T00:08:57Z"
+  },
+  {
+    "incidentId": "incident-synth-00011",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T00:30:33Z"
+  },
+  {
+    "incidentId": "incident-synth-00012",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T00:42:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00013",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T00:58:58Z"
+  },
+  {
+    "incidentId": "incident-synth-00014",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T01:09:58Z"
+  },
+  {
+    "incidentId": "incident-synth-00015",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T01:28:27Z"
+  },
+  {
+    "incidentId": "incident-synth-00016",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T01:32:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00017",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T01:55:42Z"
+  },
+  {
+    "incidentId": "incident-synth-00018",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T02:14:43Z"
+  },
+  {
+    "incidentId": "incident-synth-00019",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T02:28:36Z"
+  },
+  {
+    "incidentId": "incident-synth-00020",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T02:50:43Z"
+  },
+  {
+    "incidentId": "incident-synth-00021",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T03:06:45Z"
+  },
+  {
+    "incidentId": "incident-synth-00022",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T03:19:53Z"
+  },
+  {
+    "incidentId": "incident-synth-00023",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T03:35:50Z"
+  },
+  {
+    "incidentId": "incident-synth-00024",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T03:55:50Z"
+  },
+  {
+    "incidentId": "incident-synth-00025",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T04:14:28Z"
+  },
+  {
+    "incidentId": "incident-synth-00026",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T04:36:38Z"
+  },
+  {
+    "incidentId": "incident-synth-00027",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T04:54:47Z"
+  },
+  {
+    "incidentId": "incident-synth-00028",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T05:01:52Z"
+  },
+  {
+    "incidentId": "incident-synth-00029",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T05:18:32Z"
+  },
+  {
+    "incidentId": "incident-synth-00030",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T05:23:22Z"
+  },
+  {
+    "incidentId": "incident-synth-00031",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T05:36:27Z"
+  },
+  {
+    "incidentId": "incident-synth-00032",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T06:00:55Z"
+  },
+  {
+    "incidentId": "incident-synth-00033",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T06:16:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00034",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T06:38:42Z"
+  },
+  {
+    "incidentId": "incident-synth-00035",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T06:57:40Z"
+  },
+  {
+    "incidentId": "incident-synth-00036",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T07:13:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00037",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T07:32:27Z"
+  },
+  {
+    "incidentId": "incident-synth-00038",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T07:51:36Z"
+  },
+  {
+    "incidentId": "incident-synth-00039",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T07:58:37Z"
+  },
+  {
+    "incidentId": "incident-synth-00040",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T08:11:48Z"
+  },
+  {
+    "incidentId": "incident-synth-00041",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T08:15:49Z"
+  },
+  {
+    "incidentId": "incident-synth-00042",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T08:18:49Z"
+  },
+  {
+    "incidentId": "incident-synth-00043",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T08:31:41Z"
+  },
+  {
+    "incidentId": "incident-synth-00044",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T08:43:28Z"
+  },
+  {
+    "incidentId": "incident-synth-00045",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T08:49:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00046",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-06T09:03:30Z"
+  },
+  {
+    "incidentId": "incident-synth-00047",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T09:20:52Z"
+  },
+  {
+    "incidentId": "incident-synth-00048",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T09:32:26Z"
+  },
+  {
+    "incidentId": "incident-synth-00049",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T09:55:49Z"
+  },
+  {
+    "incidentId": "incident-synth-00050",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T10:00:30Z"
+  },
+  {
+    "incidentId": "incident-synth-00051",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T10:19:27Z"
+  },
+  {
+    "incidentId": "incident-synth-00052",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T10:38:43Z"
+  },
+  {
+    "incidentId": "incident-synth-00053",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T10:51:44Z"
+  },
+  {
+    "incidentId": "incident-synth-00054",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T11:14:56Z"
+  },
+  {
+    "incidentId": "incident-synth-00055",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T11:36:25Z"
+  },
+  {
+    "incidentId": "incident-synth-00056",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T11:53:30Z"
+  },
+  {
+    "incidentId": "incident-synth-00057",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T12:13:38Z"
+  },
+  {
+    "incidentId": "incident-synth-00058",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T12:25:42Z"
+  },
+  {
+    "incidentId": "incident-synth-00059",
+    "source": "payments_api",
+    "status": "FAILED",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T12:47:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00060",
+    "source": "payments_api",
+    "status": "SUCCESS",
+    "diagnosisCode": "TRANSIENT_SYSTEM_ERROR",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T13:05:46Z"
+  },
+  {
+    "incidentId": "incident-synth-00061",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T13:21:28Z"
+  },
+  {
+    "incidentId": "incident-synth-00062",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T13:47:26Z"
+  },
+  {
+    "incidentId": "incident-synth-00063",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T13:52:27Z"
+  },
+  {
+    "incidentId": "incident-synth-00064",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T14:10:22Z"
+  },
+  {
+    "incidentId": "incident-synth-00065",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T14:37:26Z"
+  },
+  {
+    "incidentId": "incident-synth-00066",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T14:54:23Z"
+  },
+  {
+    "incidentId": "incident-synth-00067",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T15:27:25Z"
+  },
+  {
+    "incidentId": "incident-synth-00068",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T15:55:26Z"
+  },
+  {
+    "incidentId": "incident-synth-00069",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T16:11:36Z"
+  },
+  {
+    "incidentId": "incident-synth-00070",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T16:17:30Z"
+  },
+  {
+    "incidentId": "incident-synth-00071",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T16:40:23Z"
+  },
+  {
+    "incidentId": "incident-synth-00072",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T17:09:54Z"
+  },
+  {
+    "incidentId": "incident-synth-00073",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T17:30:42Z"
+  },
+  {
+    "incidentId": "incident-synth-00074",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T17:39:26Z"
+  },
+  {
+    "incidentId": "incident-synth-00075",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T18:01:23Z"
+  },
+  {
+    "incidentId": "incident-synth-00076",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T18:32:35Z"
+  },
+  {
+    "incidentId": "incident-synth-00077",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T18:52:24Z"
+  },
+  {
+    "incidentId": "incident-synth-00078",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T19:23:47Z"
+  },
+  {
+    "incidentId": "incident-synth-00079",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T19:31:21Z"
+  },
+  {
+    "incidentId": "incident-synth-00080",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T19:45:22Z"
+  },
+  {
+    "incidentId": "incident-synth-00081",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T20:10:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00082",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T20:17:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00083",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T20:46:42Z"
+  },
+  {
+    "incidentId": "incident-synth-00084",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T21:15:55Z"
+  },
+  {
+    "incidentId": "incident-synth-00085",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T21:31:46Z"
+  },
+  {
+    "incidentId": "incident-synth-00086",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T22:00:57Z"
+  },
+  {
+    "incidentId": "incident-synth-00087",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T22:07:33Z"
+  },
+  {
+    "incidentId": "incident-synth-00088",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T22:17:44Z"
+  },
+  {
+    "incidentId": "incident-synth-00089",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T22:33:47Z"
+  },
+  {
+    "incidentId": "incident-synth-00090",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T22:48:40Z"
+  },
+  {
+    "incidentId": "incident-synth-00091",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T22:55:30Z"
+  },
+  {
+    "incidentId": "incident-synth-00092",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T23:04:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00093",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T23:33:53Z"
+  },
+  {
+    "incidentId": "incident-synth-00094",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-06T23:53:52Z"
+  },
+  {
+    "incidentId": "incident-synth-00095",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T00:16:48Z"
+  },
+  {
+    "incidentId": "incident-synth-00096",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T00:22:46Z"
+  },
+  {
+    "incidentId": "incident-synth-00097",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T00:55:31Z"
+  },
+  {
+    "incidentId": "incident-synth-00098",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T01:21:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00099",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T01:47:49Z"
+  },
+  {
+    "incidentId": "incident-synth-00100",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T02:04:55Z"
+  },
+  {
+    "incidentId": "incident-synth-00101",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T02:25:39Z"
+  },
+  {
+    "incidentId": "incident-synth-00102",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T02:34:38Z"
+  },
+  {
+    "incidentId": "incident-synth-00103",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T02:43:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00104",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T03:11:52Z"
+  },
+  {
+    "incidentId": "incident-synth-00105",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T03:39:28Z"
+  },
+  {
+    "incidentId": "incident-synth-00106",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T04:07:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00107",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T04:26:28Z"
+  },
+  {
+    "incidentId": "incident-synth-00108",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T04:58:54Z"
+  },
+  {
+    "incidentId": "incident-synth-00109",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T05:25:24Z"
+  },
+  {
+    "incidentId": "incident-synth-00110",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T05:49:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00111",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T05:56:54Z"
+  },
+  {
+    "incidentId": "incident-synth-00112",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T06:07:22Z"
+  },
+  {
+    "incidentId": "incident-synth-00113",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T06:22:41Z"
+  },
+  {
+    "incidentId": "incident-synth-00114",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T06:51:45Z"
+  },
+  {
+    "incidentId": "incident-synth-00115",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T07:11:36Z"
+  },
+  {
+    "incidentId": "incident-synth-00116",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T07:31:34Z"
+  },
+  {
+    "incidentId": "incident-synth-00117",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T07:51:55Z"
+  },
+  {
+    "incidentId": "incident-synth-00118",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T08:11:58Z"
+  },
+  {
+    "incidentId": "incident-synth-00119",
+    "source": "worker_scheduler",
+    "status": "SUCCESS",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T08:31:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00120",
+    "source": "worker_scheduler",
+    "status": "FAILED",
+    "diagnosisCode": "DEGRADED_SERVICE",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T08:54:24Z"
+  },
+  {
+    "incidentId": "incident-synth-00121",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T09:16:54Z"
+  },
+  {
+    "incidentId": "incident-synth-00122",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T09:21:46Z"
+  },
+  {
+    "incidentId": "incident-synth-00123",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T09:41:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00124",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T10:07:57Z"
+  },
+  {
+    "incidentId": "incident-synth-00125",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T10:25:22Z"
+  },
+  {
+    "incidentId": "incident-synth-00126",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T10:49:45Z"
+  },
+  {
+    "incidentId": "incident-synth-00127",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T11:02:21Z"
+  },
+  {
+    "incidentId": "incident-synth-00128",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T11:20:44Z"
+  },
+  {
+    "incidentId": "incident-synth-00129",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T11:35:40Z"
+  },
+  {
+    "incidentId": "incident-synth-00130",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T12:02:58Z"
+  },
+  {
+    "incidentId": "incident-synth-00131",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T12:16:48Z"
+  },
+  {
+    "incidentId": "incident-synth-00132",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T12:29:43Z"
+  },
+  {
+    "incidentId": "incident-synth-00133",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T12:36:53Z"
+  },
+  {
+    "incidentId": "incident-synth-00134",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T12:45:25Z"
+  },
+  {
+    "incidentId": "incident-synth-00135",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T13:09:46Z"
+  },
+  {
+    "incidentId": "incident-synth-00136",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T13:16:54Z"
+  },
+  {
+    "incidentId": "incident-synth-00137",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T13:33:44Z"
+  },
+  {
+    "incidentId": "incident-synth-00138",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T13:53:21Z"
+  },
+  {
+    "incidentId": "incident-synth-00139",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T14:08:50Z"
+  },
+  {
+    "incidentId": "incident-synth-00140",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T14:32:40Z"
+  },
+  {
+    "incidentId": "incident-synth-00141",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T14:44:24Z"
+  },
+  {
+    "incidentId": "incident-synth-00142",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T15:04:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00143",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T15:27:41Z"
+  },
+  {
+    "incidentId": "incident-synth-00144",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-07T15:52:52Z"
+  },
+  {
+    "incidentId": "incident-synth-00145",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T16:18:38Z"
+  },
+  {
+    "incidentId": "incident-synth-00146",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T16:24:42Z"
+  },
+  {
+    "incidentId": "incident-synth-00147",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T16:51:54Z"
+  },
+  {
+    "incidentId": "incident-synth-00148",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T17:12:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00149",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T17:34:52Z"
+  },
+  {
+    "incidentId": "incident-synth-00150",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T17:49:58Z"
+  },
+  {
+    "incidentId": "incident-synth-00151",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T17:54:30Z"
+  },
+  {
+    "incidentId": "incident-synth-00152",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T18:12:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00153",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T18:26:57Z"
+  },
+  {
+    "incidentId": "incident-synth-00154",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T18:45:44Z"
+  },
+  {
+    "incidentId": "incident-synth-00155",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T18:59:35Z"
+  },
+  {
+    "incidentId": "incident-synth-00156",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T19:26:33Z"
+  },
+  {
+    "incidentId": "incident-synth-00157",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T19:46:36Z"
+  },
+  {
+    "incidentId": "incident-synth-00158",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T20:13:58Z"
+  },
+  {
+    "incidentId": "incident-synth-00159",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T20:31:31Z"
+  },
+  {
+    "incidentId": "incident-synth-00160",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T20:48:36Z"
+  },
+  {
+    "incidentId": "incident-synth-00161",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T21:06:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00162",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-07T21:24:48Z"
+  },
+  {
+    "incidentId": "incident-synth-00163",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T21:42:45Z"
+  },
+  {
+    "incidentId": "incident-synth-00164",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T21:47:41Z"
+  },
+  {
+    "incidentId": "incident-synth-00165",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T21:59:57Z"
+  },
+  {
+    "incidentId": "incident-synth-00166",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T22:23:55Z"
+  },
+  {
+    "incidentId": "incident-synth-00167",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T22:42:28Z"
+  },
+  {
+    "incidentId": "incident-synth-00168",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T23:07:43Z"
+  },
+  {
+    "incidentId": "incident-synth-00169",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T23:28:57Z"
+  },
+  {
+    "incidentId": "incident-synth-00170",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T23:34:27Z"
+  },
+  {
+    "incidentId": "incident-synth-00171",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T23:46:39Z"
+  },
+  {
+    "incidentId": "incident-synth-00172",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T23:51:31Z"
+  },
+  {
+    "incidentId": "incident-synth-00173",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-07T23:57:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00174",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-08T00:09:37Z"
+  },
+  {
+    "incidentId": "incident-synth-00175",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-08T00:25:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00176",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-08T00:40:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00177",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-08T00:44:58Z"
+  },
+  {
+    "incidentId": "incident-synth-00178",
+    "source": "autoscaler",
+    "status": "FAILED",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-08T01:02:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00179",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-08T01:07:27Z"
+  },
+  {
+    "incidentId": "incident-synth-00180",
+    "source": "autoscaler",
+    "status": "SUCCESS",
+    "diagnosisCode": "RESOURCE_EXHAUSTION",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-08T01:22:25Z"
+  },
+  {
+    "incidentId": "incident-synth-00181",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T01:57:22Z"
+  },
+  {
+    "incidentId": "incident-synth-00182",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T02:31:34Z"
+  },
+  {
+    "incidentId": "incident-synth-00183",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T03:03:37Z"
+  },
+  {
+    "incidentId": "incident-synth-00184",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T03:32:38Z"
+  },
+  {
+    "incidentId": "incident-synth-00185",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T04:12:46Z"
+  },
+  {
+    "incidentId": "incident-synth-00186",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T04:33:27Z"
+  },
+  {
+    "incidentId": "incident-synth-00187",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T05:14:51Z"
+  },
+  {
+    "incidentId": "incident-synth-00188",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T05:27:30Z"
+  },
+  {
+    "incidentId": "incident-synth-00189",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T06:08:48Z"
+  },
+  {
+    "incidentId": "incident-synth-00190",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T06:56:45Z"
+  },
+  {
+    "incidentId": "incident-synth-00191",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T07:25:22Z"
+  },
+  {
+    "incidentId": "incident-synth-00192",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "scale_up",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-08T08:06:47Z"
+  },
+  {
+    "incidentId": "incident-synth-00193",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T08:30:28Z"
+  },
+  {
+    "incidentId": "incident-synth-00194",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T09:04:57Z"
+  },
+  {
+    "incidentId": "incident-synth-00195",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T09:29:48Z"
+  },
+  {
+    "incidentId": "incident-synth-00196",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T09:52:38Z"
+  },
+  {
+    "incidentId": "incident-synth-00197",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-08T10:32:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00198",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T11:06:48Z"
+  },
+  {
+    "incidentId": "incident-synth-00199",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "restart_service",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-08T11:33:24Z"
+  },
+  {
+    "incidentId": "incident-synth-00200",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T12:09:40Z"
+  },
+  {
+    "incidentId": "incident-synth-00201",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T12:45:21Z"
+  },
+  {
+    "incidentId": "incident-synth-00202",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T13:29:50Z"
+  },
+  {
+    "incidentId": "incident-synth-00203",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T13:55:58Z"
+  },
+  {
+    "incidentId": "incident-synth-00204",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T14:30:42Z"
+  },
+  {
+    "incidentId": "incident-synth-00205",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T15:03:32Z"
+  },
+  {
+    "incidentId": "incident-synth-00206",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T15:43:30Z"
+  },
+  {
+    "incidentId": "incident-synth-00207",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T15:50:56Z"
+  },
+  {
+    "incidentId": "incident-synth-00208",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T16:25:35Z"
+  },
+  {
+    "incidentId": "incident-synth-00209",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T17:05:37Z"
+  },
+  {
+    "incidentId": "incident-synth-00210",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T17:18:54Z"
+  },
+  {
+    "incidentId": "incident-synth-00211",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T17:44:28Z"
+  },
+  {
+    "incidentId": "incident-synth-00212",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T18:17:53Z"
+  },
+  {
+    "incidentId": "incident-synth-00213",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T18:39:55Z"
+  },
+  {
+    "incidentId": "incident-synth-00214",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T19:24:47Z"
+  },
+  {
+    "incidentId": "incident-synth-00215",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "retry_with_backoff",
+    "actionType": "AUTOMATED",
+    "createdAt": "2026-04-08T20:02:45Z"
+  },
+  {
+    "incidentId": "incident-synth-00216",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T20:41:56Z"
+  },
+  {
+    "incidentId": "incident-synth-00217",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T21:05:33Z"
+  },
+  {
+    "incidentId": "incident-synth-00218",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T21:18:27Z"
+  },
+  {
+    "incidentId": "incident-synth-00219",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T21:40:38Z"
+  },
+  {
+    "incidentId": "incident-synth-00220",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T22:04:25Z"
+  },
+  {
+    "incidentId": "incident-synth-00221",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T22:48:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00222",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T23:23:43Z"
+  },
+  {
+    "incidentId": "incident-synth-00223",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-08T23:37:37Z"
+  },
+  {
+    "incidentId": "incident-synth-00224",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T00:13:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00225",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T00:40:22Z"
+  },
+  {
+    "incidentId": "incident-synth-00226",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T01:04:26Z"
+  },
+  {
+    "incidentId": "incident-synth-00227",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T01:41:45Z"
+  },
+  {
+    "incidentId": "incident-synth-00228",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T02:05:21Z"
+  },
+  {
+    "incidentId": "incident-synth-00229",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T02:47:29Z"
+  },
+  {
+    "incidentId": "incident-synth-00230",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T03:29:27Z"
+  },
+  {
+    "incidentId": "incident-synth-00231",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T03:42:46Z"
+  },
+  {
+    "incidentId": "incident-synth-00232",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T04:26:30Z"
+  },
+  {
+    "incidentId": "incident-synth-00233",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T05:03:21Z"
+  },
+  {
+    "incidentId": "incident-synth-00234",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T05:42:46Z"
+  },
+  {
+    "incidentId": "incident-synth-00235",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T06:17:47Z"
+  },
+  {
+    "incidentId": "incident-synth-00236",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T06:53:50Z"
+  },
+  {
+    "incidentId": "incident-synth-00237",
+    "source": "security_gateway",
+    "status": "SUCCESS",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T07:38:25Z"
+  },
+  {
+    "incidentId": "incident-synth-00238",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T08:03:30Z"
+  },
+  {
+    "incidentId": "incident-synth-00239",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T08:27:38Z"
+  },
+  {
+    "incidentId": "incident-synth-00240",
+    "source": "security_gateway",
+    "status": "FAILED",
+    "diagnosisCode": "CRITICAL_SECURITY_INCIDENT",
+    "decisionAction": "manual_intervention",
+    "actionType": "MANUAL",
+    "createdAt": "2026-04-09T09:09:45Z"
+  }
+]

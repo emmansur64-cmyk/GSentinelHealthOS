@@ -1,0 +1,12 @@
+{
+  "production": {
+    "incidents": 0,
+    "outcomes": 0,
+    "audits": 0
+  },
+  "synthetic": {
+    "incidents": 240,
+    "outcomes": 240,
+    "audits": 240
+  }
+}

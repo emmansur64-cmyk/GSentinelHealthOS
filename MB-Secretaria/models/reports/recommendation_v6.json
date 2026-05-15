@@ -1,0 +1,34 @@
+{
+  "version": "v6",
+  "timestamp": "2026-04-19T18:38:15.068542",
+  "confidence": 0.6,
+  "checks": {
+    "accuracy": {
+      "pass": true,
+      "prod": 1.0,
+      "candidate": 1.0,
+      "improvement": 0.0,
+      "note": "Small degradation, but within tolerance"
+    },
+    "overfitting": {
+      "pass": true,
+      "prod": 0.0,
+      "candidate": 0.0,
+      "improvement": 0.0
+    },
+    "stability": {
+      "pass": true,
+      "prod": 0.0,
+      "candidate": 0.0,
+      "message": "Similar stability"
+    },
+    "data": {
+      "pass": true,
+      "prod": 1,
+      "candidate": 1,
+      "message": "More or equal training samples"
+    }
+  },
+  "recommendation": "DEPLOY_WITH_CAUTION",
+  "severity": "CONDITIONAL"
+}

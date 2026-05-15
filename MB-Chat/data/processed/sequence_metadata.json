@@ -1,0 +1,42 @@
+{
+  "sequence_length": 10,
+  "feature_columns": [
+    "event_type_encoded",
+    "source_hash",
+    "action_hash",
+    "diagnosis_hash",
+    "message_hash",
+    "severity_score",
+    "status_score",
+    "outcome_score",
+    "hour_of_day",
+    "day_of_week",
+    "time_since_prev_min",
+    "relative_time_min",
+    "frequency_1h",
+    "frequency_24h",
+    "frequency_7d",
+    "retry_count",
+    "logs_count",
+    "metrics_count",
+    "latency_ms",
+    "errors_last_5m",
+    "cpu_usage",
+    "memory_usage",
+    "success_rate_last_10",
+    "failure_rate_last_10",
+    "audit_failure_rate_last_10",
+    "metadata_size"
+  ],
+  "num_sequences": 711,
+  "num_features": 26,
+  "normal_sequences": 227,
+  "anomalous_sequences": 484,
+  "event_sources": [
+    "incidents",
+    "outcomes",
+    "audit",
+    "memory-incidents"
+  ],
+  "sequence_event_ids_path": "sequence_event_ids.json"
+}

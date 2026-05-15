@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-04-12T23:34:14.314129",
+  "train_accuracy": 1.0,
+  "train_precision": 1.0,
+  "train_recall": 1.0,
+  "train_f1": 1.0,
+  "test_accuracy": 1.0,
+  "test_precision": 1.0,
+  "test_recall": 1.0,
+  "test_f1": 1.0,
+  "cv_mean": 0.0,
+  "cv_std": 0.0,
+  "overfitting_score": 0.0,
+  "num_features": 18,
+  "num_train_samples": 1,
+  "num_test_samples": 1
+}
