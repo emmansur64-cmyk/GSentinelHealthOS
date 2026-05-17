@@ -2,47 +2,72 @@
 Utilidades compartidas - Logging, validación y helpers comunes
 """
 
-import logging
-import sys
 import json
+import logging
+import os
+import sys
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
-from datetime import datetime
 
 # ============ CONFIGURACIÓN DE LOGGING ============
+
+_JSON_LOG_RESERVED = frozenset({
+    "args", "asctime", "created", "exc_info", "exc_text",
+    "filename", "funcName", "levelname", "levelno", "lineno",
+    "module", "msecs", "message", "msg", "name", "pathname",
+    "process", "processName", "relativeCreated", "stack_info",
+    "thread", "threadName",
+})
+
+
+class _JsonFormatter(logging.Formatter):
+    """JSON log formatter for structured log ingestion (Loki / ELK)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        for k, v in record.__dict__.items():
+            if k in _JSON_LOG_RESERVED or k.startswith("_"):
+                continue
+            payload[k] = v if isinstance(v, (str, int, float, bool, type(None))) else str(v)
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=True, default=str)
+
+
+def _use_json_logging() -> bool:
+    env = os.getenv("ENV", "").strip().lower()
+    fmt = os.getenv("LOG_FORMAT", "").strip().lower()
+    return fmt == "json" or (env == "production" and fmt != "text")
+
 
 def setup_logger(
     name: str,
     level: int = logging.INFO,
-    log_file: Optional[str] = None
+    log_file: Optional[str] = None,
 ) -> logging.Logger:
-    """
-    Configura un logger con formato consistente
-    
-    Args:
-        name: Nombre del logger (generalmente __name__)
-        level: Nivel de logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_file: Archivo opcional para guardar logs
-        
-    Returns:
-        Logger configurado
-    """
+    """Configure a named logger. Outputs JSON when LOG_FORMAT=json or ENV=production."""
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger
     logger.setLevel(level)
 
-    # Formato consistente
-    formatter = logging.Formatter(
-        fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
+    if _use_json_logging():
+        formatter: logging.Formatter = _JsonFormatter()
+    else:
+        formatter = logging.Formatter(
+            fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
 
-    # Handler para consola
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # Handler para archivo (opcional)
     if log_file:
         file_handler = logging.FileHandler(log_file)
         file_handler.setFormatter(formatter)

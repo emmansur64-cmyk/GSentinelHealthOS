@@ -8,12 +8,14 @@ import {
   MessageCircle,
   ServerCog,
   Users,
+  UserPlus,
 } from "lucide-react";
 
 import { AdminLogoutButton } from "@/components/admin/admin-logout-button";
 
 const navItems = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
+  { label: "Alta cliente", href: "/admin/clientes/nuevo", icon: UserPlus },
   { label: "Clinicas", href: "/admin/clinics", icon: Building2 },
   { label: "Usuarios", href: "/admin/users", icon: Users },
   { label: "Actividad", href: "/admin/activity", icon: Activity },

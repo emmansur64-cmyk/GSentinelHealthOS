@@ -1,1 +1,0 @@
-"""Image intelligence layer namespace."""

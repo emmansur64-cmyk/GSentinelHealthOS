@@ -1,4 +1,0 @@
-0,manual_intervention
-1,restart_service
-2,retry_with_backoff
-3,scale_up

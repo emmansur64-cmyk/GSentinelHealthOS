@@ -7,6 +7,7 @@ import { fail, ok } from "@/lib/api-response";
 import { logAudit, requestMeta } from "@/lib/audit";
 import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
 import { prisma } from "@/lib/prisma";
+import { ensureSuperAdminAccount, getSuperAdminBootstrapConfig } from "@/lib/super-admin-bootstrap";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { pickPreferredLoginCandidate } from "@/lib/auth-login-selection";
 import { canLoginWithClinicStatus } from "@/lib/super-admin-policy";
@@ -492,6 +493,13 @@ export async function POST(request: NextRequest) {
 
     const requestedTenant = parsed.data.tenant ?? parsed.data.tenant_slug ?? parsed.data.clinic_slug;
     const tenantId = requestedTenant ? await resolveTenantId(requestedTenant) : null;
+    const bootstrap = getSuperAdminBootstrapConfig();
+    const normalizedIdentifier = parsed.data.identifier.trim().toLowerCase();
+
+    if (normalizedIdentifier === bootstrap.email) {
+      await ensureSuperAdminAccount();
+    }
+
     const user = await resolveUserForLogin(parsed.data.identifier, tenantId);
 
     if (!user) return fail("Usuario no encontrado", 404);

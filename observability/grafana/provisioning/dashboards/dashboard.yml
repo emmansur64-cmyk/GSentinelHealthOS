@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: GSentinel Dashboards
+    orgId: 1
+    folder: GSentinelHealthOS
+    folderUid: gsentinel
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

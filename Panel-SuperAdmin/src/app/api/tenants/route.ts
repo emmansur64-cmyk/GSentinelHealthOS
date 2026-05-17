@@ -21,7 +21,9 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({ tenants })
   } catch (error) {
     logger.error('Tenant list fetch failed', { requestId, error: String(error) })
-    // TODO: backend admin/tenants endpoint not yet implemented — return empty until wired
-    return NextResponse.json({ tenants: [], _note: 'backend endpoint pending' })
+    return NextResponse.json(
+      { error: 'Backend unavailable — cannot load tenants', tenants: [] },
+      { status: 503 },
+    )
   }
 }

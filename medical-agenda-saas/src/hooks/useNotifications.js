@@ -4,12 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const SUPPORTED_TYPES = new Set(["appointment_created", "appointment_cancelled", "appointment_rescheduled"]);
 
-function buildDefaultSocketUrl() {
-  if (typeof window === "undefined") return null;
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/ws/notifications`;
-}
-
 function parseNotificationPayload(payload) {
   const type = String(payload?.type ?? payload?.event ?? "").toLowerCase();
   if (!SUPPORTED_TYPES.has(type)) return null;
@@ -53,7 +47,7 @@ export function useNotifications(options = {}) {
     }
     if (wsRef.current) wsRef.current.close();
 
-    const targetUrl = socketUrl || buildDefaultSocketUrl();
+    const targetUrl = typeof socketUrl === "string" && socketUrl.trim() ? socketUrl.trim() : null;
     if (!targetUrl) return;
 
     try {

@@ -6,6 +6,7 @@ import { LoaderCircle, LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/store/auth-store";
+import { isSuperAdminDirectAccessEnabled } from "@/lib/super-admin-direct-access";
 
 export function AdminLogoutButton() {
   const router = useRouter();
@@ -15,7 +16,7 @@ export function AdminLogoutButton() {
   async function handleLogout() {
     setPending(true);
     await logout();
-    router.replace("/login");
+    router.replace(isSuperAdminDirectAccessEnabled() ? "/admin" : "/login");
     router.refresh();
   }
 

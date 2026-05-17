@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { metabrain, type MetaBrainDecision, type MetaBrainSource } from "@/lib/metabrain";
+import { type MetaBrainDecision, type MetaBrainSource } from "@/lib/metabrain";
 import { callBrainDecide } from "@/lib/brain-client";
-import { callGroqDoctorChat } from "@/lib/groq-doctor-chat";
 import { logFunctionalAudit } from "@/lib/audit-functional";
 import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
 import { logServer } from "@/lib/server-logger";
@@ -14,6 +13,8 @@ import { buildMedicalSpecialtyProtocolContext } from "@/lib/medical-specialty-pr
 import { buildMedicalRuntimeContext } from "@/lib/medical-runtime-context";
 import { buildMedicalWebRetrievalContext } from "@/lib/medical-web-retrieval";
 import { DOCTOR_CHAT_PARAMS } from "@/chat/doctor-chat-params";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 type DoctorChatContextInput = {
   patient_id?: string;
@@ -240,6 +241,146 @@ function normalizeMetaBrainSource(source: string | null | undefined): MetaBrainS
   return "ML";
 }
 
+function normalizeForMatch(value: string): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function isStructuredClinicalAuditQuery(message: string): boolean {
+  const normalized = normalizeForMatch(message);
+  const hasCaseTag = normalized.includes("<caso_clinico") || normalized.includes("<mision>");
+  const hasPharmaSignals =
+    normalized.includes("sertralina") ||
+    normalized.includes("sumatriptan") ||
+    normalized.includes("isrs") ||
+    normalized.includes("sindrome serotoninergico");
+  return hasCaseTag || hasPharmaSignals;
+}
+
+function isClinicallyGroundedResponse(query: string, response: string): boolean {
+  const q = normalizeForMatch(query);
+  const r = normalizeForMatch(response);
+
+  if (q.includes("sertralina") && !r.includes("sertralina")) return false;
+  if (q.includes("sumatriptan") && !r.includes("sumatriptan")) return false;
+
+  const requiresInteractionCheck =
+    q.includes("isrs") ||
+    q.includes("sumatriptan") ||
+    q.includes("sindrome serotoninergico") ||
+    q.includes("combinacion");
+
+  if (!requiresInteractionCheck) return true;
+
+  return (
+    r.includes("riesgo") ||
+    r.includes("interaccion") ||
+    r.includes("serotoninergico") ||
+    r.includes("bloque") ||
+    r.includes("contraind")
+  );
+}
+
+async function syncDoctorChatLearningToMbChat(input: {
+  doctorId: string;
+  message: string;
+  response: string;
+  conversationId: string;
+  patientId?: string | null;
+  appointmentId?: string | null;
+  clinicalState?: string | null;
+}): Promise<void> {
+  const apiBaseUrl = String(process.env.API_BASE_URL ?? "http://api:8000").replace(/\/$/, "");
+  const apiKey = (
+    process.env.METABRAIN_API_KEY ??
+    process.env.BRAIN_API_KEY ??
+    process.env.INTERNAL_SERVICES_KEY ??
+    ""
+  ).trim();
+  if (!apiBaseUrl || !apiKey) return;
+
+  const controller = new AbortController();
+  const timeoutMs = 3000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const teachingResponse = await fetch(`${apiBaseUrl}/api/v1/admin/lessons/${encodeURIComponent(input.doctorId)}`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "content-type": "application/json",
+        "x-internal-key": apiKey,
+      },
+      body: JSON.stringify({
+        pattern: String(input.message ?? "").slice(0, 200),
+        correct_action: String(input.response ?? "").slice(0, 500) || "Correccion clinica del medico",
+        category: "flow",
+      }),
+    });
+
+    if (teachingResponse.ok || teachingResponse.status === 409) {
+      logServer("info", "doctor_chat.mb_chat_learning_sync_ok", {
+        conversation_id: input.conversationId,
+        mode: "api_internal_lessons",
+        duplicate: teachingResponse.status === 409,
+      });
+      return;
+    }
+
+    const teachingBody = await teachingResponse.text().catch(() => "");
+    logServer("warn", "doctor_chat.mb_chat_learning_sync_failed", {
+      conversation_id: input.conversationId,
+      mode: "api_internal_lessons",
+      status: teachingResponse.status,
+      response: teachingBody.slice(0, 400),
+    });
+  } catch (error) {
+    logServer("warn", "doctor_chat.mb_chat_learning_sync_failed", {
+      conversation_id: input.conversationId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function persistDoctorChatLearningJsonl(input: {
+  doctorId: string;
+  message: string;
+  response: string;
+  conversationId: string;
+  patientId?: string | null;
+  appointmentId?: string | null;
+}): void {
+  try {
+    const storagePath = (
+      process.env.MEDICAL_CHAT_LEARNING_PATH?.trim() ||
+      "/app/artifacts/mb-chat-learning/medical-chat-learning.jsonl"
+    );
+
+    mkdirSync(dirname(storagePath), { recursive: true });
+
+    const row = {
+      id: `doctor-chat-${Date.now()}`,
+      recordedAt: new Date().toISOString(),
+      source: "doctor_chat_frontend",
+      doctorId: input.doctorId,
+      conversationId: input.conversationId,
+      patientId: input.patientId ?? null,
+      appointmentId: input.appointmentId ?? null,
+      userMessage: String(input.message ?? "").slice(0, 2000),
+      assistantResponse: String(input.response ?? "").slice(0, 4000),
+    };
+
+    appendFileSync(storagePath, `${JSON.stringify(row)}\n`, "utf8");
+  } catch (error) {
+    logServer("warn", "doctor_chat.local_jsonl_persist_failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function getDoctorChatHistory(input: {
   doctorId: string;
   context?: DoctorChatContextInput;
@@ -433,6 +574,19 @@ export async function handleDoctorChat(
   const tenantId = getTenantIdFromContext() ?? "default";
   const resolved = await resolveClinicalContext(input.doctorId, input.context);
   const requestId = normalizeChatRequestId(resolved.metadata?.chat_request_id);
+  const normalizedMessage = String(input.message ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const hasHora = /\bhora\b/.test(normalizedMessage);
+  const hasFecha = /\bfecha\b/.test(normalizedMessage) || /\bdia\b/.test(normalizedMessage);
+  const isDateTimeQuery =
+    (hasHora && hasFecha) ||
+    (normalizedMessage.length <= 40 && (hasHora || hasFecha)) ||
+    /\b(que|cual)\s+(fecha|hora)\s+es\b/.test(normalizedMessage);
 
   if (requestId) {
     const existingDecision = await findCompletedDoctorChatByRequestId({
@@ -531,13 +685,39 @@ export async function handleDoctorChat(
     }),
   };
 
-  const groqResult = await callGroqDoctorChat({
-    role: "DOCTOR",
-    message: input.message,
-    context: sharedContext,
-  });
+  const forcedDateTimeDecision: MetaBrainDecision | null = (() => {
+    if (!isDateTimeQuery) return null;
+    const timezone = String(process.env.MEDICAL_RUNTIME_CONTEXT_TIMEZONE ?? "America/Argentina/Buenos_Aires").trim() || "America/Argentina/Buenos_Aires";
+    const now = new Date();
+    const dateText = new Intl.DateTimeFormat("es-AR", {
+      timeZone: timezone,
+      weekday: "long",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+    const timeText = new Intl.DateTimeFormat("es-AR", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(now);
+    const response = [
+      "Fecha y hora en tiempo real:",
+      `Fecha: ${dateText}`,
+      `Hora: ${timeText}`,
+      `Zona horaria: ${timezone}`,
+    ].join("\n");
+    return {
+      action: "DOCTOR_CHAT_DATETIME_REALTIME",
+      response,
+      confidence: 1,
+      source: "RULES",
+    };
+  })();
 
-  const brainResult = groqResult
+  const brainResult = forcedDateTimeDecision
     ? null
     : await callBrainDecide({
         role: "DOCTOR",
@@ -549,10 +729,10 @@ export async function handleDoctorChat(
         context: sharedContext,
       });
 
-  const degraded = !groqResult && !brainResult;
+  const degraded = !forcedDateTimeDecision && !brainResult;
 
-  const decision: MetaBrainDecision = groqResult
-    ? groqResult
+  const decision: MetaBrainDecision = forcedDateTimeDecision
+    ? forcedDateTimeDecision
     : brainResult
     ? {
         action: brainResult.action,
@@ -560,11 +740,19 @@ export async function handleDoctorChat(
         confidence: brainResult.confidence,
         source: normalizeMetaBrainSource(brainResult.source),
       }
-    : await metabrain.decide({
-        role: "DOCTOR",
-        message: input.message,
-        context: sharedContext,
-      });
+    : {
+        action: "DOCTOR_CHAT_SAFE_BLOCK",
+        response: "No puedo generar una respuesta clinica segura con los datos y servicios disponibles en este momento. Reintentar en unos segundos o escalar para revision clinica manual.",
+        confidence: 0.2,
+        source: "RULES",
+      };
+
+  if (isStructuredClinicalAuditQuery(input.message) && !isClinicallyGroundedResponse(input.message, decision.response)) {
+    decision.action = "DOCTOR_CHAT_CLINICAL_VALIDATION_BLOCK";
+    decision.response = "La respuesta automatica no paso validacion clinica minima para este caso farmacologico. Bloqueo preventivo activado: revisar interaccion de farmacos, riesgo de sindrome serotoninergico y definir alternativa terapeutica segura.";
+    decision.confidence = Math.min(decision.confidence, 0.25);
+    decision.source = "RULES";
+  }
 
   if (degraded) {
     incDoctorChatFallback("brain_unavailable");
@@ -608,6 +796,24 @@ export async function handleDoctorChat(
     source: decision.source,
     action: decision.action,
     degraded,
+  });
+
+  void syncDoctorChatLearningToMbChat({
+    doctorId: input.doctorId,
+    message: input.message,
+    response: decision.response,
+    conversationId: resolved.conversationId,
+    patientId: resolved.patient?.id ?? null,
+    appointmentId: resolved.appointment?.id ?? null,
+    clinicalState: resolved.clinicalState,
+  });
+  persistDoctorChatLearningJsonl({
+    doctorId: input.doctorId,
+    message: input.message,
+    response: decision.response,
+    conversationId: resolved.conversationId,
+    patientId: resolved.patient?.id ?? null,
+    appointmentId: resolved.appointment?.id ?? null,
   });
 
   return {

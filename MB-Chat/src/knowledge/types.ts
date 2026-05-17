@@ -1,3 +1,5 @@
+import type { MedicalImagingResult } from '../ai/medical-imaging.service';
+
 export interface MedicalNormalizedDocument {
   title: string;
   abstract: string;
@@ -34,11 +36,5 @@ export interface MedicalAnswer {
   role: 'PATIENT' | 'DOCTOR';
   confidence: number;
   clarificationRequired?: boolean;
-  imaging?: {
-    findings: string;
-    probability: number;
-    notes: string;
-    assisted: true;
-    provider: string;
-  };
+  imaging?: MedicalImagingResult;
 }

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { GroqSecretariaService } from '../providers/groq-secretaria.service';
 import { AdminAccessGuard } from './admin-access.guard';
 import { AgendaApiDryRunClient } from './agenda-api-dry-run.client';
 import { AgendaApiHttpDryRunClient } from './agenda-api-http-dry-run.client';
@@ -13,6 +14,7 @@ import { ScheduleImportPreviewService } from './schedule-import-preview.service'
     AdminAccessGuard,
     AgendaApiDryRunClient,
     AgendaApiHttpDryRunClient,
+    GroqSecretariaService,
     ImportPreviewAuditService,
     ScheduleImportParserService,
     ScheduleImportPreviewService,

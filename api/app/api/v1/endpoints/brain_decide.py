@@ -32,7 +32,7 @@ from brain.contracts.core_contracts import (
     normalize_assistant_mode,
     validate_runtime_brain_request,
 )
-from MetaBrain.nlu_engine import NLUEngine
+from brain.interpreters.nlu_engine import NLUEngine
 from shared.utils import setup_logger
 
 logger = setup_logger(__name__)

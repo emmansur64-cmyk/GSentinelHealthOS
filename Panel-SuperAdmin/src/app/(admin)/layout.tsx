@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { getCurrentAdmin } from '@/lib/auth'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Topbar } from '@/components/layout/topbar'
+import { ForcePasswordChangeModal } from '@/components/security/force-password-change-modal'
 
 interface AdminLayoutProps {
   children: React.ReactNode
@@ -25,6 +26,7 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
           {children}
         </main>
       </div>
+      <ForcePasswordChangeModal required={Boolean(admin.passwordChangeRequired)} />
     </div>
   )
 }

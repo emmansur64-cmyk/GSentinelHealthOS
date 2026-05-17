@@ -2,9 +2,13 @@ import { NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 
 import { fail, ok } from "@/lib/api-response";
-import { hashPassword } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getAdminClinics, getRequestIp, requireSuperAdminApi, writeAdminAudit } from "@/lib/super-admin";
+import {
+  provisionTenantUser,
+  TenantUserProvisioningConflictError,
+  TenantUserProvisioningValidationError,
+} from "@/lib/tenant-user-provisioning";
 
 export async function GET() {
   const auth = await requireSuperAdminApi();
@@ -26,6 +30,15 @@ export async function POST(request: NextRequest) {
   const ownerFullName = String(body?.owner_full_name ?? "").trim();
   const ownerEmail = String(body?.owner_email ?? "").trim().toLowerCase();
   const ownerPassword = String(body?.owner_password ?? "");
+  const secretaryFullName = String(body?.secretary_full_name ?? "").trim();
+  const secretaryEmail = String(body?.secretary_email ?? "").trim().toLowerCase();
+  const secretaryPassword = String(body?.secretary_password ?? "");
+  const doctorFullName = String(body?.doctor_full_name ?? "").trim();
+  const doctorEmail = String(body?.doctor_email ?? "").trim().toLowerCase();
+  const doctorPassword = String(body?.doctor_password ?? "");
+  const doctorSpecialty = String(body?.doctor_specialty ?? "").trim();
+  const doctorMatricula = String(body?.doctor_matricula ?? "").trim();
+  const doctorAiTag = String(body?.doctor_ai_tag ?? "").trim();
   const slug =
     String(body?.slug ?? name)
       .trim()
@@ -36,10 +49,29 @@ export async function POST(request: NextRequest) {
       .replace(/^-|-$/g, "") || crypto.randomUUID();
 
   try {
-    const passwordHash =
-      ownerFullName && ownerEmail && ownerPassword.length >= 8
-        ? await hashPassword(ownerPassword)
-        : null;
+    if (!ownerFullName || !ownerEmail || ownerPassword.length < 8) {
+      return fail("Datos del usuario dueño incompletos", 422);
+    }
+
+    if ((secretaryFullName || secretaryEmail || secretaryPassword) && (!secretaryFullName || !secretaryEmail || secretaryPassword.length < 8)) {
+      return fail("Para crear acceso de secretaria se requiere nombre, email y contrasena valida", 422);
+    }
+
+    if (
+      doctorFullName ||
+      doctorEmail ||
+      doctorPassword ||
+      doctorSpecialty ||
+      doctorMatricula ||
+      doctorAiTag
+    ) {
+      if (!doctorFullName || !doctorEmail || doctorPassword.length < 8 || !doctorSpecialty || !doctorMatricula) {
+        return fail(
+          "Para crear acceso de doctor se requiere nombre, email, contrasena, especialidad y matricula",
+          422,
+        );
+      }
+    }
 
     const created = await prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
@@ -54,26 +86,42 @@ export async function POST(request: NextRequest) {
         select: { id: true },
       });
 
-      let ownerId: string | null = null;
-      if (passwordHash) {
-        const owner = await tx.user.create({
-          data: {
-            tenant_id: tenant.id,
-            name: ownerFullName,
-            email: ownerEmail,
-            role: "clinic_owner",
-            password_hash: passwordHash,
-            auth_provider: "password",
-            provider: "password",
-            status: "active",
-            active: true,
-          },
-          select: { id: true },
+      const owner = await provisionTenantUser(tx, {
+        tenantId: tenant.id,
+        fullName: ownerFullName,
+        email: ownerEmail,
+        password: ownerPassword,
+        role: "clinic_owner",
+      });
+
+      let secretaryId: string | null = null;
+      if (secretaryFullName && secretaryEmail && secretaryPassword.length >= 8) {
+        const secretary = await provisionTenantUser(tx, {
+          tenantId: tenant.id,
+          fullName: secretaryFullName,
+          email: secretaryEmail,
+          password: secretaryPassword,
+          role: "secretaria",
         });
-        ownerId = owner.id;
+        secretaryId = secretary.id;
       }
 
-      return { id: tenant.id, ownerId };
+      let doctorId: string | null = null;
+      if (doctorFullName && doctorEmail && doctorPassword.length >= 8 && doctorSpecialty && doctorMatricula) {
+        const doctor = await provisionTenantUser(tx, {
+          tenantId: tenant.id,
+          fullName: doctorFullName,
+          email: doctorEmail,
+          password: doctorPassword,
+          role: "doctor",
+          specialty: doctorSpecialty,
+          matricula: doctorMatricula,
+          aiTag: doctorAiTag || null,
+        });
+        doctorId = doctor.id;
+      }
+
+      return { id: tenant.id, ownerId: owner.id, secretaryId, doctorId };
     });
 
     await writeAdminAudit({
@@ -82,12 +130,31 @@ export async function POST(request: NextRequest) {
       targetType: "clinic",
       targetId: created.id,
       clinicId: created.id,
-      metadata: { name, email, owner_user_id: created.ownerId },
+      metadata: {
+        name,
+        email,
+        owner_user_id: created.ownerId,
+        secretary_user_id: created.secretaryId,
+        doctor_user_id: created.doctorId,
+      },
       ipAddress: getRequestIp(request),
     });
 
-    return ok({ id: created.id, owner_user_id: created.ownerId }, 201);
+    return ok({
+      id: created.id,
+      owner_user_id: created.ownerId,
+      secretary_user_id: created.secretaryId,
+      doctor_user_id: created.doctorId,
+    }, 201);
   } catch (error) {
+    if (error instanceof TenantUserProvisioningValidationError) {
+      return fail(error.message, 422, error.details);
+    }
+
+    if (error instanceof TenantUserProvisioningConflictError) {
+      return fail(error.message, 409);
+    }
+
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return fail("Ya existe una clinica o usuario con esos datos", 409, { code: "UNIQUE_CONSTRAINT" });
     }

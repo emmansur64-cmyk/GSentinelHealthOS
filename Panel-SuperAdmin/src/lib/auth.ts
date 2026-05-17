@@ -10,6 +10,7 @@ export interface AdminTokenPayload {
   email: string
   role: AdminRole
   sessionId: string
+  passwordChangeRequired?: boolean
   iat?: number
   exp?: number
 }

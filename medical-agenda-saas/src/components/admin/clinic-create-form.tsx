@@ -27,6 +27,15 @@ export function ClinicCreateForm() {
       owner_full_name: String(formData.get("owner_full_name") ?? "").trim(),
       owner_email: String(formData.get("owner_email") ?? "").trim(),
       owner_password: String(formData.get("owner_password") ?? ""),
+      secretary_full_name: String(formData.get("secretary_full_name") ?? "").trim(),
+      secretary_email: String(formData.get("secretary_email") ?? "").trim(),
+      secretary_password: String(formData.get("secretary_password") ?? ""),
+      doctor_full_name: String(formData.get("doctor_full_name") ?? "").trim(),
+      doctor_email: String(formData.get("doctor_email") ?? "").trim(),
+      doctor_password: String(formData.get("doctor_password") ?? ""),
+      doctor_specialty: String(formData.get("doctor_specialty") ?? "").trim(),
+      doctor_matricula: String(formData.get("doctor_matricula") ?? "").trim(),
+      doctor_ai_tag: String(formData.get("doctor_ai_tag") ?? "").trim(),
     };
 
     try {
@@ -41,7 +50,7 @@ export function ClinicCreateForm() {
       }
 
       event.currentTarget.reset();
-      setMessage("Clinica registrada. El usuario dueño ya puede iniciar sesion.");
+      setMessage("Clinica registrada. Accesos creados segun roles cargados.");
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo registrar la clinica");
@@ -91,6 +100,54 @@ export function ClinicCreateForm() {
         <div className="space-y-2">
           <Label htmlFor="owner_password">Contrasena inicial</Label>
           <Input id="owner_password" name="owner_password" type="password" required minLength={8} />
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-3">
+        <h3 className="text-sm font-semibold text-slate-900">Acceso opcional para Secretaria</h3>
+        <div className="mt-3 grid gap-4 lg:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="secretary_full_name">Nombre secretaria</Label>
+            <Input id="secretary_full_name" name="secretary_full_name" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="secretary_email">Email secretaria</Label>
+            <Input id="secretary_email" name="secretary_email" type="email" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="secretary_password">Contrasena secretaria</Label>
+            <Input id="secretary_password" name="secretary_password" type="password" minLength={8} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+        <h3 className="text-sm font-semibold text-slate-900">Acceso opcional para Doctor</h3>
+        <div className="mt-3 grid gap-4 lg:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="doctor_full_name">Nombre doctor</Label>
+            <Input id="doctor_full_name" name="doctor_full_name" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="doctor_email">Email doctor</Label>
+            <Input id="doctor_email" name="doctor_email" type="email" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="doctor_password">Contrasena doctor</Label>
+            <Input id="doctor_password" name="doctor_password" type="password" minLength={8} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="doctor_specialty">Especialidad</Label>
+            <Input id="doctor_specialty" name="doctor_specialty" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="doctor_matricula">Matricula</Label>
+            <Input id="doctor_matricula" name="doctor_matricula" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="doctor_ai_tag">AI Tag (opcional)</Label>
+            <Input id="doctor_ai_tag" name="doctor_ai_tag" />
+          </div>
         </div>
       </div>
 

@@ -36,8 +36,8 @@ from brain.core.clinical_detector import is_clinical_case
 from brain.core.clinical_parser import parse_case
 from brain.decision_engine import triage_engine
 from brain.decision_engine.local_engine import run_decision, run_dialogue, run_inference
+from brain.interpreters.nlu_engine import NLUEngine
 from brain.routing.triage_eligibility import TriageEligibilityValidator
-from MetaBrain.nlu_engine import NLUEngine
 
 logger = logging.getLogger(__name__)
 

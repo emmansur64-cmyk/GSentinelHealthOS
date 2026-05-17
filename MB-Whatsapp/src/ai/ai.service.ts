@@ -7,7 +7,9 @@ import { KnowledgeRetriever } from '../knowledge/knowledge.retriever';
 import { MedicalAnswer } from '../knowledge/types';
 import { ClassificationService, MedicalUserRole, RoleClassificationResult } from './classification.service';
 import { MedicalImagingService } from './medical-imaging.service';
+import { DomainGuardService } from './domain-guard.service';
 import { buildMedicalTextRefinerPrompt } from './prompts/medical-text-refiner.prompt';
+import { sanitizePhiForLlm } from '../common/utils/phi-sanitizer.util';
 
 @Injectable()
 export class AiService {
@@ -20,6 +22,7 @@ export class AiService {
     private readonly knowledgeRetriever: KnowledgeRetriever,
     private readonly classificationService: ClassificationService,
     private readonly medicalImagingService: MedicalImagingService,
+    private readonly domainGuard: DomainGuardService,
   ) {}
 
   async suggestEnhancement(input: IncidentPayload, decision: BrainDecision): Promise<string> {
@@ -123,7 +126,10 @@ export class AiService {
         })
       : undefined;
 
-    const retrieval = await this.knowledgeRetriever.retrieve(query, topK, country);
+    // Sanitize PHI before the query leaves this system boundary.
+    const sanitizedQuery = sanitizePhiForLlm(query);
+
+    const retrieval = await this.knowledgeRetriever.retrieve(sanitizedQuery, topK, country);
 
     // Rule: never answer without trusted sources.
     if (retrieval.citations.length === 0) {
@@ -137,6 +143,10 @@ export class AiService {
       };
     }
 
+    // Domain guard: MB-Whatsapp disables clinical_diagnosis and doctor_professional.
+    // DOCTOR role gets professional language but no diagnostic reasoning (mirrors domain_guard.py).
+    this.domainGuard.assertCapabilityAllowed('provider.groq.whatsapp');
+
     const roleInstruction =
       classification.role === 'PATIENT'
         ? [
@@ -146,9 +156,11 @@ export class AiService {
             'Usar lenguaje claro y no técnico.',
           ].join('\n')
         : [
-            'Contexto de usuario: MÉDICO/PROFESIONAL.',
-            'Usar lenguaje clínico técnico y estructurado.',
-            'Incluir criterios de evaluación, alternativas diagnósticas y evidencia priorizando guías clínicas.',
+            'Contexto de usuario: PROFESIONAL DE SALUD (canal WhatsApp).',
+            'Usar lenguaje técnico apropiado para profesionales.',
+            'Limitado a orientación e información clínica general basada en evidencia.',
+            'NO emitir diagnóstico definitivo ni alternativas diagnósticas específicas.',
+            'Para análisis clínico profundo, remitir a sistemas especializados con historial completo del paciente.',
           ].join('\n');
 
     const prompt = [
@@ -159,7 +171,7 @@ export class AiService {
       roleInstruction,
       'Devuelve JSON con shape exacto: {"answer":"...","citations":[{"source":"...","url":"...","title":"...","date":"..."}]}',
       '',
-      `Pregunta: ${query}`,
+      `Pregunta: ${sanitizedQuery}`,
       imaging
         ? `Resultado imagen (ASISTENCIA): findings=${imaging.findings}; probability=${imaging.probability}; notes=${imaging.notes}`
         : '',

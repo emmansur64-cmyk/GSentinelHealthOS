@@ -370,6 +370,7 @@ async def reschedule_appointment(
     description="Endpoint interno: Solo para Gateway vía API Key"
 )
 async def validate_slot_gateway(
+    request: Request,
     doctor_id: UUID,
     appointment_time: datetime,
     appointment_service: AppointmentService = Depends(get_appointment_service),
@@ -386,6 +387,11 @@ async def validate_slot_gateway(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Scope requerido: appointments:validate-slot",
+        )
+    if not tenant.clinic_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="X-Clinic-Id requerido para validar slot",
         )
     
     try:

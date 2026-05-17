@@ -18,8 +18,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from MetaBrain.observability_py.event_bus import InMemoryObservabilityEventBus
-from MetaBrain.observability_py.types import ObservabilityEvent
+from api.app.runtime_support.observability.event_bus import InMemoryObservabilityEventBus
+from api.app.runtime_support.observability.types import ObservabilityEvent
 
 MAX_EVENTS = 100
 SCENARIOS = [

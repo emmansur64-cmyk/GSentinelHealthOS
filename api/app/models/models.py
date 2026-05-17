@@ -11,6 +11,91 @@ from shared.security.secrets import hash_phone, normalize_phone
 Base = declarative_base()
 
 
+class PatientConsent(Base):
+    """Registro de consentimiento informado del paciente.
+
+    Requisito RGPD art. 6 / HIPAA §164.508. Una fila por (paciente, tipo_consentimiento).
+    El retiro del consentimiento (GDPR right-to-withdraw) se registra en withdrawn_at;
+    nunca se borra el registro histórico para mantener la trazabilidad.
+    """
+
+    __tablename__ = "patient_consents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    patient_id = Column(UUID(as_uuid=True), ForeignKey("patients.id", ondelete="RESTRICT"), nullable=False, index=True)
+    clinic_id = Column(UUID(as_uuid=True), ForeignKey("clinics.id"), nullable=True, index=True)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id"), nullable=True, index=True)
+
+    # Tipo: data_processing | clinical_history | whatsapp_communications | ai_processing
+    consent_type = Column(String(64), nullable=False)
+    # Versión del texto de política en vigor al momento del consentimiento
+    policy_version = Column(String(32), nullable=False, default="1.0")
+    # Canal por el que se otorgó: web | whatsapp | presencial | api
+    channel = Column(String(32), nullable=False, default="web")
+
+    given_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow())
+    # NULL = consentimiento activo; NOT NULL = revocado
+    withdrawn_at = Column(DateTime, nullable=True)
+    withdrawn_reason = Column(String(255), nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow())
+
+    __table_args__ = (
+        UniqueConstraint("patient_id", "consent_type", "policy_version", name="uq_patient_consent_type_version"),
+        Index("ix_patient_consents_patient_id", "patient_id"),
+        Index("ix_patient_consents_clinic_id", "clinic_id"),
+        Index("ix_patient_consents_given_at", "given_at"),
+        CheckConstraint(
+            "consent_type IN ('data_processing','clinical_history','whatsapp_communications','ai_processing')",
+            name="ck_patient_consents_type_valid",
+        ),
+    )
+
+
+class PatientAccessLog(Base):
+    """Audit trail de acceso a datos PHI de pacientes.
+
+    Registro inmutable: cada lectura, escritura o borrado de datos PHI queda
+    trazado con quién accedió, desde qué contexto y con qué intención.
+    Cumple HIPAA §164.312(b) y RGPD art. 30 (Registro de actividades de tratamiento).
+    """
+
+    __tablename__ = "patient_access_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    timestamp = Column(DateTime, nullable=False, default=lambda: datetime.utcnow(), index=True)
+
+    # Recurso accedido
+    patient_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    clinic_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    client_id = Column(UUID(as_uuid=True), nullable=True)
+
+    # Actor — NUNCA guardar datos de sesión completos
+    accessor_id = Column(String(255), nullable=False)   # user_id o "system/gateway"
+    accessor_role = Column(String(64), nullable=True)   # doctor | admin | gateway | api
+
+    # Operación: read | list | create | update | delete | export | search
+    access_type = Column(String(32), nullable=False)
+    # Contexto de la operación (ruta, endpoint, servicio origen)
+    resource_path = Column(String(255), nullable=True)
+    # ID de trazabilidad del request (correlación con logs de observabilidad)
+    request_id = Column(String(128), nullable=True)
+    # Estado final del acceso
+    success = Column(Boolean, nullable=False, default=True)
+    # Motivo si falló
+    failure_reason = Column(String(255), nullable=True)
+
+    __table_args__ = (
+        Index("ix_patient_access_logs_timestamp", "timestamp"),
+        Index("ix_patient_access_logs_patient_id", "patient_id"),
+        Index("ix_patient_access_logs_accessor_id", "accessor_id"),
+        CheckConstraint(
+            "access_type IN ('read','list','create','update','delete','export','search')",
+            name="ck_patient_access_logs_type_valid",
+        ),
+    )
+
+
 class Patient(Base):
     """Modelo de paciente."""
     
@@ -30,7 +115,9 @@ class Patient(Base):
     # Auditoría
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow())
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
-    
+    # Soft-delete: NULL = activo; NOT NULL = borrado (derecho al olvido RGPD art.17)
+    deleted_at = Column(DateTime, nullable=True, index=True)
+
     # Relaciones
     appointments = relationship("Appointment", back_populates="patient", cascade="all, delete-orphan")
 
@@ -120,7 +207,9 @@ class Appointment(Base):
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow())
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.utcnow(), onupdate=lambda: datetime.utcnow())
     created_by = Column(String(50), nullable=True)  # "gateway", "dashboard", "api"
-    
+    # Soft-delete: NULL = activa; NOT NULL = cancelada/borrada por derecho al olvido
+    deleted_at = Column(DateTime, nullable=True, index=True)
+
     # Relaciones
     doctor = relationship("Doctor", back_populates="appointments")
     patient = relationship("Patient", back_populates="appointments")

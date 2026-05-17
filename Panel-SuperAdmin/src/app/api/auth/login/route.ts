@@ -1,27 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import bcrypt from 'bcryptjs'
 import { signAdminToken, SA_TOKEN_COOKIE, SA_TOKEN_TTL_SECONDS } from '@/lib/auth'
 import { AdminRole } from '@/modules/rbac/roles'
 import { createRequestId } from '@/lib/request-id'
 import { logger } from '@/lib/logger'
+import { validateSuperAdminCredentials } from '@/lib/super-admin-credentials'
 
-// Bootstrap super admin resolved from env vars.
-// TODO: migrate to shared PostgreSQL when tenant/user DB is wired.
-async function validateBootstrapCredentials(
-  email: string,
-  password: string,
-): Promise<{ id: string; role: AdminRole } | null> {
-  const adminEmail = process.env.SUPER_ADMIN_EMAIL
-  const adminHash = process.env.SUPER_ADMIN_PASSWORD_HASH
-
-  if (!adminEmail || !adminHash) return null
-  if (email !== adminEmail) return null
-
-  const valid = await bcrypt.compare(password, adminHash)
-  if (!valid) return null
-
-  return { id: 'bootstrap-super-admin', role: AdminRole.SUPER_ADMIN }
-}
+export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = createRequestId()
@@ -39,7 +23,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'email and password cannot be empty' }, { status: 400 })
     }
 
-    const user = await validateBootstrapCredentials(email.toLowerCase().trim(), password)
+    const user = await validateSuperAdminCredentials(email.toLowerCase().trim(), password)
 
     if (!user) {
       logger.warn('Failed admin login attempt', { requestId, email })
@@ -49,14 +33,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const sessionId = crypto.randomUUID()
     const token = await signAdminToken({
       sub: user.id,
-      email: email.toLowerCase().trim(),
-      role: user.role,
+      email: user.email,
+      role: AdminRole.SUPER_ADMIN,
       sessionId,
+      passwordChangeRequired: user.mustChangePassword,
     })
 
-    logger.info('Admin login successful', { requestId, email, role: user.role })
+    logger.info('Admin login successful', { requestId, email: user.email, role: AdminRole.SUPER_ADMIN })
 
-    const response = NextResponse.json({ success: true, role: user.role })
+    const response = NextResponse.json({
+      success: true,
+      role: AdminRole.SUPER_ADMIN,
+      mustChangePassword: user.mustChangePassword,
+    })
     response.cookies.set({
       name: SA_TOKEN_COOKIE,
       value: token,

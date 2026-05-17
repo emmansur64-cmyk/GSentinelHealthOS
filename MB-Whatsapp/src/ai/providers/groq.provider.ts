@@ -39,7 +39,7 @@ const AI_SAFE_FALLBACK: AiAnalysisResult = {
 @Injectable()
 export class GroqProvider {
   private readonly logger = new Logger(GroqProvider.name);
-  private readonly apiKey = process.env.GROQ_API_KEY;
+  private readonly apiKey = process.env.GROQ_API_KEY_WHATSAPP;
   private readonly modelChain: readonly string[] = buildModelChain();
 
   // Per-model circuit breaker state
@@ -168,7 +168,7 @@ export class GroqProvider {
   // ── Public: run (hint generation) ───────────────────────────────────────────
 
   async run(prompt: string): Promise<string> {
-    if (!this.apiKey) throw new Error('Missing GROQ_API_KEY');
+    if (!this.apiKey) throw new Error('Missing GROQ_API_KEY_WHATSAPP');
 
     const attempted = new Set<string>();
 
@@ -207,7 +207,7 @@ export class GroqProvider {
 
   async runAnalysis(prompt: string): Promise<AiAnalysisResult> {
     if (!this.apiKey) {
-      this.logger.warn('[AI] No API key — returning safe fallback');
+      this.logger.warn('[AI] No GROQ_API_KEY_WHATSAPP — returning safe fallback');
       return AI_SAFE_FALLBACK;
     }
 

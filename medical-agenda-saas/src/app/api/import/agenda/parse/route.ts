@@ -718,31 +718,19 @@ function parseIntegerEnv(value: string | undefined, defaultValue: number, min: n
   return Math.max(min, Math.min(max, parsed));
 }
 
-function getAgendaImportGroqConfig() {
-  const provider = String(
-    process.env.AGENDA_IMPORT_PROVIDER ?? process.env.DOCUMENT_AI_PROVIDER ?? "groq",
-  )
-    .trim()
-    .toLowerCase();
-  const apiKey = String(
-    process.env.AGENDA_IMPORT_GROQ_API_KEY ?? process.env.DOCUMENT_AI_API_KEY ?? "",
-  ).trim();
+export function getAgendaImportGroqConfig() {
+  const apiKey = String(process.env.GROQ_API_KEY_SECRETARIA ?? "").trim();
+  const model = String(process.env.GROQ_MODEL_SECRETARIA ?? "").trim();
   const explicitEnabled = process.env.AGENDA_IMPORT_GROQ_ENABLED;
-  const enabledDefault = provider === "groq" && apiKey.length > 0;
+  const enabledDefault = apiKey.length > 0 && model.length > 0;
   return {
-    enabled: parseBooleanEnv(explicitEnabled, enabledDefault) && apiKey.length > 0,
+    enabled: parseBooleanEnv(explicitEnabled, enabledDefault) && apiKey.length > 0 && model.length > 0,
     requireSuccess: parseBooleanEnv(process.env.AGENDA_IMPORT_GROQ_REQUIRE_SUCCESS, false),
     apiKey,
-    baseUrl: String(
-      process.env.AGENDA_IMPORT_GROQ_BASE_URL ??
-        process.env.DOCUMENT_AI_BASE_URL ??
-        "https://api.groq.com/openai/v1",
-    ).trim(),
-    model: String(
-      process.env.AGENDA_IMPORT_GROQ_MODEL ??
-        process.env.DOCUMENT_AI_MODEL ??
-        "meta-llama/llama-4-scout-17b-16e-instruct",
-    ).trim(),
+    apiKeyEnv: "GROQ_API_KEY_SECRETARIA",
+    baseUrl: "https://api.groq.com/openai/v1",
+    model,
+    modelEnv: "GROQ_MODEL_SECRETARIA",
     timeoutMs: parseIntegerEnv(process.env.AGENDA_IMPORT_GROQ_TIMEOUT_MS, 12_000, 3_000, 60_000),
     maxRetries: parseIntegerEnv(process.env.AGENDA_IMPORT_GROQ_MAX_RETRIES, 0, 0, 2),
   };

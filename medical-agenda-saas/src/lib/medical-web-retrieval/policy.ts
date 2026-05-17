@@ -12,17 +12,32 @@ const NON_ACTIVATION_PATTERNS = [
   /\b(turno|cita|agenda|reprogramar|cancelar|reservar|horario|paciente no vino|disponibilidad)\b/i,
 ];
 
+const CLINICAL_PATTERNS: Array<{ reason: string; pattern: RegExp }> = [
+  { reason: "clinical_assessment", pattern: /\b(paciente|caso|cuadro|clinico|clínico|sintoma|síntoma|signo|diagnostico|diagnóstico|diferencial|conducta|manejo|tratamiento|seguimiento|estudio|laboratorio|imagen|rx|tc|rmn|ecg)\b/i },
+  { reason: "clinical_condition", pattern: /\b(fiebre|dolor|disnea|tos|shock|sepsis|infeccion|infección|hipertension|hipertensión|diabetes|asma|epoc|neumonia|neumonía|ictus|acv|infarto|embarazo|trauma)\b/i },
+  { reason: "clinical_specialty", pattern: /\b(cardiologia|cardiología|pediatria|pediatría|clinica medica|clínica médica|uti|terapia intensiva|neurologia|neurología|psiquiatria|psiquiatría|ginecologia|ginecología|traumatologia|traumatología)\b/i },
+];
+
 export function evaluateMedicalWebRetrievalPolicy(message: string): { shouldRetrieve: boolean; reasons: string[] } {
   const normalized = String(message ?? "").trim();
   if (!normalized) return { shouldRetrieve: false, reasons: [] };
 
-  const reasons = ACTIVATION_PATTERNS.filter((item) => item.pattern.test(normalized)).map((item) => item.reason);
-  if (reasons.length === 0) return { shouldRetrieve: false, reasons: [] };
-
   const onlyNonClinical =
     normalized.length < 80 &&
     NON_ACTIVATION_PATTERNS.some((pattern) => pattern.test(normalized)) &&
-    !/\b(medicamento|evidencia|protocolo|guia|guía|paper|farmaco|fármaco|psiquiatria|psiquiatría)\b/i.test(normalized);
+    !/\b(medicamento|evidencia|protocolo|guia|guía|paper|farmaco|fármaco|psiquiatria|psiquiatría|diagnostico|diagnóstico|tratamiento|paciente)\b/i.test(normalized);
 
-  return { shouldRetrieve: !onlyNonClinical, reasons };
+  if (onlyNonClinical) {
+    return { shouldRetrieve: false, reasons: [] };
+  }
+
+  const explicitReasons = ACTIVATION_PATTERNS
+    .filter((item) => item.pattern.test(normalized))
+    .map((item) => item.reason);
+  const clinicalReasons = CLINICAL_PATTERNS
+    .filter((item) => item.pattern.test(normalized))
+    .map((item) => item.reason);
+  const reasons = Array.from(new Set([...explicitReasons, ...clinicalReasons]));
+
+  return { shouldRetrieve: reasons.length > 0, reasons };
 }

@@ -106,4 +106,38 @@ describe('MedicalAssistantController /api/assistant/chat', () => {
         expect(res.body.response.text).toBe('ok');
       });
   });
+
+  it('doctor sin doctorPatientContext devuelve 400', async () => {
+    await request(app.getHttpServer())
+      .post('/api/assistant/chat')
+      .send({
+        message: 'Paciente con disnea y fiebre',
+        role: MedicalAssistantRole.DOCTOR,
+        mode: MedicalAssistantMode.DOCTOR_PROFESSIONAL,
+      })
+      .expect(400)
+      .expect((res) => {
+        expect(res.body.message).toBe('Invalid chat request payload.');
+      });
+  });
+
+  it('doctor con doctorPatientContext valido responde', async () => {
+    await request(app.getHttpServer())
+      .post('/api/assistant/chat')
+      .send({
+        message: 'Paciente con disnea y fiebre',
+        role: MedicalAssistantRole.DOCTOR,
+        mode: MedicalAssistantMode.DOCTOR_PROFESSIONAL,
+        doctorPatientContext: {
+          doctor_id: 'doc-1',
+          patient_id: 'pat-1',
+          tenant_id: 'tenant-1',
+          encounter_id: 'enc-1',
+        },
+      })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body.response.text).toBe('ok');
+      });
+  });
 });

@@ -10,15 +10,20 @@ El worker Redis se lanza en background al iniciar la app.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import os
+import platform
 import time
+from collections import deque
 from contextlib import asynccontextmanager
+from threading import Lock
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from brain.core.config import settings
@@ -38,6 +43,32 @@ from brain.orchestration.orchestrator import IntelligentOrchestrator
 from brain.orchestration.session_manager import OrchestratorSessionManager
 
 logger = logging.getLogger(__name__)
+
+# ── Lightweight in-process metrics (GIL-safe for CPython) ─────────────────────
+
+_brain_req_total: int = 0
+_brain_req_errors: int = 0
+_brain_latency_window: deque[float] = deque(maxlen=500)
+_brain_metrics_lock = Lock()
+
+
+def _record_brain_request(latency_ms: float, *, error: bool) -> None:
+    global _brain_req_total, _brain_req_errors
+    with _brain_metrics_lock:
+        _brain_req_total += 1
+        if error:
+            _brain_req_errors += 1
+        _brain_latency_window.append(latency_ms)
+
+
+def _avg_latency() -> float:
+    with _brain_metrics_lock:
+        if not _brain_latency_window:
+            return 0.0
+        return round(sum(_brain_latency_window) / len(_brain_latency_window), 2)
+
+
+_PROM_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -186,6 +217,97 @@ app.add_middleware(
 )
 
 
+# ── Request tracking middleware ───────────────────────────────────────────────
+
+@app.middleware("http")
+async def _observability_middleware(request: Request, call_next):
+    t0 = time.perf_counter()
+    response = None
+    error = False
+    try:
+        response = await call_next(request)
+        error = response.status_code >= 500
+        return response
+    except Exception:
+        error = True
+        raise
+    finally:
+        _record_brain_request((time.perf_counter() - t0) * 1000, error=error)
+
+
+# ── Prometheus /metrics ────────────────────────────────────────────────────────
+
+@app.get("/metrics", include_in_schema=False, tags=["ops"])
+async def brain_prometheus_metrics() -> PlainTextResponse:
+    """Prometheus scrape endpoint for the brain orchestrator."""
+    with _brain_metrics_lock:
+        total = _brain_req_total
+        errors = _brain_req_errors
+    avg_ms = _avg_latency()
+
+    lines: list[str] = [
+        "# HELP gsentinel_brain_http_requests_total Total HTTP requests to brain orchestrator",
+        "# TYPE gsentinel_brain_http_requests_total counter",
+        f"gsentinel_brain_http_requests_total {total}",
+        "",
+        "# HELP gsentinel_brain_http_errors_total Total HTTP 5xx errors in brain orchestrator",
+        "# TYPE gsentinel_brain_http_errors_total counter",
+        f"gsentinel_brain_http_errors_total {errors}",
+        "",
+        "# HELP gsentinel_brain_http_avg_latency_ms Rolling average latency over last 500 requests (ms)",
+        "# TYPE gsentinel_brain_http_avg_latency_ms gauge",
+        f"gsentinel_brain_http_avg_latency_ms {avg_ms:.3f}",
+        "",
+        "# HELP gsentinel_brain_info Static brain service metadata",
+        "# TYPE gsentinel_brain_info gauge",
+        f'gsentinel_brain_info{{python="{platform.python_version()}",env="{os.getenv("ENV","unknown")}"}} 1',
+    ]
+
+    try:
+        import psutil  # optional
+        mem = psutil.virtual_memory()
+        cpu = psutil.cpu_percent(interval=None)
+        lines += [
+            "",
+            "# HELP gsentinel_brain_memory_percent Host memory usage (%)",
+            "# TYPE gsentinel_brain_memory_percent gauge",
+            f"gsentinel_brain_memory_percent {mem.percent:.1f}",
+            "",
+            "# HELP gsentinel_brain_cpu_percent Host CPU usage (%)",
+            "# TYPE gsentinel_brain_cpu_percent gauge",
+            f"gsentinel_brain_cpu_percent {cpu:.1f}",
+        ]
+    except ImportError:
+        pass
+
+    return PlainTextResponse("\n".join(lines) + "\n", media_type=_PROM_CONTENT_TYPE)
+
+
+# ── /health/system ────────────────────────────────────────────────────────────
+
+@app.get("/health/system", tags=["ops"])
+async def brain_health_system() -> dict:
+    """Host system resource snapshot for the brain orchestrator container."""
+    info: dict[str, Any] = {
+        "python_version": platform.python_version(),
+        "platform": platform.system(),
+        "cpu_count": os.cpu_count(),
+    }
+    status_val = "healthy"
+    try:
+        import psutil  # optional
+        mem = psutil.virtual_memory()
+        info["memory_total_mb"] = round(mem.total / 1024 / 1024, 1)
+        info["memory_available_mb"] = round(mem.available / 1024 / 1024, 1)
+        info["memory_percent"] = mem.percent
+        info["cpu_percent"] = psutil.cpu_percent(interval=0.1)
+        if mem.percent > 90 or info["cpu_percent"] > 95:
+            status_val = "degraded"
+    except ImportError:
+        info["note"] = "psutil not installed"
+    return {"status": status_val, "detail": info}
+
+
 # ── Autenticación de clave interna ────────────────────────────────────────────
 
 def _verify_internal_key(x_internal_key: str = Header(default="")) -> None:
@@ -193,7 +315,7 @@ def _verify_internal_key(x_internal_key: str = Header(default="")) -> None:
     expected = settings.internal_services_key
     if not expected:
         return  # Sin clave configurada: modo desarrollo, sin restricción
-    if x_internal_key != expected:
+    if not hmac.compare_digest(x_internal_key, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="X-Internal-Key inválida o ausente.",

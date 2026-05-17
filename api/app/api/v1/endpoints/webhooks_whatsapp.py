@@ -26,6 +26,7 @@ from brain.contracts.core_contracts import (
 import httpx
 from shared.config import WHATSAPP_ACCESS_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_VERIFY_TOKEN
 from shared.security.secrets import SecretEncryptionError, decrypt_secret
+from shared.logging_utils import mask_phone
 from shared.utils import setup_logger
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -99,7 +100,7 @@ async def _send_whatsapp_reply(
                     extra={"status": resp.status_code, "body": _safe_external_body(resp.text)},
                 )
             else:
-                logger.info("whatsapp_reply_sent", extra={"to": to_phone, "phone_number_id": resolved_phone_number_id})
+                logger.info("whatsapp_reply_sent", extra={"to": mask_phone(to_phone), "phone_number_id": resolved_phone_number_id})
     except Exception as exc:
         logger.exception("whatsapp_send_error", extra={"error": str(exc)})
 
@@ -198,7 +199,15 @@ async def receive_whatsapp_webhook(
         logger.warning("whatsapp_account_not_found", extra={"phone_number_id": parsed.phone_number_id})
         raise HTTPException(status_code=404, detail="whatsapp_account_not_found")
 
-    if app_secret and not WhatsAppWebhookService(signing_secret=app_secret).verify_signature(body, signature):
+    # Fail-closed: reject any webhook when no signing secret is available.
+    # A missing secret means we cannot verify authenticity — never process unauthenticated webhooks.
+    if not app_secret:
+        logger.error(
+            "webhook_rejected_no_signing_secret",
+            extra={"clinic_id": clinic_id, "phone_number_id": parsed.phone_number_id},
+        )
+        raise HTTPException(status_code=503, detail="webhook_signing_not_configured")
+    if not WhatsAppWebhookService(signing_secret=app_secret).verify_signature(body, signature):
         logger.warning(
             "webhook_signature_invalid",
             extra={"clinic_id": clinic_id, "phone_number_id": parsed.phone_number_id},

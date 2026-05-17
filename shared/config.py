@@ -34,6 +34,7 @@ REDIS_URL = os.getenv(
 )
 REDIS_SENTINELS = os.getenv("REDIS_SENTINELS", "")
 REDIS_SENTINEL_MASTER = os.getenv("REDIS_SENTINEL_MASTER", "mymaster")
+REDIS_SENTINEL_PASSWORD = os.getenv("REDIS_SENTINEL_PASSWORD", "")
 
 
 def create_redis_master_client(decode_responses: bool = True):
@@ -49,11 +50,14 @@ def create_redis_master_client(decode_responses: bool = True):
         if sentinels:
             # socket_timeout solo aplica al handshake con los centinelas;
             # master_for hereda socket_timeout=None (sin límite) para BRPOP blocking.
-            sentinel = Sentinel(sentinels, socket_timeout=1.0)
+            # sentinel_kwargs autentica la conexión al propio proceso Sentinel.
+            sentinel_kwargs = {"password": REDIS_SENTINEL_PASSWORD} if REDIS_SENTINEL_PASSWORD else {}
+            sentinel = Sentinel(sentinels, socket_timeout=1.0, sentinel_kwargs=sentinel_kwargs)
             return sentinel.master_for(
                 REDIS_SENTINEL_MASTER,
                 socket_timeout=None,
                 decode_responses=decode_responses,
+                password=REDIS_SENTINEL_PASSWORD or None,
             )
     if not REDIS_URL:
         raise RuntimeError("REDIS_URL no configurado")

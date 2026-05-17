@@ -73,7 +73,7 @@ git pull --ff-only
 
 [[ -f .env ]] || die "No existe .env en ${APP_DIR}. Crear el archivo antes de deployar."
 [[ -f docker-compose.yml ]] || die "No existe docker-compose.yml en ${APP_DIR}"
-[[ -f MetaBrain/nlu_engine.py ]] || die "No existe MetaBrain/nlu_engine.py. MetaBrain debe estar presente."
+[[ -f MB-Chat/nlu_engine.py ]] || die "No existe MB-Chat/nlu_engine.py. MB-Chat debe estar presente."
 validate_env
 
 log "Construyendo imagenes principales"

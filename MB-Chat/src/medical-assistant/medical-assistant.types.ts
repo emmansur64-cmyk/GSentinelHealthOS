@@ -3,17 +3,22 @@ import { MedicalUserRole } from '../ai/classification.service';
 import { IncidentResult } from '../common/types/brain.types';
 import { MedicalImagingResult } from '../ai/medical-imaging.service';
 import {
+  IsBoolean,
+  IsDefined,
   IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  ValidateNested,
   ValidateIf,
   Max,
   MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ActivePatientClinicalHistory, DoctorPatientContext } from './doctor-patient-context.contract';
 
 export enum MedicalAssistantRole {
   PATIENT = 'PATIENT',
@@ -32,7 +37,92 @@ export enum MedicalAssistantImageMimeType {
   WEBP = 'image/webp',
 }
 
+export class DoctorPatientContextDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  doctor_id!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  patient_id!: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  tenant_id?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  clinic_id?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  encounter_id?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  appointment_id?: string;
+}
+
+export class ActivePatientClinicalHistoryDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  doctor_id!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  patient_id!: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  tenant_id?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  clinic_id?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  encounter_id?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  appointment_id?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2500)
+  clinical_summary!: string;
+
+  @IsBoolean()
+  is_sanitized!: boolean;
+}
+
 export class MedicalAssistantChatDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  sessionId?: string;
+
   @ValidateIf((obj) => typeof obj.query !== 'string' || obj.query.trim().length === 0)
   @IsString()
   @IsNotEmpty()
@@ -98,9 +188,21 @@ export class MedicalAssistantChatDto {
   @IsOptional()
   @IsEnum(MedicalAssistantMode)
   mode?: MedicalAssistantMode;
+
+  @ValidateIf((obj) => obj.role === MedicalAssistantRole.DOCTOR)
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => DoctorPatientContextDto)
+  doctorPatientContext?: DoctorPatientContextDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ActivePatientClinicalHistoryDto)
+  activePatientClinicalHistory?: ActivePatientClinicalHistoryDto;
 }
 
 export interface MedicalAssistantRequest {
+  sessionId?: string;
   message: string;
   query?: string;
   country?: string;
@@ -113,6 +215,8 @@ export interface MedicalAssistantRequest {
   channel?: string;
   role?: MedicalAssistantRole;
   mode?: MedicalAssistantMode;
+  doctorPatientContext?: DoctorPatientContext;
+  activePatientClinicalHistory?: ActivePatientClinicalHistory;
 }
 
 export interface MedicalAssistantResponse {
@@ -134,5 +238,11 @@ export interface MedicalAssistantResponse {
     action: string;
     reason: string;
     dryRun: boolean;
+  };
+  learning?: {
+    enabled: boolean;
+    action: string;
+    confidence: number;
+    mode: 'controlled_dry_run';
   };
 }

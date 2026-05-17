@@ -1,0 +1,172 @@
+{
+  "id": null,
+  "uid": "gsentinel-overview",
+  "title": "GSentinelHealthOS — Overview",
+  "tags": ["gsentinel", "observability"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "API — Requests (1m rate)",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }, "unit": "reqps" }, "overrides": [] },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(gsentinel_api_requests_total[1m])", "legendFormat": "API req/s" }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "API — Last Latency (ms)",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 500 }, { "color": "red", "value": 2000 }] }, "unit": "ms" }, "overrides": [] },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "gsentinel_api_last_request_latency_ms", "legendFormat": "Last latency" }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Brain — Requests (1m rate)",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }, "unit": "reqps" }, "overrides": [] },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(gsentinel_brain_http_requests_total[1m])", "legendFormat": "Brain req/s" }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Brain — Avg Latency (ms)",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1000 }, { "color": "red", "value": 5000 }] }, "unit": "ms" }, "overrides": [] },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "gsentinel_brain_http_avg_latency_ms", "legendFormat": "Avg latency" }]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Groq — Consecutive Failures",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 }] }, "unit": "short" }, "overrides": [] },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "gsentinel_groq_consecutive_failures", "legendFormat": "Groq consecutive failures" }]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Redis — Degraded (s)",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 60 }] }, "unit": "s" }, "overrides": [] },
+      "targets": [{ "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "gsentinel_redis_degraded_seconds", "legendFormat": "Redis degraded" }]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Request Rate — API & Brain",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 2 }, "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(gsentinel_api_requests_total[1m])", "legendFormat": "API" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(gsentinel_brain_http_requests_total[1m])", "legendFormat": "Brain" }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Error Rate — API & Brain",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 2 }, "unit": "reqps", "color": { "fixedColor": "red", "mode": "fixed" } }, "overrides": [{ "matcher": { "id": "byName", "options": "Brain errors" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] }] },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(gsentinel_brain_http_errors_total[1m])", "legendFormat": "Brain errors" }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Groq — Calls & Tokens",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(gsentinel_groq_calls_total[5m])", "legendFormat": "Calls/s" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(gsentinel_groq_tokens_total[5m])", "legendFormat": "Tokens/s" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(gsentinel_groq_errors_total[5m])", "legendFormat": "Errors/s" }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Groq — Avg Latency (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "tooltip": { "mode": "single" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 2 }, "unit": "ms" }, "overrides": [] },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "gsentinel_groq_avg_latency_ms", "legendFormat": "Groq avg latency" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "gsentinel_brain_http_avg_latency_ms", "legendFormat": "Brain avg latency" }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Brain — Memory & CPU",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 2 }, "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "gsentinel_brain_memory_percent", "legendFormat": "Memory %" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "gsentinel_brain_cpu_percent", "legendFormat": "CPU %" }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Redis — Circuit Events",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list", "placement": "bottom" } },
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(gsentinel_redis_connection_errors_total[5m])", "legendFormat": "Connection errors/s" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(gsentinel_redis_circuit_opens_total[5m])", "legendFormat": "Circuit opens/s" },
+        { "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "rate(gsentinel_redis_fallback_total[5m])", "legendFormat": "Fallbacks/s" }
+      ]
+    },
+    {
+      "id": 40,
+      "type": "logs",
+      "title": "Live Logs — All GSentinel Containers",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 28 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLogMessage": false, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" },
+      "targets": [{ "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=\"gsentinel\"}", "legendFormat": "" }]
+    },
+    {
+      "id": 41,
+      "type": "logs",
+      "title": "Error Logs Only",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLogMessage": false, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" },
+      "targets": [{ "datasource": { "type": "loki", "uid": "loki" }, "expr": "{job=\"gsentinel\"} |= `\"level\":\"ERROR\"` or {job=\"gsentinel\"} |= `\"level\":\"CRITICAL\"`", "legendFormat": "" }]
+    }
+  ]
+}

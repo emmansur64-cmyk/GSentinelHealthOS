@@ -185,7 +185,7 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
-      setChatMessages(data.messages);
+      setChatMessages(data.messages ?? []);
     } catch (error) {
       if (controller.signal.aborted) return;
       toast.error(error instanceof Error ? error.message : "No se pudo cargar el historial del chat clinico");
@@ -261,16 +261,20 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
 
   useEffect(() => {
     const wsBase = process.env.NEXT_PUBLIC_REALTIME_WS_URL;
-    const wsUrl = wsBase?.trim()
-      ? `${wsBase.replace(/\/$/, "")}/ws/notifications`
-      : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws/notifications`;
+    if (!wsBase?.trim()) return;
+
+    const wsUrl = `${wsBase.replace(/\/$/, "")}/ws/notifications`;
 
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let shouldReconnect = true;
 
     const connect = () => {
-      socket = new WebSocket(wsUrl);
+      try {
+        socket = new WebSocket(wsUrl);
+      } catch {
+        return;
+      }
 
       socket.onmessage = (event) => {
         try {
@@ -295,6 +299,10 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
       socket.onclose = () => {
         if (!shouldReconnect) return;
         reconnectTimer = setTimeout(connect, 2000);
+      };
+
+      socket.onerror = () => {
+        socket?.close();
       };
     };
 
@@ -534,6 +542,7 @@ export function DoctorDashboard({ doctorId }: { doctorId: string }) {
           source: result.source,
         },
       ]);
+      void loadChatHistory();
       void loadChatSessions();
     } catch (error) {
       if (controller.signal.aborted) return;

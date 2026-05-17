@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
 from api.app.core.security import InternalAuth, UserAuth, get_current_user, validate_api_key
@@ -43,6 +43,8 @@ logger = setup_logger(__name__)
 _role_guard = RoleChecker(["admin", "receptionist"])
 _doctor_role_guard = RoleChecker(["admin", "doctor"])
 _admin_guard = RoleChecker(["admin"])
+_DOCTOR_LESSON_NAMESPACE = uuid.UUID("8e8af5fb-143d-4d63-9b72-2d959f2b6b7f")
+_RUNTIME_LESSONS_TABLE = "bot_knowledge_runtime"
 
 
 class ToggleBotPauseRequest(BaseModel):
@@ -223,6 +225,69 @@ def _to_admin_whatsapp_response(account: ClientWhatsAppAccount) -> AdminClientWh
     )
 
 
+def _normalize_doctor_uuid(doctor_id_raw: str) -> uuid.UUID:
+    """Normaliza identificador de medico a UUID estable.
+
+    Acepta UUID nativo o string legacy (ej: "lab-doctor") y mapea legacy a UUID5
+    deterministico para mantener consistencia de lectura/escritura.
+    """
+    doctor_id_clean = str(doctor_id_raw or "").strip()
+    if not doctor_id_clean:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ID de médico inválido",
+        )
+    try:
+        return uuid.UUID(doctor_id_clean)
+    except (ValueError, TypeError):
+        return uuid.uuid5(_DOCTOR_LESSON_NAMESPACE, doctor_id_clean.lower())
+
+
+async def _create_bot_lesson_record(
+    *,
+    db: AsyncSession,
+    doctor_id: uuid.UUID,
+    payload: BotLessonCreate,
+) -> dict:
+    lesson_id = uuid.uuid4()
+    now = datetime.utcnow()
+    try:
+        await db.execute(
+            text(
+                f"""
+                INSERT INTO {_RUNTIME_LESSONS_TABLE}
+                (id, pattern, correct_action, category, doctor_id, created_at, updated_at)
+                VALUES (:id, :pattern, :correct_action, :category, :doctor_id, :created_at, :updated_at)
+                """
+            ),
+            {
+                "id": lesson_id,
+                "pattern": payload.pattern,
+                "correct_action": payload.correct_action,
+                "category": payload.category,
+                "doctor_id": doctor_id,
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ya existe una lección con este patrón para este médico",
+        )
+    return {
+        "id": lesson_id,
+        "pattern": payload.pattern,
+        "correct_action": payload.correct_action,
+        "category": payload.category,
+        "doctor_id": doctor_id,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
 @router.post("/bot/toggle-pause", dependencies=[Depends(_role_guard)])
 async def toggle_bot_pause(payload: ToggleBotPauseRequest) -> dict:
     redis_client = Redis.from_url(REDIS_URL, decode_responses=True)
@@ -263,26 +328,21 @@ async def teach_bot_lesson(
             detail="El usuario actual no está asociado a un consultorio"
         )
     
-    try:
-        doctor_id = uuid.UUID(doctor_id_str)
-    except (ValueError, AttributeError, TypeError):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="ID de médico inválido"
-        )
-    
-    # Crear la lección
-    lesson = BotLesson(
-        pattern=payload.pattern,
-        correct_action=payload.correct_action,
-        category=payload.category,
-        doctor_id=doctor_id,
-    )
-    
-    db.add(lesson)
-    await db.commit()
-    await db.refresh(lesson)
-    
+    doctor_id = _normalize_doctor_uuid(doctor_id_str)
+    lesson = await _create_bot_lesson_record(db=db, doctor_id=doctor_id, payload=payload)
+    return BotLessonResponse.model_validate(lesson)
+
+
+@router.post("/lessons/{doctor_id}", response_model=BotLessonResponse)
+async def create_bot_lesson_internal(
+    doctor_id: str,
+    payload: BotLessonCreate,
+    _service_auth: InternalAuth = Depends(validate_api_key),
+    db: AsyncSession = Depends(get_db),
+) -> BotLessonResponse:
+    """Alta interna de lecciones para aprendizaje continuo desde servicios."""
+    doctor_uuid = _normalize_doctor_uuid(doctor_id)
+    lesson = await _create_bot_lesson_record(db=db, doctor_id=doctor_uuid, payload=payload)
     return BotLessonResponse.model_validate(lesson)
 
 
@@ -300,22 +360,21 @@ async def get_bot_lessons(
     
     Acceso: Servicios internos (Gateway, Brain)
     """
-    try:
-        doctor_uuid = uuid.UUID(doctor_id)
-    except (ValueError, TypeError):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="ID de médico inválido"
-        )
+    doctor_uuid = _normalize_doctor_uuid(doctor_id)
     
-    stmt = select(BotLesson).where(
-        BotLesson.doctor_id == doctor_uuid
-    ).order_by(BotLesson.created_at.desc())
-    
-    result = await db.execute(stmt)
-    lessons = result.scalars().all()
-    
-    return [BotLessonResponse.model_validate(lesson) for lesson in lessons]
+    result = await db.execute(
+        text(
+            f"""
+            SELECT id, pattern, correct_action, category, doctor_id, created_at, updated_at
+            FROM {_RUNTIME_LESSONS_TABLE}
+            WHERE doctor_id = :doctor_id
+            ORDER BY created_at DESC
+            """
+        ),
+        {"doctor_id": doctor_uuid},
+    )
+    rows = result.mappings().all()
+    return [BotLessonResponse.model_validate(dict(row)) for row in rows]
 
 
 @router.get(

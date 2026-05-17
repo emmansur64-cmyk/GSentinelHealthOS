@@ -10,10 +10,10 @@ from brain.core.decision_core import process_input as _decision_core_process
 from brain.core.state_manager import StateManager
 from brain.decision_engine import triage_engine
 from brain.integration.api_client import APIClient, APIClientError
+from brain.interpreters.nlu_engine import NLUEngine
 from brain.services.appointment_scheduler_service import AppointmentSchedulerService
 from brain.services.whatsapp_appointment_intake_service import WhatsAppAppointmentIntakeService
 from brain.ml import no_show as no_show_engine
-from MetaBrain.nlu_engine import NLUEngine
 from brain.ml.no_show_predictor import predictor as no_show_predictor
 from brain.orchestration.orchestrator import _contains_security_keyword, _SAFE_REDIRECT
 from shared.utils import setup_logger

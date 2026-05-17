@@ -1,0 +1,72 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: gsentinel
+    env: production
+
+scrape_configs:
+  # ── GSentinelHealthOS API (FastAPI, port 8000) ──────────────────────────────
+  - job_name: gsentinel-api
+    static_configs:
+      - targets: ['api:8000']
+        labels:
+          service: api
+    metrics_path: /api/metrics
+    scrape_interval: 15s
+
+  # ── Brain Orchestrator (FastAPI, port 8001) ─────────────────────────────────
+  - job_name: gsentinel-brain
+    static_configs:
+      - targets: ['brain:8001']
+        labels:
+          service: brain
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # ── Gateway (FastAPI, port 8002) ────────────────────────────────────────────
+  - job_name: gsentinel-gateway
+    static_configs:
+      - targets: ['gateway:8002']
+        labels:
+          service: gateway
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # ── AI Microservices ─────────────────────────────────────────────────────────
+  - job_name: gsentinel-dialogue-engine
+    static_configs:
+      - targets: ['dialogue-engine:8010']
+        labels:
+          service: dialogue-engine
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  - job_name: gsentinel-inference-service
+    static_configs:
+      - targets: ['inference-service:8011']
+        labels:
+          service: inference-service
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  - job_name: gsentinel-decision-service
+    static_configs:
+      - targets: ['decision-service:8012']
+        labels:
+          service: decision-service
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  - job_name: gsentinel-nlg-service
+    static_configs:
+      - targets: ['nlg-service:8013']
+        labels:
+          service: nlg-service
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # ── Prometheus self-scrape ───────────────────────────────────────────────────
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']

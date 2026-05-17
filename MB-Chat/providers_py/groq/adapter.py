@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from MetaBrain.providers_py.provider_health import disabled_provider_health
-from MetaBrain.providers_py.provider_response import build_provider_response
-from MetaBrain.providers_py.types import ProviderAdapter, ProviderCapabilities, ProviderRequest, ProviderResponse
+from ..provider_health import disabled_provider_health
+from ..provider_response import build_provider_response
+from ..types import ProviderAdapter, ProviderCapabilities, ProviderRequest, ProviderResponse
 
 
 class DisabledGroqAdapter(ProviderAdapter):

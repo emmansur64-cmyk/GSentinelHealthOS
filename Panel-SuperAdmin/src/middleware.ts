@@ -33,7 +33,14 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const secret = new TextEncoder().encode(process.env.SUPER_ADMIN_JWT_SECRET ?? '')
+    const configuredSecret = (process.env.SUPER_ADMIN_JWT_SECRET ?? '').trim()
+    if (!configuredSecret) {
+      // Fail-closed: without a configured signing secret, auth is invalid by definition.
+      const response = NextResponse.redirect(new URL('/login', request.url))
+      response.cookies.delete(SA_TOKEN_COOKIE)
+      return response
+    }
+    const secret = new TextEncoder().encode(configuredSecret)
     const { payload } = await jwtVerify(token, secret)
 
     const response = NextResponse.next()

@@ -3,7 +3,7 @@
 Todos los adaptadores son 100% offline — sin llamadas HTTP externas.
 
 Implementa:
-  - DialogueClient   → adaptador local via NLUEngine (MetaBrain)
+    - DialogueClient   → adaptador local via NLUEngine
   - InferenceClient  → adaptador local rule-based (local_engine.run_inference)
   - DecisionClient   → motor de decisión local (local_engine.run_decision)
   - NLGClient        → adaptador local rule-based (LinguisticEngine)
@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from brain.decision_engine.local_engine import run_decision, run_dialogue, run_inference
-from MetaBrain.nlu_engine import NLUEngine
+from brain.interpreters.nlu_engine import NLUEngine
 from brain.orchestration.linguistic_engine import LinguisticEngine
 
 from shared.utils.resilience import (
@@ -94,7 +94,7 @@ class ServiceError(Exception):
 # ── Adaptadores locales ───────────────────────────────────────────────────────
 
 class DialogueClient:
-    """Adaptador local para dialogue-engine — usa NLUEngine (MetaBrain).
+    """Adaptador local para dialogue-engine — usa NLUEngine local.
 
     Contrato de salida (mismo que el antiguo HTTP):
       { intent, entities, next_step, requires_inference, context, confidence }

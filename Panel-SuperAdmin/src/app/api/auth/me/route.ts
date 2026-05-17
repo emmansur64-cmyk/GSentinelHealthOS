@@ -12,5 +12,6 @@ export async function GET(): Promise<NextResponse> {
     id: admin.sub,
     email: admin.email,
     role: admin.role,
+    mustChangePassword: Boolean(admin.passwordChangeRequired),
   })
 }

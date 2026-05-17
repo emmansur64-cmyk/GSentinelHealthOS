@@ -11,6 +11,7 @@ _PLACEHOLDER_SECRETS = {
     "change-me-brain-key",
     "gateway-secret-key-change-production",
     "brain-secret-key-change-production",
+    "change-me-panel-admin-key",
 }
 
 
@@ -83,6 +84,8 @@ class Settings(BaseSettings):
     auth_cookie_samesite: str = Field(default="lax", alias="AUTH_COOKIE_SAMESITE")
     gateway_api_key: str = Field(default="", alias="GATEWAY_API_KEY")
     brain_api_key: str = Field(default="", alias="BRAIN_API_KEY")
+    # Panel Super-Admin internal key — optional, only required when panel is deployed
+    panel_admin_api_key: str = Field(default="", alias="PANEL_ADMIN_API_KEY")
 
     # === LOGGING ===
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")

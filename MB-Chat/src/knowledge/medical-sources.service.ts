@@ -3,6 +3,15 @@ import { MedicalNormalizedDocument } from './types';
 
 const CACHE_TTL_MS = 30 * 60_000;
 
+const DEFAULT_CLINICAL_GUIDELINE_FEEDS: Record<string, string[]> = {
+  AR: [
+    'https://www.sati.org.ar/guias/feed/',
+  ],
+  DEFAULT: [
+    'https://www.who.int/feeds/entity/health-topics/news/en/rss.xml',
+  ],
+};
+
 interface CacheEntry {
   expiresAt: number;
   value: MedicalNormalizedDocument[];
@@ -154,7 +163,8 @@ export class MedicalSourcesService {
   ): Promise<MedicalNormalizedDocument[]> {
     const mappingRaw = process.env.CLINICAL_GUIDELINE_FEEDS ?? '';
     const map = this.parseGuidelineMapping(mappingRaw);
-    const feeds = map[country.toUpperCase()] ?? map.DEFAULT ?? [];
+    const countryKey = country.toUpperCase();
+    const feeds = map[countryKey] ?? DEFAULT_CLINICAL_GUIDELINE_FEEDS[countryKey] ?? map.DEFAULT ?? DEFAULT_CLINICAL_GUIDELINE_FEEDS.DEFAULT ?? [];
 
     if (!feeds.length) return [];
 

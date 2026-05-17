@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentAdmin } from '@/lib/auth'
 import { canAccess, AdminRole } from '@/modules/rbac/roles'
 import { updateTenant } from '@/services/admin-api/admin-api.client'
+import { createAuditLog } from '@/services/admin-api/admin-api.client'
 import { createRequestId } from '@/lib/request-id'
 import { logger } from '@/lib/logger'
 import type { TenantUpdatePayload } from '@/modules/tenants/tenant.types'
@@ -23,10 +24,22 @@ export async function PATCH(
   try {
     const body: TenantUpdatePayload = await req.json()
     const updated = await updateTenant(id, body)
+
+    await createAuditLog({
+      actorId: admin.sub,
+      actorEmail: admin.email,
+      actorRole: admin.role,
+      action: 'TENANT_UPDATE',
+      resourceType: 'tenant',
+      resourceId: id,
+      metadata: { changes: body },
+      requestId,
+    })
+
     logger.info('Tenant updated', { requestId, adminId: admin.sub, tenantId: id, payload: body })
     return NextResponse.json({ tenant: updated })
   } catch (error) {
     logger.error('Tenant update failed', { requestId, tenantId: id, error: String(error) })
-    return NextResponse.json({ error: 'Update failed — backend endpoint pending' }, { status: 503 })
+    return NextResponse.json({ error: 'Backend unavailable — update failed' }, { status: 503 })
   }
 }

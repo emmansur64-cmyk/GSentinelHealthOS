@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { DoctorChatHub } from "@/components/doctor-chat-hub";
+import { DoctorDashboard } from "@/components/doctor-dashboard";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser, hasRole } from "@/lib/server-auth";
 
@@ -18,5 +18,5 @@ export default async function DoctorChatPage() {
     return <p className="text-sm text-red-600">No existe DoctorProfile para este usuario.</p>;
   }
 
-  return <DoctorChatHub doctorId={doctor.user_id} />;
+  return <DoctorDashboard doctorId={doctor.user_id} />;
 }

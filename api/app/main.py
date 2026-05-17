@@ -26,6 +26,8 @@ from api.app.api.v1.endpoints import (
     knowledge,
     meta,
     patients,
+    panel_admin,
+    prometheus_metrics,
     realtime,
     time_slots_simple,
     webhooks_google_calendar,
@@ -34,6 +36,7 @@ from api.app.api.v1.endpoints import (
 from api.app.core import settings
 from api.app.db.session import close_async_database_runtime, validate_async_database_runtime
 from api.app.exceptions.handlers import register_exception_handlers
+from api.app.core.phi_policy import validate_phi_compliance_startup
 from api.app.runtime_integration import (
     initialize_runtime_integration_state,
     passive_runtime_integration_middleware,
@@ -44,7 +47,18 @@ from api.app.services.rate_limit import (
     resolve_rate_limit_identity,
 )
 from api.app.core.security import AUTH_COOKIE_NAME, AUTH_CSRF_COOKIE_NAME
-from shared.utils import setup_logger
+from shared.utils import setup_logger, _use_json_logging, _JsonFormatter
+
+# Activate JSON structured logging on startup so all api.* loggers
+# emit parseable JSON when LOG_FORMAT=json or ENV=production.
+if _use_json_logging():
+    import logging as _logging
+    _root = _logging.getLogger()
+    if not _root.handlers:
+        _handler = _logging.StreamHandler()
+        _handler.setFormatter(_JsonFormatter())
+        _root.addHandler(_handler)
+        _root.setLevel(_logging.INFO)
 
 logger = setup_logger(__name__)
 
@@ -175,6 +189,15 @@ app.middleware("http")(passive_runtime_integration_middleware)
 async def startup_runtime_checks() -> None:
     _validate_windows_psycopg_runtime()
     initialize_runtime_integration_state(app)
+
+    # PHI compliance: valida prerequisitos de cifrado, retención y audit.
+    # Bloquea el arranque si SECRET_ENCRYPTION_KEY no está configurada en producción.
+    phi_result = validate_phi_compliance_startup()
+    for warn in phi_result.warnings:
+        logger.warning("phi_compliance_startup_warning", extra={"warning": warn})
+    for err in phi_result.errors:
+        logger.error("phi_compliance_startup_error", extra={"error": err})
+    phi_result.raise_if_failed()
     await validate_async_database_runtime()
     app.state.rate_limiter = await build_redis_rate_limiter(
         settings.redis_url,
@@ -200,6 +223,7 @@ async def shutdown_runtime_checks() -> None:
 
 
 # Registrar routers
+app.include_router(prometheus_metrics.router)
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(patients.router, prefix="/api/v1")
@@ -207,6 +231,7 @@ app.include_router(doctors.router, prefix="/api/v1")
 app.include_router(appointments.router, prefix="/api/v1")
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
+app.include_router(panel_admin.router, prefix="/api/v1")
 app.include_router(knowledge.router, prefix="/api/v1")
 app.include_router(clinics.router, prefix="/api/v1")
 app.include_router(meta.router, prefix="/api")

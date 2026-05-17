@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar código
 COPY api ./api
 COPY brain ./brain
-COPY MetaBrain ./MetaBrain
+COPY MB-Chat ./MB-Chat
 COPY shared ./shared
 COPY alembic.ini .
 COPY alembic ./alembic

@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
+import hmac
 import os
 from fastapi import HTTPException, Depends, status, Header, Request
 from fastapi.security import OAuth2PasswordBearer
@@ -21,14 +22,22 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # API Keys válidas para servicios internos
 # En producción, estas deben guardarse de forma segura (vault, BD encriptada)
-INTERNAL_API_KEYS = {
+INTERNAL_API_KEYS: dict[str, str] = {
     "gateway": settings.gateway_api_key,
     "brain": settings.brain_api_key,
 }
+_shared_internal_services_key = os.getenv("INTERNAL_SERVICES_KEY", "").strip()
+if _shared_internal_services_key:
+    INTERNAL_API_KEYS["internal-services"] = _shared_internal_services_key
+# Panel Super-Admin registrado sólo si el key está configurado
+if settings.panel_admin_api_key and settings.panel_admin_api_key not in {
+    "change-me-panel-admin-key", ""
+}:
+    INTERNAL_API_KEYS["panel-admin"] = settings.panel_admin_api_key
 
 # ⚠️ HARDENING (Fase 3.3): API Key Scopes
 # Cada servicio tiene permisos limitados por endpoint
-API_KEY_SCOPES = {
+API_KEY_SCOPES: dict[str, list[str]] = {
     "gateway": [
         "appointments:create",
         "appointments:validate-slot",
@@ -40,13 +49,18 @@ API_KEY_SCOPES = {
         "patients:read",
         "appointments:analyse",
     ],
+    "panel-admin": [
+        "admin:read",
+        "admin:write",
+    ],
 }
 
 # ⚠️ IP WHITELISTING (Fase 3.3):
 # En producción, restringir API Key a IPs específicas
-ALLOWED_IPS_BY_SERVICE = {
+ALLOWED_IPS_BY_SERVICE: dict[str, list[str]] = {
     "gateway": os.getenv("GATEWAY_ALLOWED_IPS", "").split(",") if os.getenv("GATEWAY_ALLOWED_IPS") else [],
     "brain": os.getenv("BRAIN_ALLOWED_IPS", "").split(",") if os.getenv("BRAIN_ALLOWED_IPS") else [],
+    "panel-admin": os.getenv("PANEL_ADMIN_ALLOWED_IPS", "").split(",") if os.getenv("PANEL_ADMIN_ALLOWED_IPS") else [],
 }
 
 # OAuth2 scheme para JWT
@@ -256,10 +270,10 @@ async def validate_api_key(
             detail="X-Internal-Key header requerido para servicios internos"
         )
     
-    # Buscar la clave en nuestro registry
+    # Constant-time comparison prevents timing side-channel attacks on key recovery.
     service_name = None
     for service, key in INTERNAL_API_KEYS.items():
-        if x_internal_key == key:
+        if hmac.compare_digest(x_internal_key, key):
             service_name = service
             break
     
@@ -269,11 +283,9 @@ async def validate_api_key(
             detail="X-Internal-Key inválida"
         )
 
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        client_ip = forwarded_for.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client and request.client.host else "0.0.0.0"
+    # Use the direct connection IP for internal service whitelisting.
+    # X-Forwarded-For is attacker-controlled and MUST NOT be trusted for access control decisions.
+    client_ip = request.client.host if request.client and request.client.host else "0.0.0.0"
 
     allowed_ips = [
         ip.strip()

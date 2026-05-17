@@ -8,8 +8,10 @@ from sqlalchemy import and_, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.app.core.phi_policy import PHIAccessType, phi_audit_log_enabled
 from api.app.eventing.realtime_notifications import broadcast_realtime_event
 from api.app.models import Appointment, Doctor, Patient
+from api.app.models.models import PatientAccessLog
 from api.app.services.outbox_service import OutboxService
 from api.app.schemas import AppointmentCreate, AppointmentResponse
 from shared.utils import setup_logger
@@ -359,6 +361,24 @@ class AppointmentService:
                 )
 
             appointment.status = cast(Any, "cancelled")
+
+            # PHI access audit — cancel modifica datos clínicos del paciente
+            if phi_audit_log_enabled() and appointment.patient_id:
+                try:
+                    log_entry = PatientAccessLog(
+                        patient_id=appointment.patient_id,
+                        clinic_id=clinic_id,
+                        client_id=client_id,
+                        accessor_id="api",
+                        accessor_role="api",
+                        access_type=PHIAccessType.UPDATE,
+                        resource_path=f"/api/v1/appointments/{appointment_id}/cancel",
+                        success=True,
+                    )
+                    self.db.add(log_entry)
+                except Exception as exc:
+                    logger.warning("phi_access_log_appointment_cancel_failed", extra={"error": str(exc)})
+
             await self.outbox_service.enqueue_google_delete(
                 appointment_id=cast(UUID, appointment.id),
                 payload={

@@ -6,11 +6,12 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { AiController } from './ai.controller';
 import { ClassificationService } from './classification.service';
 import { MedicalImagingService } from './medical-imaging.service';
+import { DomainGuardService } from './domain-guard.service';
 
 @Module({
   imports: [KnowledgeModule],
   controllers: [AiController],
-  providers: [AiService, GroqProvider, FallbackProvider, ClassificationService, MedicalImagingService],
-  exports: [AiService],
+  providers: [AiService, GroqProvider, FallbackProvider, ClassificationService, MedicalImagingService, DomainGuardService],
+  exports: [AiService, DomainGuardService],
 })
 export class AiModule {}

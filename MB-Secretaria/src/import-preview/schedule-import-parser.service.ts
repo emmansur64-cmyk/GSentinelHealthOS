@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
 import { Workbook } from 'exceljs';
+import { GroqSecretariaService } from '../providers/groq-secretaria.service';
 import {
   RawImportRow,
   SupportedImportFormat,
@@ -42,6 +43,8 @@ const HEADER_ALIASES: Record<string, string> = {
 
 @Injectable()
 export class ScheduleImportParserService {
+  constructor(@Optional() private readonly groqSecretaria?: GroqSecretariaService) {}
+
   async parse(file: UploadedAdministrativeFile): Promise<RawImportRow[]> {
     const format = this.validateFile(file);
     return format === 'csv' ? this.parseCsv(file.buffer) : this.parseXlsx(file.buffer);
@@ -71,7 +74,7 @@ export class ScheduleImportParserService {
     return index >= 0 ? name.slice(index).toLowerCase() : '';
   }
 
-  private parseCsv(buffer: Buffer): RawImportRow[] {
+  private async parseCsv(buffer: Buffer): Promise<RawImportRow[]> {
     const text = buffer.toString('utf8').replace(/^\uFEFF/, '');
     const records = this.parseCsvRecords(text);
     return this.recordsToRows(records);
@@ -127,7 +130,7 @@ export class ScheduleImportParserService {
     return this.recordsToRows(records);
   }
 
-  private recordsToRows(records: string[][]): RawImportRow[] {
+  private async recordsToRows(records: string[][]): Promise<RawImportRow[]> {
     const [headerRow, ...bodyRows] = records;
     if (!headerRow) {
       throw new BadRequestException('Archivo sin encabezados.');
@@ -137,11 +140,13 @@ export class ScheduleImportParserService {
     const unknownHeaderIndexes = headers
       .map((header, index) => ({ header, index }))
       .filter(({ header }) => header.length > 0 && HEADER_ALIASES[header] === undefined);
+    const groqAliases = await this.resolveGroqHeaderAliases(headerRow, unknownHeaderIndexes.map(({ index }) => index));
 
     return bodyRows.map((record, index) => {
       const values: Record<string, string> = {};
       for (const [columnIndex, header] of headers.entries()) {
-        const canonical = HEADER_ALIASES[header];
+        const rawHeader = String(headerRow[columnIndex] ?? '').trim();
+        const canonical = HEADER_ALIASES[header] ?? groqAliases[rawHeader];
         if (canonical) {
           values[canonical] = String(record[columnIndex] ?? '').trim();
         }
@@ -158,5 +163,15 @@ export class ScheduleImportParserService {
 
   private normalizeHeader(value: string): string {
     return value.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  }
+
+  private async resolveGroqHeaderAliases(
+    headerRow: string[],
+    unknownHeaderIndexes: number[],
+  ): Promise<Record<string, string>> {
+    if (!this.groqSecretaria?.isConfigured() || unknownHeaderIndexes.length === 0) return {};
+
+    const unknownHeaders = unknownHeaderIndexes.map((index) => String(headerRow[index] ?? '').trim()).filter(Boolean);
+    return this.groqSecretaria.resolveHeaderAliases(unknownHeaders);
   }
 }

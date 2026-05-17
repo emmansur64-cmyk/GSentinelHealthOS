@@ -9,7 +9,9 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/api/v1/admin/clients)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/api/v1/dashboard/stats)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8000/api/v1/brain/decide)",
-      "Bash(docker build *)"
+      "Bash(docker build *)",
+      "Bash(curl -su \"admin:admin\" http://127.0.0.1:3020/api/datasources/uid/prometheus/health)",
+      "Bash(curl -su \"admin:admin\" http://127.0.0.1:3020/api/datasources/uid/loki/health)"
     ]
   }
 }

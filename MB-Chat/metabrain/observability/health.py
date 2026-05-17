@@ -31,7 +31,7 @@ from time import perf_counter
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from metabrain.observability.alerts import ALERT_BUS
 from metabrain.observability.logger import get_logger
@@ -251,7 +251,19 @@ async def _check_overall(request: Request) -> JSONResponse:
 
 # ── /metrics ──────────────────────────────────────────────────────────────────
 
-async def _get_metrics(_request: Request) -> JSONResponse:
+_PROM_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
+_PROM_ACCEPT_PREFIX = "text/plain"
+
+
+async def _get_metrics(request: Request):
+    """Return metrics in Prometheus text format or JSON depending on Accept header."""
+    accept = request.headers.get("accept", "")
+    job = os.getenv("OBSERVABILITY_JOB_LABEL", "gsentinel-brain")
+
+    if _PROM_ACCEPT_PREFIX in accept or "application/json" not in accept:
+        body = OBSERVABILITY_METRICS.to_prometheus_text(job=job)
+        return PlainTextResponse(body, media_type=_PROM_CONTENT_TYPE)
+
     snap = OBSERVABILITY_METRICS.snapshot()
     return JSONResponse(status_code=200, content=snap)
 

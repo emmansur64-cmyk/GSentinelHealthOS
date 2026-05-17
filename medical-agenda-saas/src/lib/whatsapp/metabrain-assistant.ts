@@ -2,7 +2,6 @@ import { callBrainDecide } from "@/lib/brain-client";
 import { appendMedicalDisclaimer, buildEmergencyEscalationMessage, detectEmergency, enforceSafeMedicalResponse } from "@/lib/compliance/ai-safety";
 import { auditLog } from "@/lib/compliance/audit-log";
 import { hasActiveConsent } from "@/lib/compliance/consent";
-import { callGroqDoctorChat } from "@/lib/groq-doctor-chat";
 import { metabrain, type MetaBrainDecision, type MetaBrainDecisionInput, type MetaBrainSource } from "@/lib/metabrain";
 import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
 import { logServer, logServerError } from "@/lib/server-logger";
@@ -494,7 +493,6 @@ export async function generateWhatsAppMetaBrainReply(input: WhatsAppMetaBrainInp
 
   try {
     const brainResult = await callBrainDecide(payload);
-    const groqResult = brainResult ? null : await callGroqDoctorChat(payload);
     const decision: MetaBrainDecision = brainResult
       ? {
           action: brainResult.action,
@@ -502,9 +500,7 @@ export async function generateWhatsAppMetaBrainReply(input: WhatsAppMetaBrainInp
           confidence: Number.isFinite(brainResult.confidence) ? brainResult.confidence : 0.8,
           source: normalizeSource(brainResult.source),
         }
-      : groqResult
-        ? groqResult
-        : await metabrain.decide(payload);
+      : await metabrain.decide(payload);
 
     decision.response = appendMedicalDisclaimer(enforceSafeMedicalResponse(cleanResponse(decision.response)));
 

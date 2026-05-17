@@ -13,6 +13,7 @@ from .models import (
 )
 from .multitenancy import Client, ClientWhatsAppAccount
 from .user import Clinic, ClinicMember, ClinicMemberRole, User, UserRole
+from .admin_models import AdminAuditLog, FeatureFlag
 
 __all__ = [
 	"Patient",
@@ -31,4 +32,6 @@ __all__ = [
 	"User",
 	"UserRole",
 	"Base",
+	"AdminAuditLog",
+	"FeatureFlag",
 ]

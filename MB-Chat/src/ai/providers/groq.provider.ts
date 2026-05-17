@@ -24,6 +24,11 @@ interface CacheEntry {
   expiresAt: number;
 }
 
+type GroqMessage = {
+  role: 'system' | 'user';
+  content: string;
+};
+
 function buildModelChain(): readonly string[] {
   const primary = process.env.GROQ_MODEL_PRIMARY?.trim() || 'mixtral-8x7b-32768';
   const secondary = process.env.GROQ_MODEL_SECONDARY?.trim() || 'llama3-8b-8192';
@@ -44,6 +49,25 @@ export class GroqProvider {
   private readonly apiKey: string | undefined;
   private readonly apiKeyEnvVar: string;
   private readonly modelChain: readonly string[];
+  private readonly strictStructuredSystemPrompt = [
+    'Eres una IA de Soporte de Decisiones Clinicas experta en Farmacoterapia y Criterios de Idoneidad Terapeutica.',
+    'Tu funcion es auditar el uso correcto, la indicacion adecuada y las contraindicaciones de los medicamentos prescritos.',
+    'REGLAS DE FORMATO ESTRICTAS (CERO TEXTO EXTRINSECO):',
+    "1. Debes responder EXCLUSIVAMENTE con un objeto JSON valido con llaves exactas: 'analisis', 'calculo', 'conducta_final'.",
+    '2. Esta ABSOLUTAMENTE PROHIBIDO incluir texto fuera del objeto JSON.',
+    'No agregues saludos, introducciones, resumenes clinicos externos, hipotesis prefabricadas, disclaimers ni despedidas.',
+    '3. El incumplimiento de esta regla rompe el parseo del backend.',
+    'REGLAS DE PROCESAMIENTO CLINICO:',
+    'CRITERIO DE IDONEIDAD: cruza la indicacion del farmaco con los antecedentes del paciente.',
+    'Si el farmaco esta contraindicado para sus enfermedades de base, es inapropiado para su grupo de edad (ej. criterios de Beers en adultos mayores) o duplica otro mecanismo activo, emite bloqueo inmediato.',
+    'DETALLE TECNICO: cita el mecanismo de accion especifico del farmaco para fundamentar la decision.',
+    'FILTRO DE SEGURIDAD: antes de autorizar cualquier dosis o farmaco, calcula explicitamente los miligramos segun variables del paciente (peso, edad, funcion organica).',
+    "Si la prescripcion supera el limite seguro o genera una interaccion letal, emite bloqueo total en 'conducta_final'.",
+    "INTEGRIDAD LOGICA: si los datos del caso son contradictorios o imposibles, deten el procesamiento dentro de 'analisis' y reporta la paradoja.",
+    'INTEGRIDAD MATEMATICA: en escenarios secuenciales, calcula pasos posteriores como probabilidad condicional multiplicada por la probabilidad de fracaso del paso anterior.',
+    'La suma de todos los escenarios del espacio muestral debe validar exactamente 100% (1.0).',
+    'PROTOCOLO DE TRIAJE CLINICO: descartar patologias letales primero; ninguna peticion secundaria debe retrasar pruebas criticas.',
+  ].join(' ');
 
   // Per-model circuit breaker state
   private readonly circuits = new Map<string, CircuitState>();
@@ -126,6 +150,27 @@ export class GroqProvider {
     return 'FATAL';
   }
 
+  private shouldUseStrictXmlProtocol(): boolean {
+    return this.apiKeyEnvVar === 'GROQ_API_KEY_CHAT';
+  }
+
+  private buildMessages(prompt: string): GroqMessage[] {
+    if (!this.shouldUseStrictXmlProtocol()) {
+      return [{ role: 'user', content: prompt }];
+    }
+    return [
+      { role: 'system', content: this.strictStructuredSystemPrompt },
+      { role: 'user', content: prompt },
+    ];
+  }
+
+  getSystemLearningSeed(): string | undefined {
+    if (!this.shouldUseStrictXmlProtocol()) {
+      return undefined;
+    }
+    return this.strictStructuredSystemPrompt;
+  }
+
   // ── Core HTTP call (with timeout) ────────────────────────────────────────────
 
   private async callModel(prompt: string, model: string): Promise<string> {
@@ -145,8 +190,11 @@ export class GroqProvider {
         },
         body: JSON.stringify({
           model,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.2,
+          messages: this.buildMessages(prompt),
+          temperature: this.shouldUseStrictXmlProtocol() ? 0.0 : 0.2,
+          ...(this.shouldUseStrictXmlProtocol()
+            ? { response_format: { type: 'json_object' as const } }
+            : {}),
         }),
       });
     } catch (err) {

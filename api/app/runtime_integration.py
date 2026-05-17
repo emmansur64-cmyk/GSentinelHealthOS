@@ -152,25 +152,25 @@ def _create_local_event_bus() -> _LocalInMemoryObservabilityEventBus:
     )
 
 
-def _load_metabrain_runtime_dependencies() -> dict[str, Any] | None:
+def _load_runtime_support_dependencies() -> dict[str, Any] | None:
     try:
-        from MetaBrain.observability_py.event_bus import (
+        from api.app.runtime_support.observability.event_bus import (
             InMemoryObservabilityEventBus,
             resolve_event_bus_max_events,
             resolve_event_bus_ttl_enabled,
             resolve_event_bus_ttl_seconds,
         )
-        from MetaBrain.observability_py.structured_logger import build_structured_log
-        from MetaBrain.observability_py.telemetry_flags import load_observability_flags
-        from MetaBrain.observability_py.trace_context import create_trace_context
-        from MetaBrain.production_safety_py.runtime_guard import (
+        from api.app.runtime_support.observability.structured_logger import build_structured_log
+        from api.app.runtime_support.observability.telemetry_flags import load_observability_flags
+        from api.app.runtime_support.observability.trace_context import create_trace_context
+        from api.app.runtime_support.production_safety.runtime_guard import (
             evaluate_runtime_guard,
             load_production_safety_config,
         )
-        from MetaBrain.production_safety_py.safe_fallback import build_safe_fallback
-        from MetaBrain.production_safety_py.startup_validator import validate_production_safety_startup
+        from api.app.runtime_support.production_safety.safe_fallback import build_safe_fallback
+        from api.app.runtime_support.production_safety.startup_validator import validate_production_safety_startup
     except Exception as exc:
-        logger.warning("runtime_integration_metabrain_import_unavailable error=%s", exc)
+        logger.warning("runtime_integration_support_import_unavailable error=%s", exc)
         return None
 
     return {
@@ -198,18 +198,18 @@ def _build_fallback_snapshot(import_error: str) -> dict[str, Any]:
         allowed=False,
         shadow_mode=True,
         dry_run=True,
-        blocked_reason="metabrain_import_unavailable",
+        blocked_reason="runtime_support_import_unavailable",
     )
     startup = _FallbackStartupValidation(
         ok=False,
         errors=[],
-        warnings=[f"metabrain_import_unavailable: {import_error}"],
+        warnings=[f"runtime_support_import_unavailable: {import_error}"],
         created_at=time.time(),
     )
     fallback = {
         "action": "continue_existing_runtime_flow",
         "fallback_required": True,
-        "reason": "metabrain_import_unavailable",
+        "reason": "runtime_support_import_unavailable",
     }
     return {
         "guard": asdict(guard),
@@ -218,8 +218,8 @@ def _build_fallback_snapshot(import_error: str) -> dict[str, Any]:
         "fallback": fallback,
         "external_export_enabled": observability_flags.external_export_enabled,
         "phi_allowed": observability_flags.phi_allowed,
-        "metabrain_import_available": False,
-        "metabrain_import_error": import_error,
+        "runtime_support_import_available": False,
+        "runtime_support_import_error": import_error,
     }
 
 
@@ -272,9 +272,9 @@ def _safe_headers(request: Request) -> dict[str, str]:
 def build_runtime_integration_snapshot(env: dict[str, str] | None = None) -> dict[str, Any]:
     """Build a non-blocking safety snapshot from current runtime flags."""
     source = env if env is not None else os.environ
-    dependencies = _load_metabrain_runtime_dependencies()
+    dependencies = _load_runtime_support_dependencies()
     if dependencies is None:
-        return _build_fallback_snapshot("MetaBrain runtime modules could not be imported")
+        return _build_fallback_snapshot("Runtime support modules could not be imported")
 
     safety_config = dependencies["load_production_safety_config"](source)
     guard = dependencies["evaluate_runtime_guard"](safety_config)
@@ -294,15 +294,15 @@ def build_runtime_integration_snapshot(env: dict[str, str] | None = None) -> dic
         "fallback": fallback,
         "external_export_enabled": observability_flags.external_export_enabled,
         "phi_allowed": observability_flags.phi_allowed,
-        "metabrain_import_available": True,
-        "metabrain_import_error": None,
+        "runtime_support_import_available": True,
+        "runtime_support_import_error": None,
     }
 
 
 def initialize_runtime_integration_state(app: FastAPI) -> dict[str, Any]:
     """Initialize passive runtime integration state during startup."""
     snapshot = build_runtime_integration_snapshot()
-    dependencies = _load_metabrain_runtime_dependencies()
+    dependencies = _load_runtime_support_dependencies()
     if dependencies is None:
         app.state.runtime_integration_event_bus = _create_local_event_bus()
     else:
@@ -320,12 +320,12 @@ def initialize_runtime_integration_state(app: FastAPI) -> dict[str, Any]:
         "last_latency_ms": None,
     }
     logger.info(
-        "runtime_integration_startup guard_allowed=%s shadow=%s dry_run=%s fallback_required=%s metabrain_import_available=%s",
+        "runtime_integration_startup guard_allowed=%s shadow=%s dry_run=%s fallback_required=%s runtime_support_import_available=%s",
         snapshot["guard"]["allowed"],
         snapshot["guard"]["shadow_mode"],
         snapshot["guard"]["dry_run"],
         snapshot["fallback"]["fallback_required"],
-        snapshot["metabrain_import_available"],
+        snapshot["runtime_support_import_available"],
     )
     return snapshot
 
@@ -353,7 +353,7 @@ async def passive_runtime_integration_middleware(request: Request, call_next):
     started = time.perf_counter()
     response = None
     error_name: str | None = None
-    dependencies = _load_metabrain_runtime_dependencies()
+    dependencies = _load_runtime_support_dependencies()
 
     snapshot = getattr(request.app.state, "runtime_integration_snapshot", None)
     if snapshot is None:
@@ -380,6 +380,8 @@ async def passive_runtime_integration_middleware(request: Request, call_next):
 
     try:
         response = await call_next(request)
+        response.headers["X-Trace-Id"] = trace.trace_id
+        response.headers["X-Correlation-Id"] = trace.correlation_id
         return response
     except Exception as exc:
         error_name = type(exc).__name__

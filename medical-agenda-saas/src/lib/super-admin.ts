@@ -5,6 +5,8 @@ import { NextRequest } from "next/server";
 import { fail } from "@/lib/api-response";
 import { prisma } from "@/lib/prisma";
 import { getAuthenticatedUser } from "@/lib/server-auth";
+import { ensureSuperAdminAccount, getSuperAdminBootstrapConfig } from "@/lib/super-admin-bootstrap";
+import { isSuperAdminDirectAccessEnabled } from "@/lib/super-admin-direct-access";
 import { CLINIC_STATUS_LABEL, statusBadgeClass } from "@/lib/status-labels";
 import { isSuperAdminRoleValue } from "@/lib/super-admin-policy";
 
@@ -22,16 +24,39 @@ export function isSuperAdminRole(role: string | null | undefined) {
 
 export async function requireSuperAdminPage(): Promise<SuperAdminUser> {
   const auth = await getAuthenticatedUser();
-  if (!auth) redirect("/login");
-  if (!isSuperAdminRole(String(auth.role))) redirect("/dashboard");
-  return { userId: auth.userId, role: String(auth.role), tenantId: auth.tenantId };
+  if (auth) {
+    if (!isSuperAdminRole(String(auth.role))) redirect("/dashboard");
+    return { userId: auth.userId, role: String(auth.role), tenantId: auth.tenantId };
+  }
+
+  if (!isSuperAdminDirectAccessEnabled()) redirect("/login");
+
+  const bootstrapUser = await ensureSuperAdminAccount();
+  const bootstrap = getSuperAdminBootstrapConfig();
+  return {
+    userId: bootstrapUser.id,
+    role: "super_admin",
+    tenantId: bootstrap.tenantId,
+  };
 }
 
 export async function requireSuperAdminApi() {
   const auth = await getAuthenticatedUser();
-  if (!auth) return { ok: false as const, response: fail("No autenticado", 401) };
-  if (!isSuperAdminRole(String(auth.role))) return { ok: false as const, response: fail("Forbidden", 403) };
-  return { ok: true as const, user: { userId: auth.userId, role: String(auth.role), tenantId: auth.tenantId } };
+  if (auth) {
+    if (!isSuperAdminRole(String(auth.role))) return { ok: false as const, response: fail("Forbidden", 403) };
+    return { ok: true as const, user: { userId: auth.userId, role: String(auth.role), tenantId: auth.tenantId } };
+  }
+
+  if (!isSuperAdminDirectAccessEnabled()) {
+    return { ok: false as const, response: fail("No autenticado", 401) };
+  }
+
+  const bootstrapUser = await ensureSuperAdminAccount();
+  const bootstrap = getSuperAdminBootstrapConfig();
+  return {
+    ok: true as const,
+    user: { userId: bootstrapUser.id, role: "super_admin", tenantId: bootstrap.tenantId },
+  };
 }
 
 export function getRequestIp(request: NextRequest) {
@@ -78,6 +103,7 @@ export type DashboardMetrics = {
   whatsapp_error: number;
   appointments_today: number;
   recent_errors: number;
+  super_admin_count: number;
 };
 
 export async function getSuperAdminDashboard(): Promise<DashboardMetrics> {
@@ -90,6 +116,7 @@ export async function getSuperAdminDashboard(): Promise<DashboardMetrics> {
       (SELECT COUNT(*)::int FROM clinic_whatsapp_accounts WHERE status = 'connected') AS whatsapp_connected,
       (SELECT COUNT(*)::int FROM clinic_whatsapp_accounts WHERE status IN ('error', 'disconnected')) AS whatsapp_error,
       (SELECT COUNT(*)::int FROM appointments WHERE DATE(datetime) = CURRENT_DATE) AS appointments_today,
+      (SELECT COUNT(*)::int FROM users WHERE role::text = 'super_admin' AND COALESCE(status, 'active') = 'active') AS super_admin_count,
       (
         SELECT COUNT(*)::int
         FROM failed_messages
@@ -106,6 +133,7 @@ export async function getSuperAdminDashboard(): Promise<DashboardMetrics> {
     whatsapp_error: 0,
     appointments_today: 0,
     recent_errors: 0,
+    super_admin_count: 0,
   };
 }
 

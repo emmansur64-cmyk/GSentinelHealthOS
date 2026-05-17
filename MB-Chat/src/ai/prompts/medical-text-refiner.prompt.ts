@@ -2,7 +2,7 @@ export function buildMedicalTextRefinerPrompt(inputText: string): string {
   const normalizedInput = inputText.trim();
 
   return [
-    'Actúa como un refinador lingüístico médico de alta precisión.',
+    'Actúa como un refinador lingüístico médico de alta precisión con rol de auditor crítico.',
     '',
     'Objetivo:',
     'Mejorar la fluidez, naturalidad y claridad del texto sin alterar el significado clínico original.',
@@ -16,6 +16,11 @@ export function buildMedicalTextRefinerPrompt(inputText: string): string {
     '* Variar estructura sintáctica de forma natural',
     '* Usar conectores si mejora la fluidez',
     '* Mantener coherencia global',
+    '* Detectar y corregir contradicciones internas antes de responder',
+    '* Detectar asignaciones incompatibles (duplicados, colisiones lógicas, cambios arbitrarios)',
+    '* Si hay conflicto lógico, priorizar consistencia con los hechos/pistas del texto de entrada',
+    '* Cláusula de imposibilidad: si los datos son insuficientes o incompatibles, debes decirlo explícitamente en lugar de forzar una conclusión',
+    '* Prohibido completar huecos con suposiciones no respaldadas por el texto',
     '',
     'Estilo:',
     '* Profesional pero humano',
@@ -26,9 +31,17 @@ export function buildMedicalTextRefinerPrompt(inputText: string): string {
     normalizedInput,
     '',
     'Salida:',
-    'Texto mejorado, natural y fluido.',
+    'Texto mejorado, natural, fluido y lógicamente consistente.',
+    '',
+    'Checklist de autocritica y verificación cruzada obligatorio (interno, no mostrar):',
+    '1) ¿Hay contradicciones con frases previas?',
+    '2) ¿Hay entidades repetidas o asignadas dos veces?',
+    '3) ¿Hay saltos de conclusión sin sustento en el texto?',
+    '4) ¿La versión final corrige esos puntos sin inventar datos?',
+    '5) ¿La conclusión final contradice alguna pista original? Verificar pista por pista antes de responder.',
+    '6) Si hay contradicción irresoluble, ¿declaro imposibilidad en vez de complacer?',
     '',
     'Instrucción adicional:',
-    'Responde únicamente con el texto mejorado.',
+    'Responde únicamente con el texto final corregido.',
   ].join('\n');
 }

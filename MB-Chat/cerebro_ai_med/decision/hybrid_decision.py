@@ -6,6 +6,18 @@ from cerebro_ai_med.decision.decision_engine import DecisionEngine
 from metabrain.pipeline import GroqLanguagePipeline
 
 
+# PHI identifiers that must never reach an external LLM API.
+# Clinical signals (symptoms, risk scores, modality) are preserved.
+_PHI_CONTEXT_KEYS: frozenset[str] = frozenset({
+    "phone", "telefono", "tel",
+    "email", "correo",
+    "name", "nombre", "full_name", "nombre_completo", "patient_name",
+    "dni", "document", "documento", "passport", "pasaporte", "rut", "cuit", "cuil",
+    "address", "direccion", "domicilio",
+    "birth_date", "fecha_nacimiento", "dob",
+    "patient_id", "paciente_id",
+})
+
 _RISK_ORDER = {
     "unknown": 0,
     "low": 1,
@@ -103,6 +115,15 @@ class HybridDecisionOrchestrator:
             },
         }
 
+    @staticmethod
+    def _strip_phi_from_context(context: dict[str, Any]) -> dict[str, Any]:
+        """Remove direct PHI identifiers before any external LLM call.
+
+        Preserves clinical signals (symptoms, risk scores, modality).
+        Operates on a shallow copy — never mutates the input dict.
+        """
+        return {k: v for k, v in context.items() if k.lower() not in _PHI_CONTEXT_KEYS}
+
     def _run_groq_reasoning(
         self,
         *,
@@ -118,8 +139,11 @@ class HybridDecisionOrchestrator:
             patient_context=patient_context,
         )
 
+        # Strip PHI identifiers: only clinical signals reach the external LLM.
+        safe_context = self._strip_phi_from_context(patient_context)
+
         try:
-            result = self._groq_pipeline.process(case_text, context=patient_context)
+            result = self._groq_pipeline.process(case_text, context=safe_context)
             risk = self._extract_groq_risk(result.orchestration, result.guardrail)
             return {
                 "enabled": True,

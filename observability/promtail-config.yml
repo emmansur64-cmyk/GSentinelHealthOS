@@ -1,0 +1,56 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Collect all Docker container logs via the json-file driver mount.
+  # Each container writes to /var/lib/docker/containers/<id>/<id>-json.log
+  # The outer envelope is Docker's JSON format: {"log":"...","stream":"stdout","time":"..."}
+  - job_name: gsentinel-docker-logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: gsentinel
+          __path__: /var/lib/docker/containers/*/*-json.log
+
+    pipeline_stages:
+      # Parse Docker's outer JSON envelope
+      - json:
+          expressions:
+            output: log
+            stream: stream
+            attrs:
+
+      # Extract the container name from the attrs.tag field (set by Docker)
+      - json:
+          expressions:
+            tag:
+          source: attrs
+
+      # container_name comes as /gs_api, /gs_brain, etc. Strip the leading slash.
+      - regex:
+          expression: '^/?(?P<container>[^/\s]+)'
+          source: tag
+
+      # Try to parse our services' JSON log lines for richer labels
+      - json:
+          expressions:
+            log_level: level
+            log_logger: logger
+          source: output
+
+      - labels:
+          stream:
+          container:
+          log_level:
+          log_logger:
+
+      - output:
+          source: output

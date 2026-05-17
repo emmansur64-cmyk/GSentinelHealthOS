@@ -50,8 +50,8 @@ export class MedicalImagingService {
         body: JSON.stringify({
           image_base64: preprocessed.payloadBase64,
           mime_type: preprocessed.mimeType,
-          patient_age: input.patientAge,
           modality_hint: input.modalityHint,
+          // patient_age omitted intentionally — PHI boundary: age is not sent to external endpoints
         }),
       });
 

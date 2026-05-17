@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AdminActionButton } from "@/components/admin/admin-action-button";
+import { ClinicUserCreateForm } from "@/components/admin/clinic-user-create-form";
 import { StatusPill } from "@/components/admin/status-pill";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { prisma } from "@/lib/prisma";
@@ -69,6 +70,9 @@ export default async function AdminClinicDetailPage({ params }: { params: Promis
 
       <section className="grid gap-6 xl:grid-cols-2">
         <Panel title="Usuarios">
+          <div className="mb-4">
+            <ClinicUserCreateForm clinicId={id} />
+          </div>
           <Table><TableHeader><TableRow><TableHead>Usuario</TableHead><TableHead>Rol</TableHead><TableHead>Estado</TableHead><TableHead>Ultima actividad</TableHead></TableRow></TableHeader>
             <TableBody>{users.map((user) => <TableRow key={user.id}><TableCell>{user.full_name}<p className="text-xs text-slate-500">{user.email}</p></TableCell><TableCell>{user.role}</TableCell><TableCell><StatusPill status={user.status} /></TableCell><TableCell>{user.last_seen_at ? new Date(user.last_seen_at).toLocaleString("es-AR") : "-"}</TableCell></TableRow>)}</TableBody></Table>
         </Panel>

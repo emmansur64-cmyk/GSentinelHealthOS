@@ -24,6 +24,15 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="space-y-6">
+      {metrics.super_admin_count !== 1 ? (
+        <section className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900 shadow-sm">
+          <p className="text-sm font-semibold">Alerta de administracion global</p>
+          <p className="mt-1 text-sm">
+            Se detectaron {metrics.super_admin_count} cuentas activas con rol super_admin. El objetivo operativo es mantener una sola cuenta administradora global.
+          </p>
+        </section>
+      ) : null}
+
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {metricLabels.map(([key, label]) => (
           <div key={key} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">

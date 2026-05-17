@@ -219,6 +219,88 @@ class ObservabilityMetrics:
             },
         }
 
+    def to_prometheus_text(self, *, job: str = "gsentinel-brain") -> str:
+        """Format the current snapshot as Prometheus text exposition format.
+
+        Reads from snapshot() — no duplicate counters, no new state.
+        """
+        snap = self.snapshot()
+        req = snap["requests"]
+        groq = snap["groq"]
+        redis = snap["redis"]
+        pipeline = snap["pipeline"]
+
+        lbl = f'{{job="{job}"}}'
+        lines: list[str] = [
+            "# HELP gsentinel_http_requests_total Total HTTP requests",
+            "# TYPE gsentinel_http_requests_total counter",
+            f"gsentinel_http_requests_total{lbl} {req['total']}",
+            "",
+            "# HELP gsentinel_http_errors_total Total HTTP errors",
+            "# TYPE gsentinel_http_errors_total counter",
+            f"gsentinel_http_errors_total{lbl} {req['errors']}",
+            "",
+            "# HELP gsentinel_http_avg_duration_ms Average request duration (ms)",
+            "# TYPE gsentinel_http_avg_duration_ms gauge",
+            f"gsentinel_http_avg_duration_ms{lbl} {req['avg_duration_ms']}",
+            "",
+            "# HELP gsentinel_groq_calls_total Total Groq API calls",
+            "# TYPE gsentinel_groq_calls_total counter",
+            f"gsentinel_groq_calls_total{lbl} {groq['calls_total']}",
+            "",
+            "# HELP gsentinel_groq_errors_total Total Groq errors",
+            "# TYPE gsentinel_groq_errors_total counter",
+            f"gsentinel_groq_errors_total{lbl} {groq['errors_total']}",
+            "",
+            "# HELP gsentinel_groq_timeouts_total Total Groq timeouts",
+            "# TYPE gsentinel_groq_timeouts_total counter",
+            f"gsentinel_groq_timeouts_total{lbl} {groq['timeouts_total']}",
+            "",
+            "# HELP gsentinel_groq_consecutive_failures Current consecutive Groq failures",
+            "# TYPE gsentinel_groq_consecutive_failures gauge",
+            f"gsentinel_groq_consecutive_failures{lbl} {groq['consecutive_failures']}",
+            "",
+            "# HELP gsentinel_groq_tokens_total Total tokens consumed via Groq",
+            "# TYPE gsentinel_groq_tokens_total counter",
+            f"gsentinel_groq_tokens_total{lbl} {groq['tokens_total']}",
+            "",
+            "# HELP gsentinel_groq_avg_latency_ms Average Groq API latency (ms)",
+            "# TYPE gsentinel_groq_avg_latency_ms gauge",
+            f"gsentinel_groq_avg_latency_ms{lbl} {groq['avg_latency_ms']}",
+            "",
+            "# HELP gsentinel_redis_connection_errors_total Total Redis connection errors",
+            "# TYPE gsentinel_redis_connection_errors_total counter",
+            f"gsentinel_redis_connection_errors_total{lbl} {redis['connection_errors_total']}",
+            "",
+            "# HELP gsentinel_redis_circuit_opens_total Total Redis circuit breaker opens",
+            "# TYPE gsentinel_redis_circuit_opens_total counter",
+            f"gsentinel_redis_circuit_opens_total{lbl} {redis['circuit_opens_total']}",
+            "",
+            "# HELP gsentinel_redis_degraded_seconds Seconds Redis has been in degraded state",
+            "# TYPE gsentinel_redis_degraded_seconds gauge",
+            f"gsentinel_redis_degraded_seconds{lbl} {redis['degraded_seconds']}",
+            "",
+            "# HELP gsentinel_redis_fallback_total Total Redis fallback activations",
+            "# TYPE gsentinel_redis_fallback_total counter",
+            f"gsentinel_redis_fallback_total{lbl} {redis['fallback_activations_total']}",
+            "",
+            "# HELP gsentinel_redis_recovered_total Total Redis circuit recoveries",
+            "# TYPE gsentinel_redis_recovered_total counter",
+            f"gsentinel_redis_recovered_total{lbl} {redis['recovered_total']}",
+            "",
+            "# HELP gsentinel_pipeline_fallback_total Total pipeline-level fallbacks",
+            "# TYPE gsentinel_pipeline_fallback_total counter",
+            f"gsentinel_pipeline_fallback_total{lbl} {pipeline['fallback_total']}",
+        ]
+
+        for stage, count in pipeline.get("stages", {}).items():
+            safe_stage = stage.replace('"', "_")
+            lines.append(
+                f'gsentinel_pipeline_stage_total{{job="{job}",stage="{safe_stage}"}} {count}'
+            )
+
+        return "\n".join(lines) + "\n"
+
     def reset(self) -> None:
         """Reset all counters (useful for testing)."""
         for attr in vars(self).values():

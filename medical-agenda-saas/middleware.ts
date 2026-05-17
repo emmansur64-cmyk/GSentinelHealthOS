@@ -1,5 +1,6 @@
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
+import { isSuperAdminDirectAccessEnabled } from "@/lib/super-admin-direct-access";
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? "");
 const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID?.trim() || "default";
@@ -70,6 +71,15 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === "/login") {
+    if (isSuperAdminDirectAccessEnabled()) {
+      return NextResponse.redirect(new URL("/admin", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  const directSuperAdminPath = pathname.startsWith("/admin") || pathname.startsWith("/api/super-admin");
+  const directSuperAdminEnabled = directSuperAdminPath && isSuperAdminDirectAccessEnabled();
+  if (directSuperAdminEnabled) {
     return NextResponse.next();
   }
 
