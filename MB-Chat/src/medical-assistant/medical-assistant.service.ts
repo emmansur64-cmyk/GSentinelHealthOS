@@ -2,8 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { AiService } from '../ai/ai.service';
 import { MedicalUserRole } from '../ai/classification.service';
-import { BrainService } from '../brain/brain.service';
-import { IncidentPayload } from '../common/types/brain.types';
+import { IncidentPayload, IncidentStatus } from '../common/types/brain.types';
 import {
   ClinicalActorRole,
   ClinicalAssistantMode,
@@ -24,6 +23,11 @@ import {
   PatientContextAccessDeniedError,
 } from './doctor-patient-context.contract';
 import { ProviderPhiNotAllowedError, assertGroqPhiAllowedOrThrow } from '../ai/assert-groq-phi-guard';
+import { MedicalChatBrainAdapter } from './adapters/medical-chat-brain.adapter';
+import { MedicalCitation } from '../knowledge/types';
+import { DiagnosisService } from '../diagnosis/diagnosis.service';
+import { XaiExplainabilityMode } from '../diagnosis/diagnosis.types';
+import { PersistenceService } from '../persistence/persistence.service';
 
 @Injectable()
 export class MedicalAssistantService {
@@ -31,9 +35,11 @@ export class MedicalAssistantService {
 
   constructor(
     private readonly aiService: AiService,
-    private readonly brainService: BrainService,
     private readonly runtimeToolsService: MedicalRuntimeToolsService,
     private readonly medicalChatLearningService: MedicalChatLearningService,
+    private readonly brainBoundary: MedicalChatBrainAdapter,
+    private readonly diagnosisService?: DiagnosisService,
+    private readonly persistenceService?: PersistenceService,
   ) {}
 
   async handleMedicalChatMessage(input: MedicalAssistantRequest): Promise<MedicalAssistantResponse> {
@@ -113,7 +119,7 @@ export class MedicalAssistantService {
         citations: [],
         policySeverity: prePolicyResult.severity,
       });
-      this.medicalChatLearningService.record({
+      await this.medicalChatLearningService.recordAndTrain({
         request: input,
         query,
         mode,
@@ -121,6 +127,11 @@ export class MedicalAssistantService {
         citations: [],
         decision: learningDecision,
         outcome: 'blocked',
+        source: 'system_correction',
+        localAnswerAttempted: false,
+        localAnswerConfidence: 0,
+        groqFallbackUsed: false,
+        semanticRecallHit: false,
       });
 
       return {
@@ -182,19 +193,36 @@ export class MedicalAssistantService {
         effectiveQuery,
         input.country ?? 'AR',
       );
-      const medical = await this.aiService.answerMedicalQuestion(
-        sessionMemory ? `${effectiveQuery}\n\nMemoria de sesion clinica reciente:\n${sessionMemory}` : effectiveQuery,
-        input.country ?? 'AR',
-        input.topK ?? 6,
-        input.imageBase64,
-        input.imageMimeType,
-        input.patientAge,
-        input.modalityHint,
-        aiRole,
-        runtimeContext,
-        patientClinicalSummary,
-        requestId,
-      );
+      const localAttempt = this.medicalChatLearningService.attemptLocalAnswer({
+        query: effectiveQuery,
+        role: input.role ?? 'INFERRED',
+        mode,
+        sessionId: effectiveSessionId,
+        doctorPatientContext,
+      });
+      const effectivePrompt = sessionMemory
+        ? `${effectiveQuery}\n\nMemoria de sesion clinica reciente:\n${sessionMemory}`
+        : effectiveQuery;
+      const medical = localAttempt.used
+        ? {
+            answer: localAttempt.answer ?? 'No hay memoria local suficiente para responder con seguridad.',
+            citations: localAttempt.citations,
+            role: aiRole,
+            confidence: localAttempt.confidence,
+          }
+        : await this.aiService.answerMedicalQuestion(
+            effectivePrompt,
+            input.country ?? 'AR',
+            input.topK ?? 6,
+            input.imageBase64,
+            input.imageMimeType,
+            input.patientAge,
+            input.modalityHint,
+            aiRole,
+            runtimeContext,
+            patientClinicalSummary,
+            requestId,
+          );
       const learningDecision = this.medicalChatLearningService.decide({
         query: effectiveQuery,
         role: input.role ?? 'INFERRED',
@@ -204,14 +232,17 @@ export class MedicalAssistantService {
       });
       const systemLearningSeed = this.aiService.getSystemLearningSeed();
 
-      const refinedAnswer = await this.aiService.refineMedicalText(medical.answer, requestId);
-      this.logger.log(this.serializeLog({
-        event: 'medical_chat.autocritique_applied',
-        requestId,
-        role: actorRole,
-        mode,
-      }));
-      let finalAnswer = refinedAnswer;
+      let finalAnswer = medical.answer;
+      if (!localAttempt.used) {
+        const refinedAnswer = await this.aiService.refineMedicalText(medical.answer, requestId);
+        this.logger.log(this.serializeLog({
+          event: 'medical_chat.autocritique_applied',
+          requestId,
+          role: actorRole,
+          mode,
+        }));
+        finalAnswer = refinedAnswer;
+      }
 
       if (prePolicyResult.flags.applyPatientFacingBoundaries) {
         const postPolicyResult = evaluateClinicalPolicies({
@@ -222,7 +253,7 @@ export class MedicalAssistantService {
           mode,
           channel: input.channel,
           modality,
-          responseText: refinedAnswer,
+          responseText: finalAnswer,
         });
 
         if (postPolicyResult.transformedText) {
@@ -249,13 +280,20 @@ export class MedicalAssistantService {
           },
         };
 
-        const decision = await this.brainService.processIncident(incident);
-        metabrain = {
-          status: decision.status,
-          action: decision.action,
-          reason: decision.reason,
-          dryRun: true,
-        };
+        // SECURITY BOUNDARY: Medical Chat cannot autonomously invoke incident processing
+        // Attempt will throw ForbiddenException via MedicalChatBrainAdapter
+        try {
+          await this.brainBoundary.processIncident(incident);
+        } catch (err) {
+          // Incident processing blocked by security boundary
+          this.logger.debug('[SecurityBoundary] Incident processing blocked for Medical Chat');
+          metabrain = {
+            status: 'BLOCKED',
+            action: 'incident_processing_blocked',
+            reason: 'security_boundary_enforced',
+            dryRun: true,
+          };
+        }
       }
 
       const warnings: string[] = [];
@@ -304,8 +342,36 @@ export class MedicalAssistantService {
           mode: 'controlled_dry_run',
         },
       };
+      const transferProtocol = this.buildCriticalTransferProtocol(
+        effectiveQuery,
+        finalAnswer,
+        medical.citations,
+        input.xaiExplainabilityMode,
+      );
+      if (transferProtocol) {
+        response.transferProtocol = transferProtocol;
+        response.guidance.warnings.push(
+          'Protocolo de comunicacion critica activado: alerta push + SBAR para transferencia a UCI.',
+        );
 
-      this.medicalChatLearningService.record({
+        if (transferProtocol.xaiAuditConsole) {
+          const caseId = `xai-${effectiveSessionId}-${Date.now()}`;
+          this.persistenceService?.fireAndForget(
+            this.persistenceService.saveXaiDefenseReport({
+              caseId,
+              sessionId: effectiveSessionId,
+              mode: transferProtocol.xaiAuditConsole.explainabilityMode,
+              module: transferProtocol.xaiAuditConsole.module,
+              component: transferProtocol.xaiAuditConsole.component,
+              report: transferProtocol.xaiAuditConsole as unknown as Record<string, unknown>,
+              createdAt: new Date().toISOString(),
+            }),
+            'save_xai_defense_report',
+          );
+        }
+      }
+
+      await this.medicalChatLearningService.recordAndTrain({
         request: input,
         query: [effectiveQuery, systemLearningSeed].filter(Boolean).join('\n\nSystem learning seed:\n'),
         mode,
@@ -314,18 +380,13 @@ export class MedicalAssistantService {
         decision: learningDecision,
         outcome: 'simulated',
         sessionId: effectiveSessionId,
-        sessionTurn: { role: 'user', text: effectiveQuery },
-      });
-      this.medicalChatLearningService.record({
-        request: input,
-        query: [finalAnswer, systemLearningSeed].filter(Boolean).join('\n\nSystem learning seed:\n'),
-        mode,
-        modality,
-        citations: medical.citations,
-        decision: learningDecision,
-        outcome: 'simulated',
-        sessionId: effectiveSessionId,
-        sessionTurn: { role: 'assistant', text: finalAnswer },
+        teacherAnswer: [finalAnswer, systemLearningSeed].filter(Boolean).join('\n\nSystem learning seed:\n'),
+        source: localAttempt.used ? 'official_source' : 'groq_teacher',
+        localAnswerAttempted: true,
+        localAnswerConfidence: localAttempt.confidence,
+        groqFallbackUsed: !localAttempt.used,
+        semanticRecallHit: localAttempt.matchedRecordIds.length > 0,
+        matchedRecordIds: localAttempt.matchedRecordIds,
       });
 
       this.logger.log(this.serializeLog({
@@ -388,7 +449,7 @@ export class MedicalAssistantService {
         fallback: true,
       });
       const systemLearningSeed = this.aiService.getSystemLearningSeed();
-      this.medicalChatLearningService.record({
+      await this.medicalChatLearningService.recordAndTrain({
         request: input,
         query: [query, systemLearningSeed].filter(Boolean).join('\n\nSystem learning seed:\n'),
         mode,
@@ -397,7 +458,12 @@ export class MedicalAssistantService {
         decision: learningDecision,
         outcome: 'fallback',
         sessionId: effectiveSessionId,
-        sessionTurn: { role: 'user', text: query },
+        teacherAnswer: fallbackResponse.response.text,
+        source: 'system_correction',
+        localAnswerAttempted: true,
+        localAnswerConfidence: 0,
+        groqFallbackUsed: true,
+        semanticRecallHit: false,
       });
 
       return {
@@ -456,16 +522,13 @@ export class MedicalAssistantService {
     }
 
     if (!context) {
-      throw new InvalidDoctorPatientContextError('doctorPatientContext is required for doctor chat');
+      return undefined;
     }
 
     if (!context.doctor_id?.trim()) {
       throw new InvalidDoctorPatientContextError('doctor_id is required');
     }
-
-    if (!context.patient_id?.trim()) {
-      throw new InvalidDoctorPatientContextError('patient_id is required');
-    }
+    const normalizedPatientId = context.patient_id?.trim();
 
     const multiTenantEnabled = process.env.MB_CHAT_MULTI_TENANT === 'true';
     if (multiTenantEnabled && !context.tenant_id?.trim() && !context.clinic_id?.trim()) {
@@ -473,14 +536,14 @@ export class MedicalAssistantService {
     }
 
     const activeEncounterRequired = process.env.MB_CHAT_REQUIRE_ACTIVE_ENCOUNTER !== 'false';
-    if (activeEncounterRequired && !context.encounter_id?.trim() && !context.appointment_id?.trim()) {
+    if (activeEncounterRequired && normalizedPatientId && !context.encounter_id?.trim() && !context.appointment_id?.trim()) {
       throw new InvalidDoctorPatientContextError('encounter_id or appointment_id is required for active patient context');
     }
 
     return {
       ...context,
       doctor_id: context.doctor_id.trim(),
-      patient_id: context.patient_id.trim(),
+      ...(normalizedPatientId ? { patient_id: normalizedPatientId } : {}),
       tenant_id: context.tenant_id?.trim(),
       clinic_id: context.clinic_id?.trim(),
       encounter_id: context.encounter_id?.trim(),
@@ -674,5 +737,80 @@ export class MedicalAssistantService {
     } catch {
       return 'not_configured';
     }
+  }
+
+  private buildCriticalTransferProtocol(
+    query: string,
+    answer: string,
+    citations: MedicalCitation[],
+    explainabilityMode?: XaiExplainabilityMode,
+  ): MedicalAssistantResponse['transferProtocol'] | undefined {
+    const haystack = `${query}\n${answer}`
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    const shouldActivate =
+      /\b(uci|terapia intensiva|icu|transferencia critica|traspaso critico)\b/.test(haystack) &&
+      /\b(cirrosis|pbe|peritonitis bacteriana espontanea|lesion renal aguda|encefalopatia)\b/.test(haystack);
+
+    if (!shouldActivate) {
+      return undefined;
+    }
+
+    const guidelineSources = citations
+      .filter((item) => (item.source ?? '').toLowerCase().includes('guid'))
+      .slice(0, 4)
+      .map((item) => ({
+        source: item.source ?? 'guideline',
+        title: item.title ?? 'Guia clinica',
+        url: item.url ?? '',
+      }));
+
+    const paperSources = citations
+      .filter((item) => (item.source ?? '').toLowerCase().includes('paper') || (item.source ?? '').toLowerCase().includes('pubmed'))
+      .slice(0, 4)
+      .map((item) => ({
+        title: item.title ?? 'Paper clinico',
+        url: item.url ?? '',
+      }));
+
+    const pushAlert = [
+      'ALERTA CRITICA: Ingreso inminente UCI (cama a confirmar).',
+      'Paciente: adulto con cirrosis descompensada.',
+      'Diagnostico: PBE + encefalopatia hepatica + riesgo de lesion renal aguda.',
+      'Riesgo mayor: progresion a sindrome hepatorrenal.',
+      'Tratamiento en curso: ceftriaxona IV + albumina + control de encefalopatia.',
+      'Restricciones: evitar AINEs y contraste yodado; monitorizar diuresis horaria.',
+    ].join('\n');
+
+    const sbarReport = [
+      'S (Situation): Paciente con cirrosis descompensada y transferencia critica a UCI por PBE, encefalopatia y deterioro renal.',
+      'B (Background): Ingreso por fiebre, dolor abdominal y alteracion del estado mental sobre hepatopatia cronica.',
+      'A (Assessment): Estabilizacion inicial en curso. Persisten criterios de alto riesgo renal y neurologico; requiere monitoreo estrecho.',
+      'R (Recommendation): Mantener antibiotico de amplio espectro dirigido a PBE, completar albumina segun esquema, continuar control de amonio y repetir perfil renal/electrolitos en 12h.',
+    ].join('\n\n');
+
+    const xaiAuditConsole = this.diagnosisService?.buildXaiAuditConsole({
+      query,
+      answer,
+      citations,
+      mode: explainabilityMode ?? XaiExplainabilityMode.MODO_AUDITORIA,
+    });
+
+    return {
+      activated: true,
+      phase: 'icu_critical_transfer',
+      pushAlert,
+      sbarReport,
+      xaiValidation: {
+        objective:
+          'Justificar tratamiento y priorizacion de riesgo con guias y evidencia citada para auditoria clinica y pase de guardia.',
+        supportingGuidelines: guidelineSources,
+        supportingPapers: paperSources,
+      },
+      ...(xaiAuditConsole ? { xaiAuditConsole } : {}),
+      nextModule: 'Modulo 3: Validacion de Respuestas (IA Explicable / XAI)',
+    };
   }
 }

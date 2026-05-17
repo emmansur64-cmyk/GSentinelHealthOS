@@ -31,6 +31,14 @@ export type MemoryEntry = {
   trace_id: string;
   metadata: Record<string, unknown>;
   audit_hash?: string;
+  learningType?: "explicit_doctor_teaching" | "official_source_reference" | "correction" | "preference" | "unsafe_rejected";
+  safetyFlags?: string[];
+  controlledDecision?: {
+    action: string;
+    confidence: number;
+    allowed: boolean;
+    reason: string;
+  };
 };
 
 export type MemorySearchFilters = {

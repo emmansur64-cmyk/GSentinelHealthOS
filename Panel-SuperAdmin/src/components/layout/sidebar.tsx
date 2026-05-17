@@ -9,6 +9,7 @@ import {
   ScrollText,
   Settings2,
   ShieldCheck,
+  UserPlus,
   Zap,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -26,6 +27,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: 'System Health', href: '/system-health', icon: Activity, moduleKey: 'system-health' },
   { label: 'Tenants', href: '/tenants', icon: Building2, moduleKey: 'tenants' },
+  { label: 'Alta Cliente', href: '/client-onboarding', icon: UserPlus, moduleKey: 'client-onboarding' },
   { label: 'AI Providers', href: '/ai-providers', icon: Zap, moduleKey: 'ai-providers' },
   { label: 'Feature Flags', href: '/feature-flags', icon: Flag, moduleKey: 'feature-flags' },
   { label: 'Audit Logs', href: '/audit-logs', icon: ScrollText, moduleKey: 'audit-logs' },
@@ -33,9 +35,10 @@ const NAV_ITEMS: NavItem[] = [
 
 interface SidebarProps {
   role: AdminRole
+  appVersion: string
 }
 
-export function Sidebar({ role }: SidebarProps) {
+export function Sidebar({ role, appVersion }: SidebarProps) {
   const pathname = usePathname()
 
   const visibleItems = NAV_ITEMS.filter((item) => {
@@ -98,7 +101,7 @@ export function Sidebar({ role }: SidebarProps) {
       {/* Footer */}
       <div className="shrink-0 border-t border-slate-700/50 px-4 py-3">
         <p className="text-xs text-slate-500">
-          v{process.env.NEXT_PUBLIC_APP_VERSION ?? '0.1.0'}
+          v{appVersion}
         </p>
       </div>
     </aside>

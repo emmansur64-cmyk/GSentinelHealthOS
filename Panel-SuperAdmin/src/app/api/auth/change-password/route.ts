@@ -4,6 +4,13 @@ import { changeSuperAdminPassword } from '@/lib/super-admin-credentials'
 
 export const runtime = 'nodejs'
 
+function shouldUseSecureCookie(): boolean {
+  const override = (process.env.SUPER_ADMIN_COOKIE_SECURE ?? '').trim().toLowerCase()
+  if (override === 'true') return true
+  if (override === 'false') return false
+  return process.env.NODE_ENV === 'production'
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const admin = await getCurrentAdmin()
   if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -38,7 +45,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     name: SA_TOKEN_COOKIE,
     value: token,
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: shouldUseSecureCookie(),
     sameSite: 'lax',
     maxAge: SA_TOKEN_TTL_SECONDS,
     path: '/',

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { type MetaBrainDecision, type MetaBrainSource } from "@/lib/metabrain";
 import { callBrainDecide } from "@/lib/brain-client";
+import { callGroqDoctorChat } from "@/lib/groq-doctor-chat";
 import { logFunctionalAudit } from "@/lib/audit-functional";
 import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
 import { logServer } from "@/lib/server-logger";
@@ -58,6 +59,30 @@ type ChatSessionEntry = {
   updated_at: string;
 };
 
+type ScopedMemoryExchange = {
+  id: string;
+  conversationId: string;
+  doctorMessage: string;
+  assistantResponse: string;
+  action: string;
+  source: MetaBrainSource;
+  createdAt: string;
+};
+
+function parseBooleanEnv(value: string | undefined, fallback: boolean): boolean {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+function parseIntegerEnv(value: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
 function safeJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -86,6 +111,92 @@ function buildConversationId(
 ): string {
   const base = `${DOCTOR_CHAT_PARAMS.conversationPrefix}:${doctorId}:patient:${patientId ?? "general"}:appointment:${appointmentId ?? "none"}`;
   return sessionId ? `${base}:chat:${sessionId}` : base;
+}
+
+function buildDoctorPatientConversationPrefix(doctorId: string, patientId?: string | null): string {
+  const patientToken = patientId ?? "general";
+  return `${DOCTOR_CHAT_PARAMS.conversationPrefix}:${doctorId}:patient:${patientToken}:appointment:`;
+}
+
+async function loadScopedDoctorMemoryExchanges(input: {
+  tenantId: string;
+  doctorId: string;
+  patientId?: string | null;
+}): Promise<ScopedMemoryExchange[]> {
+  const memoryScope = String(process.env.DOCTOR_CHAT_MEMORY_SCOPE ?? "doctor")
+    .trim()
+    .toLowerCase();
+  const basePrefix = `${DOCTOR_CHAT_PARAMS.conversationPrefix}:${input.doctorId}:`;
+  const scopedPrefix = buildDoctorPatientConversationPrefix(input.doctorId, input.patientId);
+  const prefix = memoryScope === "patient" ? scopedPrefix : basePrefix;
+  const maxRows = parseIntegerEnv(process.env.DOCTOR_CHAT_MEMORY_MAX_AUDIT_ROWS, 1200, 100, 5000);
+  const respectClear = parseBooleanEnv(process.env.DOCTOR_CHAT_MEMORY_RESPECT_CLEAR, true);
+  
+  const rows = await prisma.auditLog.findMany({
+    where: {
+      tenant_id: input.tenantId,
+      entity_type: DOCTOR_CHAT_PARAMS.auditEntityType,
+      entity_id: { startsWith: prefix },
+      action: { in: [DOCTOR_CHAT_PARAMS.exchangeAction, DOCTOR_CHAT_PARAMS.clearAction, "doctor_chat.clear_requested"] },
+    },
+    orderBy: { created_at: "desc" },
+    take: maxRows,
+  });
+
+  logServer("debug", "doctor_chat.memory_load_start", {
+    doctor_id: input.doctorId,
+    patient_id: input.patientId ?? "general",
+    conversation_prefix: prefix,
+    total_rows_found: rows.length,
+  });
+
+  const latestClearByConversation = new Map<string, Date>();
+  if (respectClear) {
+    for (const row of rows) {
+      if (!isDoctorChatClearAction(row.action)) continue;
+      const conversationId = row.entity_id ?? "";
+      if (!conversationId || latestClearByConversation.has(conversationId)) continue;
+      latestClearByConversation.set(conversationId, row.created_at);
+    }
+  }
+
+  const exchanges = rows
+    .slice()
+    .reverse()
+    .filter((row) => row.action === DOCTOR_CHAT_PARAMS.exchangeAction)
+    .filter((row) => {
+      const conversationId = row.entity_id ?? "";
+      if (!conversationId) return false;
+      const latestClear = latestClearByConversation.get(conversationId);
+      return !latestClear || row.created_at > latestClear;
+    })
+    .map((row) => {
+      const before = row.payload_before as Record<string, unknown> | null;
+      const after = row.payload_after as Record<string, unknown> | null;
+      return {
+        id: row.id,
+        conversationId: row.entity_id ?? "",
+        doctorMessage: String(before?.message ?? ""),
+        assistantResponse: String(after?.response ?? ""),
+        action: String(after?.action ?? "GUIDE_NEXT_STEP"),
+        source: normalizeMetaBrainSource(String(after?.source ?? "RULES")),
+        createdAt: row.created_at.toISOString(),
+      };
+    });
+
+  const result = exchanges.slice(-parseIntegerEnv(process.env.DOCTOR_CHAT_MEMORY_MAX_EXCHANGES, 240, 20, 1200));
+  
+  logServer("info", "doctor_chat.memory_load_complete", {
+    doctor_id: input.doctorId,
+    patient_id: input.patientId ?? "general",
+    total_exchanges_after_filter: result.length,
+    exchanges_sample: result.slice(0, 2).map((e) => ({
+      doctor_msg: e.doctorMessage.slice(0, 100),
+      assistant_msg: e.assistantResponse.slice(0, 100),
+    })),
+  });
+
+  return result;
 }
 
 async function findCompletedDoctorChatByRequestId(input: {
@@ -187,6 +298,11 @@ async function resolveClinicalContext(doctorId: string, context?: DoctorChatCont
     orderBy: { created_at: "asc" },
     take: 10,
   });
+  const memoryExchanges = await loadScopedDoctorMemoryExchanges({
+    tenantId,
+    doctorId,
+    patientId: patient?.id ?? patientId ?? null,
+  });
 
   return {
     conversationId,
@@ -207,6 +323,7 @@ async function resolveClinicalContext(doctorId: string, context?: DoctorChatCont
       action: String((row.payload_after as Record<string, unknown> | null)?.action ?? "GUIDE_NEXT_STEP"),
       created_at: row.created_at.toISOString(),
     })),
+    memoryExchanges,
     clinicalState:
       context?.clinical_state?.trim() ||
       context?.patient_notes?.trim() ||
@@ -281,6 +398,81 @@ function isClinicallyGroundedResponse(query: string, response: string): boolean 
     r.includes("bloque") ||
     r.includes("contraind")
   );
+}
+
+function hasClinicalIntent(message: string): boolean {
+  const normalized = normalizeForMatch(message);
+  return [
+    "dolor",
+    "fiebre",
+    "paciente",
+    "dosis",
+    "tratamiento",
+    "presion",
+    "tension",
+    "migra",
+    "farmaco",
+    "medic",
+    "diagnost",
+    "sintoma",
+    "hora",
+    "fecha",
+    "clini",
+  ].some((token) => normalized.includes(token));
+}
+
+function isLowSignalInput(message: string): boolean {
+  const normalized = normalizeForMatch(message).replace(/\s+/g, " ").trim();
+  if (!normalized) return true;
+  if (normalized.length <= 2) return true;
+  if (hasClinicalIntent(normalized)) return false;
+
+  const compact = normalized.replace(/[^a-z0-9]/g, "");
+  if (!compact) return true;
+  const hasLongConsonantRun = /[bcdfghjklmnpqrstvwxyz]{6,}/.test(compact);
+  const vowelMatches = compact.match(/[aeiou]/g);
+  const vowelRatio = (vowelMatches?.length ?? 0) / Math.max(1, compact.length);
+  return hasLongConsonantRun || (compact.length >= 10 && vowelRatio < 0.15);
+}
+
+function isOverTemplatedClarification(response: string): boolean {
+  const normalized = normalizeForMatch(response);
+  return (
+    normalized.includes("analizando lo que mencionas") ||
+    normalized.includes("necesito un poco mas de informacion") ||
+    normalized.includes("contame si hay algun otro sintoma") ||
+    normalized.includes("podemos ajustar esto con mas informacion")
+  );
+}
+
+function sanitizeDoctorChatResponse(response: string): string {
+  const cleaned = String(response ?? "")
+    .replace(/\r/g, "")
+    // Markdown headings -> plain title
+    .replace(/^\s{0,3}#{1,6}\s*/gm, "")
+    // Bold/italic markers
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/_(.*?)_/g, "$1")
+    // Bullet normalization
+    .replace(/(^|\n)\s*[\*\u2022]\s+/g, "$1- ")
+    // Remove LaTeX block delimiters
+    .replace(/\$\$[\s\S]*?\$\$/g, "")
+    // Inline LaTeX delimiters \( ... \), \[ ... \]
+    .replace(/\\\(([\s\S]*?)\\\)/g, "$1")
+    .replace(/\\\[([\s\S]*?)\\\]/g, "$1")
+    // Common latex escapes
+    .replace(/\\text\{([^}]*)\}/g, "$1")
+    .replace(/\\cdot/g, "·")
+    .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g, "$1/$2")
+    .replace(/\\_/g, "_")
+    // Compact spacing
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return cleaned;
 }
 
 async function syncDoctorChatLearningToMbChat(input: {
@@ -583,6 +775,7 @@ export async function handleDoctorChat(
     .trim();
   const hasHora = /\bhora\b/.test(normalizedMessage);
   const hasFecha = /\bfecha\b/.test(normalizedMessage) || /\bdia\b/.test(normalizedMessage);
+  const isWeatherQuery = /\b(clima|tiempo|temperatura|lluvia|viento|humedad)\b/.test(normalizedMessage);
   const isDateTimeQuery =
     (hasHora && hasFecha) ||
     (normalizedMessage.length <= 40 && (hasHora || hasFecha)) ||
@@ -622,13 +815,13 @@ export async function handleDoctorChat(
     patientId: resolved.patient?.id ?? null,
     appointmentId: resolved.appointment?.id ?? null,
     currentMessage: input.message,
-    exchanges: resolved.conversationHistory.map((entry, index) => ({
-      id: `${resolved.conversationId}:${index}`,
-      doctorMessage: entry.doctor_message,
-      assistantResponse: entry.response,
-      action: entry.action ?? "GUIDE_NEXT_STEP",
+    exchanges: resolved.memoryExchanges.map((entry) => ({
+      id: entry.id,
+      doctorMessage: entry.doctorMessage,
+      assistantResponse: entry.assistantResponse,
+      action: entry.action,
       source: entry.source,
-      createdAt: entry.created_at,
+      createdAt: entry.createdAt,
     })),
   });
 
@@ -717,7 +910,48 @@ export async function handleDoctorChat(
     };
   })();
 
-  const brainResult = forcedDateTimeDecision
+  const forcedWeatherDecision: MetaBrainDecision | null = (() => {
+    if (!isWeatherQuery) return null;
+    const weather = medicalRuntimeContext?.weather;
+    if (!weather) {
+      return {
+        action: "DOCTOR_CHAT_WEATHER_UNAVAILABLE",
+        response: "No tengo datos meteorologicos en este momento para responder con precision.",
+        confidence: 0.6,
+        source: "RULES",
+      };
+    }
+
+    const lines = [
+      "Clima actual (contexto operativo):",
+      weather.region ? `Region: ${weather.region}` : undefined,
+      weather.condition ? `Condicion: ${weather.condition}` : undefined,
+      typeof weather.temperatureC === "number" ? `Temperatura: ${weather.temperatureC} C` : undefined,
+      typeof weather.relativeHumidityPercent === "number" ? `Humedad: ${weather.relativeHumidityPercent}%` : undefined,
+      typeof weather.pressureHPa === "number" ? `Presion: ${weather.pressureHPa} hPa` : undefined,
+      weather.observedAt ? `Observado: ${weather.observedAt}` : undefined,
+      "Fuente: open-meteo",
+    ].filter(Boolean);
+
+    return {
+      action: "DOCTOR_CHAT_WEATHER_RUNTIME",
+      response: lines.join("\n"),
+      confidence: 0.95,
+      source: "RULES",
+    };
+  })();
+
+  const forcedDecision = forcedDateTimeDecision ?? forcedWeatherDecision;
+
+  const groqResult = forcedDecision
+    ? null
+    : await callGroqDoctorChat({
+        role: "DOCTOR",
+        message: input.message,
+        context: sharedContext,
+      });
+
+  const brainResult = forcedDecision || groqResult
     ? null
     : await callBrainDecide({
         role: "DOCTOR",
@@ -729,10 +963,12 @@ export async function handleDoctorChat(
         context: sharedContext,
       });
 
-  const degraded = !forcedDateTimeDecision && !brainResult;
+  const degraded = !forcedDateTimeDecision && !groqResult && !brainResult;
 
-  const decision: MetaBrainDecision = forcedDateTimeDecision
-    ? forcedDateTimeDecision
+  const decision: MetaBrainDecision = forcedDecision
+    ? forcedDecision
+    : groqResult
+    ? groqResult
     : brainResult
     ? {
         action: brainResult.action,
@@ -748,11 +984,28 @@ export async function handleDoctorChat(
       };
 
   if (isStructuredClinicalAuditQuery(input.message) && !isClinicallyGroundedResponse(input.message, decision.response)) {
-    decision.action = "DOCTOR_CHAT_CLINICAL_VALIDATION_BLOCK";
-    decision.response = "La respuesta automatica no paso validacion clinica minima para este caso farmacologico. Bloqueo preventivo activado: revisar interaccion de farmacos, riesgo de sindrome serotoninergico y definir alternativa terapeutica segura.";
-    decision.confidence = Math.min(decision.confidence, 0.25);
-    decision.source = "RULES";
+    const strictClinicalGuard = parseBooleanEnv(process.env.DOCTOR_CHAT_STRICT_CLINICAL_GUARD, false);
+    if (strictClinicalGuard) {
+      decision.action = "DOCTOR_CHAT_CLINICAL_VALIDATION_BLOCK";
+      decision.response = "La respuesta automatica no paso validacion clinica minima para este caso farmacologico. Bloqueo preventivo activado: revisar interaccion de farmacos, riesgo de sindrome serotoninergico y definir alternativa terapeutica segura.";
+      decision.confidence = Math.min(decision.confidence, 0.25);
+      decision.source = "RULES";
+    }
   }
+
+  if (!isStructuredClinicalAuditQuery(input.message)) {
+    const relaxedMode = parseBooleanEnv(process.env.DOCTOR_CHAT_RELAXED_MODE, true);
+    const lowSignalInput = isLowSignalInput(input.message);
+    if (!relaxedMode && (lowSignalInput || isOverTemplatedClarification(decision.response))) {
+      decision.action = "DOCTOR_CHAT_INPUT_CLARIFICATION";
+      decision.response =
+        "No pude interpretar el mensaje con precision clinica. Escribi la consulta en una frase clara, por ejemplo: sintoma principal, tiempo de evolucion y tratamiento actual.";
+      decision.confidence = Math.min(decision.confidence, 0.35);
+      decision.source = "RULES";
+    }
+  }
+
+  decision.response = sanitizeDoctorChatResponse(decision.response);
 
   if (degraded) {
     incDoctorChatFallback("brain_unavailable");

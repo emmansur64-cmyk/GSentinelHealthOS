@@ -39,7 +39,30 @@ const persistenceStub = {
   saveIncident: async () => undefined,
   saveDecision: async () => undefined,
   saveFeatures: async () => undefined,
+  saveOnlineTrainingRecord: async () => undefined,
+  updateOnlineTrainingOutcome: async () => undefined,
   fireAndForget: () => undefined,
+};
+
+const eventProducerStub = {
+  publish: async () => ({ event_id: 'evt-1', trace_id: 'trace-1' }),
+};
+
+const modelServiceStub = {
+  predictDecision: async () => ({
+    action: null,
+    confidence: 0,
+    source: 'RULES',
+    inferenceMs: 0,
+    modelUsed: false,
+    featureVector: [],
+    topFeatures: [],
+  }),
+  getDecisionThresholds: () => ({ mlPrimary: 0.8, hybridMin: 0.6 }),
+  getModelVersion: () => 'test-model',
+  getFeatureBuilder: () => ({
+    getFeatureNames: () => [],
+  }),
 };
 
 // ── DB outage payload factory ────────────────────────────────────────────────
@@ -84,7 +107,7 @@ function buildBrainService(): { brain: BrainService; audit: AuditService } {
   const memoryService = new MemoryService(persistenceStub as never);
   const actionService = new ActionService();
   const executionService = new ExecutionService(powerShellStub as never);
-  const eventProducer = new EventProducer();
+  const eventProducer = eventProducerStub as never;
   const router = new BrainRouter();
   const bookingStrategy = new BookingStrategy();
   const scheduleStrategy = new ScheduleStrategy();
@@ -102,6 +125,8 @@ function buildBrainService(): { brain: BrainService; audit: AuditService } {
     bookingStrategy,
     scheduleStrategy,
     errorStrategy,
+    modelServiceStub as never,
+    persistenceStub as never,
   );
 
   return { brain, audit: auditService };

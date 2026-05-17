@@ -24,6 +24,8 @@ interface CacheEntry {
   expiresAt: number;
 }
 
+type RequestMode = 'auto' | 'structured';
+
 type GroqMessage = {
   role: 'system' | 'user';
   content: string;
@@ -67,6 +69,14 @@ export class GroqProvider {
     'INTEGRIDAD MATEMATICA: en escenarios secuenciales, calcula pasos posteriores como probabilidad condicional multiplicada por la probabilidad de fracaso del paso anterior.',
     'La suma de todos los escenarios del espacio muestral debe validar exactamente 100% (1.0).',
     'PROTOCOLO DE TRIAJE CLINICO: descartar patologias letales primero; ninguna peticion secundaria debe retrasar pruebas criticas.',
+  ].join(' ');
+
+  private readonly conversationalSystemPrompt = [
+    'Eres un asistente clinico de uso interno para un medico.',
+    'Tu funcion es responder consultas de forma directa, agil y natural.',
+    'El medico puede interactuar de manera libre sobre temas operativos, dudas generales o consultas cotidianas.',
+    'REGLA DE ORO: si la consulta es cotidiana o no medica, responde directamente sin forzar farmacoterapia, patologias o auditoria de recetas.',
+    'Responde en espanol claro, directo y con datos concisos.',
   ].join(' ');
 
   // Per-model circuit breaker state
@@ -154,12 +164,43 @@ export class GroqProvider {
     return this.apiKeyEnvVar === 'GROQ_API_KEY_CHAT';
   }
 
-  private buildMessages(prompt: string): GroqMessage[] {
+  private isConversationalPrompt(prompt: string): boolean {
+    const normalized = prompt
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    const conversationalSignals = [
+      'clima',
+      'tiempo',
+      'temperatura',
+      'lluvia',
+      'viento',
+      'hola',
+      'buen dia',
+      'buenas tardes',
+      'buenas noches',
+      'saludos',
+      'gracias',
+      'recordatorio',
+      'cultura',
+    ];
+
+    return conversationalSignals.some((token) => normalized.includes(token));
+  }
+
+  private buildMessages(prompt: string, mode: RequestMode = 'auto'): GroqMessage[] {
     if (!this.shouldUseStrictXmlProtocol()) {
       return [{ role: 'user', content: prompt }];
     }
+
+    const useConversationalPrompt = mode === 'auto' && this.isConversationalPrompt(prompt);
+    const systemPrompt = useConversationalPrompt
+      ? this.conversationalSystemPrompt
+      : this.strictStructuredSystemPrompt;
+
     return [
-      { role: 'system', content: this.strictStructuredSystemPrompt },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt },
     ];
   }
@@ -173,13 +214,20 @@ export class GroqProvider {
 
   // ── Core HTTP call (with timeout) ────────────────────────────────────────────
 
-  private async callModel(prompt: string, model: string): Promise<string> {
+  private async callModel(prompt: string, model: string, mode: RequestMode = 'auto'): Promise<string> {
     const { default: fetch } = await import('node-fetch');
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS);
 
     let res: Awaited<ReturnType<typeof fetch>>;
+    const useStructuredResponse = this.shouldUseStrictXmlProtocol() && mode === 'structured';
+    const temperature = useStructuredResponse
+      ? 0.0
+      : this.shouldUseStrictXmlProtocol()
+        ? 0.4
+        : 0.2;
+
     try {
       res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
@@ -190,9 +238,9 @@ export class GroqProvider {
         },
         body: JSON.stringify({
           model,
-          messages: this.buildMessages(prompt),
-          temperature: this.shouldUseStrictXmlProtocol() ? 0.0 : 0.2,
-          ...(this.shouldUseStrictXmlProtocol()
+          messages: this.buildMessages(prompt, mode),
+          temperature,
+          ...(useStructuredResponse
             ? { response_format: { type: 'json_object' as const } }
             : {}),
         }),
@@ -238,7 +286,7 @@ export class GroqProvider {
       attempted.add(model);
 
       try {
-        const result = await this.callModel(prompt, model);
+        const result = await this.callModel(prompt, model, 'auto');
         this.recordSuccess(model);
         if (attempted.size > 1) {
           this.logger.warn(`[FALLBACK] Using model ${model} after ${attempted.size - 1} skipped`);
@@ -287,7 +335,7 @@ export class GroqProvider {
 
       let raw: string;
       try {
-        raw = await this.callModel(prompt, model);
+        raw = await this.callModel(prompt, model, 'structured');
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.recordFailure(model);

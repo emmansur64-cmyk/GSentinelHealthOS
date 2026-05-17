@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 import type { AdminRole } from '@/modules/rbac/roles'
 
-export const SA_TOKEN_COOKIE = 'sa_token'
+export const SA_TOKEN_COOKIE = 'super_admin_session'
 export const SA_TOKEN_TTL_SECONDS = 60 * 60 * 8 // 8 hours
 
 export interface AdminTokenPayload {

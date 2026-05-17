@@ -1,9 +1,23 @@
-import { CLINIC_STATUS_LABEL, statusBadgeClass } from "@/lib/status-labels";
+type StatusPillProps = {
+  status: string | null | undefined;
+};
 
-export function StatusPill({ status }: { status: string }) {
+const STATUS_STYLES: Record<string, string> = {
+  active: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  trial: "border-sky-200 bg-sky-50 text-sky-700",
+  pending: "border-amber-200 bg-amber-50 text-amber-700",
+  suspended: "border-red-200 bg-red-50 text-red-700",
+  disabled: "border-slate-200 bg-slate-100 text-slate-600",
+};
+
+export function StatusPill({ status }: StatusPillProps) {
+  const normalized = String(status ?? "pending").toLowerCase();
+  const style = STATUS_STYLES[normalized] ?? STATUS_STYLES.pending;
+
   return (
-    <span className={`inline-flex h-6 items-center rounded-full border px-2.5 text-xs font-semibold ${statusBadgeClass(status)}`}>
-      {CLINIC_STATUS_LABEL[status] ?? status}
+    <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${style}`}>
+      {normalized}
     </span>
   );
 }
+

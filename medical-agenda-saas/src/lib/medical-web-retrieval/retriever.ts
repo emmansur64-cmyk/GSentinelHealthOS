@@ -11,6 +11,27 @@ import type {
   MedicalWebRetrievalResult,
 } from "./types";
 
+const OPEN_WEB_SOURCES = [
+  {
+    domain: "duckduckgo.com",
+    type: "science",
+    label: "DuckDuckGo",
+    searchUrl: (query: string) => `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+  },
+  {
+    domain: "google.com",
+    type: "science",
+    label: "Google",
+    searchUrl: (query: string) => `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+  },
+  {
+    domain: "bing.com",
+    type: "science",
+    label: "Bing",
+    searchUrl: (query: string) => `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
+  },
+] as const;
+
 async function fetchWithTimeout(url: string, timeoutMs: number): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -49,13 +70,14 @@ export async function retrieveMedicalWebEvidence(input: MedicalWebRetrievalInput
   const sourcesRejected: MedicalWebRejectedSource[] = [];
   const evidence: MedicalWebEvidenceFragment[] = [];
 
-  const sources = MEDICAL_WEB_ALLOWLIST.slice(0, Math.max(config.maxSources * 2, config.maxSources));
+  const sourcePool = config.mode === "open" ? OPEN_WEB_SOURCES : MEDICAL_WEB_ALLOWLIST;
+  const sources = sourcePool.slice(0, Math.max(config.maxSources * 2, config.maxSources));
   for (const source of sources) {
     if (evidence.length >= config.maxSources) break;
 
     const url = source.searchUrl(query);
     const auditUrl = sanitizeUrlForAudit(url);
-    if (!isAllowedMedicalSourceUrl(url)) {
+    if (config.mode !== "open" && !isAllowedMedicalSourceUrl(url)) {
       sourcesRejected.push({ url: auditUrl, reason: "not_allowlisted_or_not_https" });
       continue;
     }

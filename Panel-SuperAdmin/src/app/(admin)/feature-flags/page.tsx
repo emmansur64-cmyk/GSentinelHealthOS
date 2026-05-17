@@ -5,7 +5,10 @@ import type { FeatureFlag } from '@/modules/feature-flags/flags.types'
 
 async function fetchFlags(): Promise<{ flags: FeatureFlag[] }> {
   const res = await fetch('/api/feature-flags')
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error ?? `HTTP ${res.status}`)
+  }
   return res.json()
 }
 
@@ -15,13 +18,16 @@ async function toggleFlag(key: string, enabled: boolean): Promise<{ flag: Featur
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ key, enabled }),
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error ?? `HTTP ${res.status}`)
+  }
   return res.json()
 }
 
 export default function FeatureFlagsPage() {
   const queryClient = useQueryClient()
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['feature-flags'],
     queryFn: fetchFlags,
   })
@@ -40,11 +46,6 @@ export default function FeatureFlagsPage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700">
-        <strong>Note:</strong> Flags are stored in-memory during bootstrap. Persistence to the
-        database will be wired once the admin config schema is implemented.
-      </div>
-
       {isLoading && (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -55,7 +56,7 @@ export default function FeatureFlagsPage() {
 
       {isError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Failed to load feature flags.
+          {error instanceof Error ? error.message : 'Failed to load feature flags.'}
         </div>
       )}
 

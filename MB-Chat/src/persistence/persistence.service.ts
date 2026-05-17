@@ -14,6 +14,7 @@ import {
   OnlineTrainingBufferDocument,
 } from './schemas/online-training-buffer.schema';
 import { sanitizeForPersistence } from '../common/utils/persistence-sanitizer.util';
+import { XaiDefenseReport } from './schemas/xai-defense-report.schema';
 
 @Injectable()
 export class PersistenceService {
@@ -27,6 +28,8 @@ export class PersistenceService {
     @InjectModel(AuditLog.name) private readonly auditModel: Model<AuditLog>,
     @InjectModel(OnlineTrainingBuffer.name)
     private readonly onlineTrainingBufferModel: Model<OnlineTrainingBufferDocument>,
+    @InjectModel(XaiDefenseReport.name)
+    private readonly xaiDefenseReportModel: Model<XaiDefenseReport>,
   ) {}
 
   async saveIncident(record: IncidentMemoryRecord): Promise<void> {
@@ -74,6 +77,18 @@ export class PersistenceService {
 
   async saveAudit(record: AuditEntity): Promise<void> {
     await this.auditModel.create(sanitizeForPersistence(record));
+  }
+
+  async saveXaiDefenseReport(record: {
+    caseId: string;
+    sessionId?: string;
+    mode: string;
+    module: string;
+    component: string;
+    report: Record<string, unknown>;
+    createdAt: string;
+  }): Promise<void> {
+    await this.xaiDefenseReportModel.create(sanitizeForPersistence(record));
   }
 
   async getRecentIncidents(limit: number): Promise<IncidentMemoryRecord[]> {

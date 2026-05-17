@@ -431,6 +431,7 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       BRAIN_API_URL: ${BRAIN_API_URL:-http://brain:8001}
       BRAIN_API_KEY: ${INTERNAL_SERVICES_KEY:-${BRAIN_API_KEY}}
+      PANEL_ADMIN_API_KEY: ${PANEL_ADMIN_API_KEY}
       BRAIN_TIMEOUT_MS: ${BRAIN_TIMEOUT_MS:-5000}
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
       WHATSAPP_AUTO_BOOT_WORKERS: ${WHATSAPP_AUTO_BOOT_WORKERS:-true}
@@ -495,19 +496,23 @@ services:
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
+      SUPER_ADMIN_COOKIE_SECURE: "false"
       SUPER_ADMIN_JWT_SECRET: ${SUPER_ADMIN_JWT_SECRET}
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
       SUPER_ADMIN_PASSWORD_HASH: ${SUPER_ADMIN_PASSWORD_HASH}
       ADMIN_API_INTERNAL_KEY: ${PANEL_ADMIN_API_KEY}
       AGENDA_API_INTERNAL_URL: http://api:8000
-      MBCHAT_INTERNAL_URL: http://mb-chat:3001
-      MBSECRETARIA_INTERNAL_URL: http://mb-secretaria:3002
-      MBWHATSAPP_INTERNAL_URL: http://mb-whatsapp:3003
+      MBCHAT_INTERNAL_URL: http://frontend:3000
+      MBSECRETARIA_INTERNAL_URL: http://frontend:3000
+      MBWHATSAPP_INTERNAL_URL: http://frontend:3000
       BRAIN_INTERNAL_URL: http://brain:8001
+      MEDICAL_AGENDA_CREATE_CLINIC_URL: http://frontend:3000/api/internal/client-onboarding
       HEALTH_CHECK_TIMEOUT_MS: "5000"
       NEXT_PUBLIC_APP_VERSION: "0.2.0"
     ports:
       - "127.0.0.1:${PANEL_ADMIN_PORT:-3010}:3010"
+    volumes:
+      - panel_admin_runtime:/app/.runtime
     networks:
       - gs_prod
     restart: unless-stopped
@@ -980,6 +985,7 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  panel_admin_runtime:
 
 networks:
   gs_prod:

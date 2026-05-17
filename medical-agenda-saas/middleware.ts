@@ -1,9 +1,9 @@
 import { jwtVerify } from "jose";
 import { NextRequest, NextResponse } from "next/server";
-import { isSuperAdminDirectAccessEnabled } from "@/lib/super-admin-direct-access";
 
 const secret = new TextEncoder().encode(process.env.JWT_SECRET ?? "");
 const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID?.trim() || "default";
+const PANEL_SUPERADMIN_URL = (process.env.PANEL_SUPERADMIN_URL ?? "http://127.0.0.1:3010").trim();
 
 const LEGACY_PATH_REDIRECTS: Record<string, string> = {
   "/home": "/",
@@ -14,7 +14,6 @@ const LEGACY_PATH_REDIRECTS: Record<string, string> = {
 const KNOWN_TOP_LEVEL_WEB_SEGMENTS = new Set([
   "",
   "login",
-  "admin",
   "clinic",
   "doctor",
   "secretaria",
@@ -36,7 +35,6 @@ function normalizeRole(role: string): "super_admin" | "admin" | "medico" | "rece
 }
 
 const roleRoutes: Array<{ prefix: string; roles: string[] }> = [
-  { prefix: "/admin", roles: ["super_admin"] },
   { prefix: "/clinic", roles: ["secretaria", "recepcionista", "admin", "clinic_owner", "clinic_admin"] },
   { prefix: "/secretaria", roles: ["secretaria", "recepcionista", "admin", "clinic_owner", "clinic_admin"] },
   { prefix: "/doctor", roles: ["doctor", "medico"] },
@@ -60,6 +58,13 @@ const roleRoutes: Array<{ prefix: string; roles: string[] }> = [
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  if (pathname.startsWith("/admin")) {
+    return NextResponse.redirect(new URL(PANEL_SUPERADMIN_URL, request.url));
+  }
+  if (pathname.startsWith("/api/super-admin")) {
+    return NextResponse.json({ ok: false, error: { message: "Ruta deshabilitada" } }, { status: 410 });
+  }
+
   const legacyTarget = LEGACY_PATH_REDIRECTS[pathname];
   if (legacyTarget) {
     return NextResponse.redirect(new URL(legacyTarget, request.url));
@@ -71,20 +76,10 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === "/login") {
-    if (isSuperAdminDirectAccessEnabled()) {
-      return NextResponse.redirect(new URL("/admin", request.url));
-    }
-    return NextResponse.next();
-  }
-
-  const directSuperAdminPath = pathname.startsWith("/admin") || pathname.startsWith("/api/super-admin");
-  const directSuperAdminEnabled = directSuperAdminPath && isSuperAdminDirectAccessEnabled();
-  if (directSuperAdminEnabled) {
     return NextResponse.next();
   }
 
   if (
-    !pathname.startsWith("/admin") &&
     !pathname.startsWith("/clinic") &&
     !pathname.startsWith("/doctor") &&
     !pathname.startsWith("/secretaria") &&
@@ -95,6 +90,12 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname.startsWith("/api/auth/login")) {
+    return NextResponse.next();
+  }
+
+  // Endpoint interno para onboarding desde Panel-SuperAdmin.
+  // La seguridad se valida con x-internal-key dentro del propio handler.
+  if (pathname.startsWith("/api/internal/client-onboarding")) {
     return NextResponse.next();
   }
 

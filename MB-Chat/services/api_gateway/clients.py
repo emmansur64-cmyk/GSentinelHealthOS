@@ -20,6 +20,10 @@ class ServiceClientSettings:
 class ServiceClient:
     def __init__(self, settings: ServiceClientSettings) -> None:
         self._settings = settings
+        self._client = httpx.AsyncClient(
+            timeout=self._settings.timeout_seconds,
+            limits=httpx.Limits(max_connections=1000, max_keepalive_connections=200),
+        )
 
     async def infer(self, model_input: dict[str, Any]) -> dict[str, Any]:
         return await self._post_with_retry(
@@ -48,19 +52,20 @@ class ServiceClient:
 
     async def ping(self, base_url: str) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=self._settings.timeout_seconds) as client:
-                response = await client.get(f"{base_url}/health/live")
+            response = await self._client.get(f"{base_url}/health/live")
             return response.status_code == 200
         except Exception:
             return False
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
 
     async def _post_with_retry(self, url: str, payload: dict[str, Any], service_name: str) -> dict[str, Any]:
         last_error: Exception | None = None
 
         for attempt in range(self._settings.retries + 1):
             try:
-                async with httpx.AsyncClient(timeout=self._settings.timeout_seconds) as client:
-                    response = await client.post(url, json=payload)
+                response = await self._client.post(url, json=payload)
 
                 if response.status_code >= 500:
                     raise RuntimeError(f"{service_name}_server_error:{response.status_code}")

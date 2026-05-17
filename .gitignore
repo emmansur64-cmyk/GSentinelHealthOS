@@ -180,5 +180,35 @@ npm-audit*.json
 !.gitkeep
 !.gitignore
 
+# === GITHUB SSH UPLOAD HARDENING (preproduction safe upload) ===
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+build/
+.next/
+coverage/
+logs/
+*.log
+tmp/
+temp/
+backups/
+*.bak
+*.dump
+*.sql
+*.sqlite
+*.db
+*.pem
+*.key
+*.crt
+*.p12
+uploads/
+storage/
+volumes/
+.docker/
+.DS_Store
+Thumbs.db
+
 
 MetaBrain/.env

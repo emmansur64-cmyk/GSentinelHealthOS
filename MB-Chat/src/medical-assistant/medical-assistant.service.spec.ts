@@ -1,10 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { MedicalAssistantService } from './medical-assistant.service';
 import { AiService } from '../ai/ai.service';
-import { BrainService } from '../brain/brain.service';
 import { MedicalAssistantMode, MedicalAssistantRole } from './medical-assistant.types';
 import { MedicalChatLearningService } from './learning/medical-chat-learning.service';
 import { MedicalRuntimeToolsService } from './tools/medical-runtime-tools.service';
+import { MedicalChatBrainAdapter } from './adapters/medical-chat-brain.adapter';
 import { ProviderPhiNotAllowedError } from '../ai/assert-groq-phi-guard';
 
 const activeDoctorPatientContext = {
@@ -34,15 +34,15 @@ describe('MedicalAssistantService', () => {
       confidence: 0.92,
     })),
     refineMedicalText: jest.fn(async (text: string) => text),
+    normalizeMedicalTextForOutput: jest.fn((text: string) => text),
+    getSystemLearningSeed: jest.fn(() => ''),
   } as unknown as AiService;
 
-  const brainServiceMock = {
-    processIncident: jest.fn(async () => ({
-      status: 'SIMULATED',
-      action: 'NO_OP',
-      reason: 'test',
-    })),
-  } as unknown as BrainService;
+  const brainBoundaryMock = {
+    processIncident: jest.fn(async () => {
+      throw new Error('Medical Chat not authorized for incident processing');
+    }),
+  } as unknown as MedicalChatBrainAdapter;
 
   const runtimeToolsServiceMock = {
     buildContext: jest.fn(async () => ({
@@ -78,7 +78,14 @@ describe('MedicalAssistantService', () => {
       execution: 'dry_run',
       reason: 'test',
     })),
-    record: jest.fn(() => ({
+    getSessionMemorySummary: jest.fn(() => ''),
+    attemptLocalAnswer: jest.fn(() => ({
+      used: false,
+      confidence: 0.2,
+      citations: [],
+      matchedRecordIds: [],
+    })),
+    recordAndTrain: jest.fn(async () => ({
       id: 'medlearn-test',
       recordedAt: '2026-05-15T12:00:00.000Z',
     })),
@@ -86,11 +93,21 @@ describe('MedicalAssistantService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(medicalChatLearningServiceMock, 'attemptLocalAnswer').mockReturnValue({
+      used: false,
+      confidence: 0.2,
+      citations: [],
+      matchedRecordIds: [],
+    });
+    jest.spyOn(medicalChatLearningServiceMock, 'recordAndTrain').mockResolvedValue({
+      id: 'medlearn-test',
+      recordedAt: '2026-05-15T12:00:00.000Z',
+    } as never);
     service = new MedicalAssistantService(
       aiServiceMock,
-      brainServiceMock,
       runtimeToolsServiceMock,
       medicalChatLearningServiceMock,
+      brainBoundaryMock,
     );
   });
 
@@ -117,7 +134,7 @@ describe('MedicalAssistantService', () => {
         structureScore: 1,
       },
     });
-    const processIncidentSpy = jest.spyOn(brainServiceMock, 'processIncident');
+    const processIncidentSpy = jest.spyOn(brainBoundaryMock, 'processIncident');
 
     const result = await service.handleMedicalChatMessage({
       message: 'Paciente con fiebre 39C y leucocitosis, sugerir diferencial',
@@ -129,6 +146,53 @@ describe('MedicalAssistantService', () => {
     expect(result.role).toBe('DOCTOR');
     expect(result.guidance.languageStyle).toBe('technical');
     expect(processIncidentSpy).not.toHaveBeenCalled();
+  });
+
+  it('activa protocolo de transferencia critica UCI con salida push + SBAR + XAI', async () => {
+    jest.spyOn(aiServiceMock, 'classifyMedicalRole').mockReturnValue({
+      role: 'DOCTOR',
+      confidence: 0.98,
+      signals: {
+        technicalScore: 2,
+        colloquialScore: 0,
+        structureScore: 1,
+      },
+    });
+    jest.spyOn(aiServiceMock, 'answerMedicalQuestion').mockResolvedValue({
+      answer:
+        'Transferencia critica a UCI por cirrosis descompensada con PBE y lesion renal aguda. Requiere pase formal.',
+      citations: [
+        {
+          source: 'guideline',
+          url: 'https://www.sati.org.ar/guias/',
+          title: 'SATI - Guias de cuidado critico',
+          date: 'current',
+        },
+        {
+          source: 'paper',
+          url: 'https://pubmed.ncbi.nlm.nih.gov/123456/',
+          title: 'Albumin in SBP and kidney protection',
+          date: '2020',
+        },
+      ],
+      role: 'DOCTOR' as const,
+      confidence: 0.93,
+    } as any);
+
+    const result = await service.handleMedicalChatMessage({
+      message:
+        'Paciente con cirrosis + PBE + lesion renal aguda, activar transferencia critica a UCI con handoff.',
+      role: MedicalAssistantRole.DOCTOR,
+      mode: MedicalAssistantMode.DOCTOR_PROFESSIONAL,
+      doctorPatientContext: activeDoctorPatientContext,
+    });
+
+    expect(result.transferProtocol?.activated).toBe(true);
+    expect(result.transferProtocol?.phase).toBe('icu_critical_transfer');
+    expect(result.transferProtocol?.pushAlert.toLowerCase()).toContain('alerta critica');
+    expect(result.transferProtocol?.sbarReport).toContain('S (Situation)');
+    expect(result.transferProtocol?.xaiValidation.supportingGuidelines.length).toBeGreaterThan(0);
+    expect(result.transferProtocol?.xaiValidation.supportingPapers.length).toBeGreaterThan(0);
   });
 
   it('inyecta herramientas controladas al flujo medico', async () => {
@@ -170,7 +234,7 @@ describe('MedicalAssistantService', () => {
 
   it('registra aprendizaje clinico controlado sin ejecutar acciones', async () => {
     const decideSpy = jest.spyOn(medicalChatLearningServiceMock, 'decide');
-    const recordSpy = jest.spyOn(medicalChatLearningServiceMock, 'record');
+    const recordSpy = jest.spyOn(medicalChatLearningServiceMock, 'recordAndTrain');
 
     const result = await service.handleMedicalChatMessage({
       message: 'Aprende que para shock septico se debe priorizar guias oficiales y contexto local',
@@ -187,6 +251,8 @@ describe('MedicalAssistantService', () => {
     expect(recordSpy).toHaveBeenCalledWith(expect.objectContaining({
       outcome: 'simulated',
       query: 'Aprende que para shock septico se debe priorizar guias oficiales y contexto local',
+      source: 'groq_teacher',
+      groqFallbackUsed: true,
     }));
     expect(result.learning).toEqual({
       enabled: true,
@@ -207,6 +273,49 @@ describe('MedicalAssistantService', () => {
 
     expect(result.response.text.toLowerCase()).toContain('no puedo generar una respuesta clinica segura');
     expect(result.response.citations).toEqual([]);
+  });
+
+  it('localAnswerConfidence baja fuerza fallback a Groq', async () => {
+    const localAttemptSpy = jest.spyOn(medicalChatLearningServiceMock, 'attemptLocalAnswer');
+    const answerMedicalQuestionSpy = jest.spyOn(aiServiceMock, 'answerMedicalQuestion');
+
+    await service.handleMedicalChatMessage({
+      message: 'Paciente con sepsis, sugerir marco general con guias',
+      role: MedicalAssistantRole.DOCTOR,
+      mode: MedicalAssistantMode.DOCTOR_PROFESSIONAL,
+      doctorPatientContext: activeDoctorPatientContext,
+    });
+
+    expect(localAttemptSpy).toHaveBeenCalled();
+    expect(answerMedicalQuestionSpy).toHaveBeenCalled();
+  });
+
+  it('respuesta local validada evita fallback a Groq', async () => {
+    jest.spyOn(medicalChatLearningServiceMock, 'attemptLocalAnswer').mockReturnValue({
+      used: true,
+      confidence: 0.91,
+      answer: 'Memoria clinica validada recuperada para soporte local:\n- Priorizar guias oficiales y reevaluacion seriada.',
+      citations: [
+        {
+          source: 'guideline',
+          url: 'https://www.sati.org.ar/guias/',
+          title: 'SATI',
+          date: 'current',
+        },
+      ],
+      matchedRecordIds: ['rec-1'],
+    });
+    const answerMedicalQuestionSpy = jest.spyOn(aiServiceMock, 'answerMedicalQuestion');
+
+    const result = await service.handleMedicalChatMessage({
+      message: 'Recordame el marco seguro para sepsis con guias',
+      role: MedicalAssistantRole.DOCTOR,
+      mode: MedicalAssistantMode.DOCTOR_PROFESSIONAL,
+      doctorPatientContext: activeDoctorPatientContext,
+    });
+
+    expect(answerMedicalQuestionSpy).not.toHaveBeenCalled();
+    expect(result.response.text).toContain('Memoria clinica validada recuperada');
   });
 
   it('bloqueo PHI en provider devuelve fallback seguro sin exponer datos', async () => {
@@ -267,19 +376,15 @@ describe('MedicalAssistantService', () => {
     loggerSpy.mockRestore();
   });
 
-  it('doctor sin paciente activo devuelve fallback por INVALID_DOCTOR_PATIENT_CONTEXT', async () => {
-    const loggerErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-
+  it('doctor sin doctorPatientContext funciona en modo libre', async () => {
     const result = await service.handleMedicalChatMessage({
       message: 'Evaluar esquema antibiotico en internacion',
       role: MedicalAssistantRole.DOCTOR,
       mode: MedicalAssistantMode.DOCTOR_PROFESSIONAL,
     });
 
-    expect(result.response.text.toLowerCase()).toContain('no puedo generar una respuesta clinica segura');
-    const logs = loggerErrorSpy.mock.calls.map((call) => String(call[0])).join(' ');
-    expect(logs).toContain('INVALID_DOCTOR_PATIENT_CONTEXT');
-    loggerErrorSpy.mockRestore();
+    expect(result.role).toBe('DOCTOR');
+    expect(result.response.text.toLowerCase()).not.toContain('doctorpatientcontext is required');
   });
 
   it('paciente de otro tenant devuelve fallback por PATIENT_CONTEXT_ACCESS_DENIED', async () => {
@@ -354,9 +459,7 @@ describe('MedicalAssistantService', () => {
     loggerErrorSpy.mockRestore();
   });
 
-  it('patient_id ausente devuelve fallback por INVALID_DOCTOR_PATIENT_CONTEXT', async () => {
-    const loggerErrorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-
+  it('contexto doctor sin patient_id funciona para chat libre', async () => {
     const result = await service.handleMedicalChatMessage({
       message: 'Interpretar gasometria arterial',
       role: MedicalAssistantRole.DOCTOR,
@@ -364,14 +467,11 @@ describe('MedicalAssistantService', () => {
       doctorPatientContext: {
         doctor_id: 'doc-1',
         tenant_id: 'tenant-1',
-        encounter_id: 'enc-1',
       } as any,
     });
 
-    expect(result.response.text.toLowerCase()).toContain('no puedo generar una respuesta clinica segura');
-    const logs = loggerErrorSpy.mock.calls.map((call) => String(call[0])).join(' ');
-    expect(logs).toContain('INVALID_DOCTOR_PATIENT_CONTEXT');
-    loggerErrorSpy.mockRestore();
+    expect(result.role).toBe('DOCTOR');
+    expect(result.response.text.toLowerCase()).not.toContain('patient_id is required');
   });
 
   it('doctor_id ausente devuelve fallback por INVALID_DOCTOR_PATIENT_CONTEXT', async () => {

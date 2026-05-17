@@ -1,6 +1,6 @@
 export interface DoctorPatientContext {
   doctor_id: string;
-  patient_id: string;
+  patient_id?: string;
   tenant_id?: string;
   clinic_id?: string;
   encounter_id?: string;

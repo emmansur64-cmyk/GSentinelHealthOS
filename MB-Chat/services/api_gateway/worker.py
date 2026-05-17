@@ -17,6 +17,13 @@ from services.shared.contracts import ModelInput
 logger = logging.getLogger("cerebro_ai_med.distributed.worker")
 
 
+def _read_int_env(key: str, default: int, minimum: int) -> int:
+    try:
+        return max(int(os.getenv(key, str(default)).strip()), minimum)
+    except Exception:
+        return default
+
+
 def _load_bus_settings() -> AsyncBusSettings:
     enabled_raw = os.getenv("CEREBRO_ASYNC_ENABLED", "false").strip().lower()
     enabled = enabled_raw in {"1", "true", "yes", "on"}
@@ -89,7 +96,8 @@ async def run_worker() -> None:
     client_settings = _load_client_settings()
     service_client = ServiceClient(client_settings)
 
-    result_ttl_seconds = int(os.getenv("CEREBRO_ASYNC_RESULT_TTL_SECONDS", "600").strip())
+    result_ttl_seconds = _read_int_env("CEREBRO_ASYNC_RESULT_TTL_SECONDS", 600, 60)
+    prefetch_count = _read_int_env("CEREBRO_ASYNC_WORKER_PREFETCH", 64, 1)
     redis_url = os.getenv("CEREBRO_REDIS_URL", "redis://redis:6379/0").strip()
     redis = Redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
     memory_history_path = os.getenv("CEREBRO_MEMORY_HISTORY_PATH", "/tmp/cerebro_memory_history.jsonl").strip()
@@ -99,24 +107,30 @@ async def run_worker() -> None:
 
     connection = await aio_pika.connect_robust(bus_settings.broker_url)
     channel = await connection.channel()
-    await channel.set_qos(prefetch_count=4)
+    await channel.set_qos(prefetch_count=prefetch_count)
     queue = await channel.declare_queue(bus_settings.queue_name, durable=True)
 
-    logger.info("async_worker_started")
+    logger.info("async_worker_started", extra={"prefetch_count": prefetch_count})
 
-    async with queue.iterator() as iterator:
-        async for message in iterator:
-            async with message.process(requeue=False):
-                try:
-                    await _process_message(
-                        body=message.body,
-                        redis=redis,
-                        service_client=service_client,
-                        ttl_seconds=result_ttl_seconds,
-                        memory_store=memory_store,
-                    )
-                except Exception as exc:
-                    logger.exception("async_worker_message_failed", extra={"error": str(exc)})
+    try:
+        async with queue.iterator() as iterator:
+            async for message in iterator:
+                async with message.process(requeue=False):
+                    try:
+                        await _process_message(
+                            body=message.body,
+                            redis=redis,
+                            service_client=service_client,
+                            ttl_seconds=result_ttl_seconds,
+                            memory_store=memory_store,
+                        )
+                    except Exception as exc:
+                        logger.exception("async_worker_message_failed", extra={"error": str(exc)})
+    finally:
+        await service_client.aclose()
+        await redis.aclose()
+        await channel.close()
+        await connection.close()
 
 
 if __name__ == "__main__":

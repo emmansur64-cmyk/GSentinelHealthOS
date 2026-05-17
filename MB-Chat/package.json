@@ -11,7 +11,9 @@
     "test:watch": "jest --config jest.config.ts --watch",
     "test:cov": "jest --config jest.config.ts --coverage",
     "lint": "eslint \"src/**/*.ts\"",
-    "format": "prettier --write \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\"",
+    "loadtest:smoke": "k6 run loadtests/k6/mb-chat-smoke.js",
+    "loadtest:1000": "k6 run loadtests/k6/mb-chat-1000-vus.js"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.2",

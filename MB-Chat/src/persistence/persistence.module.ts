@@ -11,6 +11,7 @@ import {
   OnlineTrainingBuffer,
   OnlineTrainingBufferSchema,
 } from './schemas/online-training-buffer.schema';
+import { XaiDefenseReport, XaiDefenseReportSchema } from './schemas/xai-defense-report.schema';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import {
       { name: Feature.name, schema: FeatureSchema },
       { name: AuditLog.name, schema: AuditSchema },
       { name: OnlineTrainingBuffer.name, schema: OnlineTrainingBufferSchema },
+      { name: XaiDefenseReport.name, schema: XaiDefenseReportSchema },
     ]),
   ],
   providers: [PersistenceService],

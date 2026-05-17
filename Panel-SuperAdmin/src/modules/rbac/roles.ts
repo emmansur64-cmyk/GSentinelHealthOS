@@ -34,6 +34,7 @@ export const ROLE_LABELS: Record<AdminRole, string> = {
 export const MODULE_ACCESS: Record<string, AdminRole[]> = {
   'system-health': [AdminRole.SUPER_ADMIN, AdminRole.SYSTEM_ADMIN, AdminRole.AUDITOR, AdminRole.SUPPORT],
   'tenants': [AdminRole.SUPER_ADMIN, AdminRole.SYSTEM_ADMIN],
+  'client-onboarding': [AdminRole.SUPER_ADMIN, AdminRole.SYSTEM_ADMIN],
   'ai-providers': [AdminRole.SUPER_ADMIN, AdminRole.SYSTEM_ADMIN],
   'feature-flags': [AdminRole.SUPER_ADMIN, AdminRole.SYSTEM_ADMIN],
   'audit-logs': [AdminRole.SUPER_ADMIN, AdminRole.SYSTEM_ADMIN, AdminRole.AUDITOR],

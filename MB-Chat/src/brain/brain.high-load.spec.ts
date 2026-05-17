@@ -50,7 +50,30 @@ const persistenceStub = {
   saveIncident: async () => undefined,
   saveDecision: async () => undefined,
   saveFeatures: async () => undefined,
+  saveOnlineTrainingRecord: async () => undefined,
+  updateOnlineTrainingOutcome: async () => undefined,
   fireAndForget: () => undefined,
+};
+
+const eventProducerStub = {
+  publish: async () => ({ event_id: 'evt-1', trace_id: 'trace-1' }),
+};
+
+const modelServiceStub = {
+  predictDecision: async () => ({
+    action: null,
+    confidence: 0,
+    source: 'RULES',
+    inferenceMs: 0,
+    modelUsed: false,
+    featureVector: [],
+    topFeatures: [],
+  }),
+  getDecisionThresholds: () => ({ mlPrimary: 0.8, hybridMin: 0.6 }),
+  getModelVersion: () => 'test-model',
+  getFeatureBuilder: () => ({
+    getFeatureNames: () => [],
+  }),
 };
 
 // ── Factory ───────────────────────────────────────────────────────────────────
@@ -73,11 +96,13 @@ function buildBrainService(): { brain: BrainService; audit: AuditService } {
     auditService,
     new MemoryService(persistenceStub as never),
     new ExecutionService(powerShellStub as never),
-    new EventProducer(),
+    eventProducerStub as never,
     new BrainRouter(),
     new BookingStrategy(),
     new ScheduleStrategy(),
     new ErrorStrategy(),
+    modelServiceStub as never,
+    persistenceStub as never,
   );
 
   return { brain, audit: auditService };

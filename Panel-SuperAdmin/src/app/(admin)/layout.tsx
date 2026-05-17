@@ -11,10 +11,11 @@ interface AdminLayoutProps {
 export default async function AdminLayout({ children }: AdminLayoutProps) {
   const admin = await getCurrentAdmin()
   if (!admin) redirect('/login')
+  const appVersion = process.env.NEXT_PUBLIC_APP_VERSION?.trim() || '0.1.0'
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar role={admin.role} />
+      <Sidebar role={admin.role} appVersion={appVersion} />
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Topbar receives title via slot — pages override via <title> or a context.

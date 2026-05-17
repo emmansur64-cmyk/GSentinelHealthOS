@@ -14,9 +14,10 @@ interface StoredCredentials {
 
 function getBootstrapCredentials() {
   const email = (process.env.SUPER_ADMIN_EMAIL ?? '').trim().toLowerCase()
-  const plainPassword = process.env.SUPER_ADMIN_PASSWORD ?? ''
   const passwordHash = (process.env.SUPER_ADMIN_PASSWORD_HASH ?? '').trim()
-  return { email, plainPassword, passwordHash }
+  const plainPassword = process.env.SUPER_ADMIN_PASSWORD ?? ''
+  const allowPlainFallback = (process.env.SUPER_ADMIN_ALLOW_PLAIN_PASSWORD_FALLBACK ?? '').trim().toLowerCase() === 'true'
+  return { email, passwordHash, plainPassword, allowPlainFallback }
 }
 
 async function readStoredCredentials(): Promise<StoredCredentials | null> {
@@ -70,8 +71,11 @@ export async function validateSuperAdminCredentials(
 
   const bootstrap = getBootstrapCredentials()
   if (!bootstrap.email) return null
+  if (!bootstrap.passwordHash) return null
   if (normalizedEmail !== bootstrap.email) return null
-  const plainMatch = bootstrap.plainPassword ? password === bootstrap.plainPassword : false
+  const plainMatch = bootstrap.allowPlainFallback && bootstrap.plainPassword
+    ? password === bootstrap.plainPassword
+    : false
   const hashMatch = bootstrap.passwordHash
     ? await bcrypt.compare(password, bootstrap.passwordHash)
     : false
@@ -98,7 +102,11 @@ export async function changeSuperAdminPassword(
     return { ok: false, error: 'Super admin credentials are not configured' }
   }
 
-  const plainMatch = stored ? false : (bootstrap.plainPassword ? currentPassword === bootstrap.plainPassword : false)
+  const plainMatch = stored
+    ? false
+    : (bootstrap.allowPlainFallback && bootstrap.plainPassword
+      ? currentPassword === bootstrap.plainPassword
+      : false)
   const hashMatch = await bcrypt.compare(currentPassword, currentHash)
   const validCurrent = plainMatch || hashMatch
   if (!validCurrent) {

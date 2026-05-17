@@ -6,6 +6,7 @@
 
 import { appConfig } from '@/config/app.config'
 import { apiFetch } from '@/lib/api-client'
+import { logger } from '@/lib/logger'
 import type { Tenant, TenantUpdatePayload } from '@/modules/tenants/tenant.types'
 import type { FeatureFlag } from '@/modules/feature-flags/flags.types'
 import type { AuditLogEntry } from '@/modules/audit/audit.types'
@@ -13,10 +14,12 @@ import type { AuditLogEntry } from '@/modules/audit/audit.types'
 const PANEL_BASE = `${appConfig.services.agendaApi}/api/v1/admin/panel`
 
 function internalHeaders(): Record<string, string> {
-  const key = process.env.ADMIN_API_INTERNAL_KEY
+  const key =
+    process.env.ADMIN_API_INTERNAL_KEY?.trim() ||
+    process.env.PANEL_ADMIN_API_KEY?.trim()
   if (!key) {
     throw new Error(
-      'ADMIN_API_INTERNAL_KEY is not set — required for Panel-SuperAdmin backend calls',
+      'ADMIN_API_INTERNAL_KEY/PANEL_ADMIN_API_KEY is not set — required for Panel-SuperAdmin backend calls',
     )
   }
   return {
@@ -191,8 +194,8 @@ export async function createAuditLog(entry: {
   status?: string
   metadata?: Record<string, unknown>
   requestId?: string
-}): Promise<void> {
-  // Fire-and-forget: fallos no bloquean el flujo del panel
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  // Non-blocking for main business flow, but failures are observable.
   try {
     await apiFetch(`${PANEL_BASE}/audit-logs`, {
       method: 'POST',
@@ -210,7 +213,14 @@ export async function createAuditLog(entry: {
       headers: internalHeaders(),
       timeoutMs: 5_000,
     })
-  } catch {
-    // Non-fatal: audit log failure must not break admin operations
+    return { ok: true }
+  } catch (error) {
+    logger.warn('Audit log forwarding failed', {
+      requestId: entry.requestId,
+      action: entry.action,
+      resourceType: entry.resourceType,
+      reason: error instanceof Error ? error.message : 'unknown_error',
+    })
+    return { ok: false, reason: 'audit_forward_failed' }
   }
 }

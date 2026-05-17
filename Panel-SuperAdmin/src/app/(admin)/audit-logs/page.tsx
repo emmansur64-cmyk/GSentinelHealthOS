@@ -11,12 +11,15 @@ async function fetchAuditLogs(page = 1): Promise<{
   limit: number
 }> {
   const res = await fetch(`/api/audit-logs?page=${page}&limit=50`)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.error ?? `HTTP ${res.status}`)
+  }
   return res.json()
 }
 
 export default function AuditLogsPage() {
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['audit-logs', 1],
     queryFn: () => fetchAuditLogs(1),
   })
@@ -40,7 +43,7 @@ export default function AuditLogsPage() {
 
       {isError && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          Failed to load audit logs.
+          {error instanceof Error ? error.message : 'Failed to load audit logs.'}
         </div>
       )}
 

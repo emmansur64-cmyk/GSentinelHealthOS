@@ -525,7 +525,12 @@ function extractStructuredMedicalSheetHeader(rawText: string): {
     .replace(/año\s*:/g, "año ")
     .replace(/\s+/g, " ");
 
-  const doctorName = text.match(/nombre del medico\s+(.+?)\s+especialidad/)?.[1]?.trim() ?? "";
+  const doctorNameByHeader = text.match(/nombre del medico\s+(.+?)\s+especialidad/)?.[1]?.trim() ?? "";
+  const doctorNameByAltHeader =
+    text.match(/(?:medico|doctor|profesional)\s*(?:tratante|responsable)?\s*[:\-]?\s*([a-záéíóúñ.\s]{4,80})\s+(?:especialidad|matricula|mes|año)/i)?.[1]?.trim()
+    ?? "";
+  const doctorNameByDrPrefix = text.match(/\bdr\.?\s+([a-záéíóúñ]+\s+[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+)?)/i)?.[1]?.trim() ?? "";
+  const doctorName = doctorNameByHeader || doctorNameByAltHeader || doctorNameByDrPrefix;
   const specialty = text.match(/especialidad\s+(.+?)\s+matricula/)?.[1]?.trim() ?? "";
   const licenseNumber = text.match(/matricula\s+(\d+)/)?.[1]?.trim() ?? "";
   const month = text.match(/mes\s+([a-záéíóúñ]+)/)?.[1]?.trim() ?? "";

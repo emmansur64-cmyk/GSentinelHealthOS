@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
-const SA_TOKEN_COOKIE = 'sa_token'
+const SA_TOKEN_COOKIE = 'super_admin_session'
 
 // Routes that bypass auth
 const PUBLIC_PATHS = ['/login', '/api/auth/login']

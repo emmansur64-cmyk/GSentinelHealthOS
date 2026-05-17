@@ -14,7 +14,7 @@ function parseInteger(value: string | undefined, fallback: number, min: number, 
 }
 
 function parseMode(value: string | undefined): MedicalWebRetrievalMode {
-  return value?.trim().toLowerCase() === "allowlist" ? "allowlist" : "allowlist";
+  return value?.trim().toLowerCase() === "open" ? "open" : "allowlist";
 }
 
 export function getMedicalWebRetrievalConfig(): MedicalWebRetrievalConfig {

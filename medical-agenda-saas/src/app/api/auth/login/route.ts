@@ -7,10 +7,8 @@ import { fail, ok } from "@/lib/api-response";
 import { logAudit, requestMeta } from "@/lib/audit";
 import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
 import { prisma } from "@/lib/prisma";
-import { ensureSuperAdminAccount, getSuperAdminBootstrapConfig } from "@/lib/super-admin-bootstrap";
 import { consumeRateLimit } from "@/lib/rate-limit";
 import { pickPreferredLoginCandidate } from "@/lib/auth-login-selection";
-import { canLoginWithClinicStatus } from "@/lib/super-admin-policy";
 import { isTenantLegacyFallbackStrict } from "@/lib/tenant-legacy-policy";
 import { loginSchema } from "@/lib/validators";
 
@@ -54,6 +52,19 @@ type UsersColumnCapabilities = {
 const DEFAULT_TENANT_ID = process.env.DEFAULT_TENANT_ID?.trim() || "default";
 let usersColumnCapabilitiesPromise: Promise<UsersColumnCapabilities> | null = null;
 
+function canLoginWithClinicStatus(input: {
+  role: string;
+  userActive: boolean;
+  userStatus: string;
+  tenantStatus: string | null;
+}) {
+  if (!input.userActive) return false;
+  if (String(input.userStatus).toLowerCase() !== "active") return false;
+  if (!input.tenantStatus) return true;
+  const tenant = String(input.tenantStatus).toLowerCase();
+  return tenant === "active" || tenant === "trial";
+}
+
 function isMissingTenantRelationError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const message = error.message.toLowerCase();
@@ -95,6 +106,17 @@ function isMissingLoginAuditColumnError(error: unknown): boolean {
   return (
     message.includes("42703") &&
     (message.includes("last_login_at") || message.includes("last_seen_at"))
+  );
+}
+
+function isDatabaseUnavailableError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("can't reach database server") ||
+    message.includes("can\u0027t reach database server") ||
+    message.includes("connect econnrefused") ||
+    message.includes("timeout") && message.includes("database")
   );
 }
 
@@ -162,7 +184,6 @@ async function touchUserLoginAuditColumns(userId: string): Promise<void> {
 
 function normalizeRole(inputRole: string): Role {
   const normalized = String(inputRole || "").toLowerCase();
-  if (normalized === "super_admin") return "super_admin" as Role;
   if (normalized === "clinic_owner") return "clinic_owner" as Role;
   if (normalized === "clinic_admin") return "clinic_admin" as Role;
   if (normalized === "receptionist") return "receptionist" as Role;
@@ -248,9 +269,7 @@ async function resolveUserForLogin(identifierRaw: string, tenantId: string | nul
 
   // Ruta nueva (Prisma schema): users.email + users.password_hash
   try {
-    const tenantFilter = tenantId
-      ? Prisma.sql`AND (u.tenant_id = ${tenantId} OR u.role::text = 'super_admin')`
-      : Prisma.empty;
+    const tenantFilter = tenantId ? Prisma.sql`AND u.tenant_id = ${tenantId}` : Prisma.empty;
     const capabilities = await getUsersColumnCapabilities();
     const activeExpr = capabilities.active ? Prisma.sql`u.active` : Prisma.sql`TRUE`;
     const statusExpr = capabilities.status ? Prisma.sql`COALESCE(u.status, 'active')` : Prisma.sql`'active'`;
@@ -279,19 +298,18 @@ async function resolveUserForLogin(identifierRaw: string, tenantId: string | nul
       FROM users u
       LEFT JOIN tenants t ON t.id = u.tenant_id
       WHERE (LOWER(u.email) = ${lowerIdentifier} OR u.name = ${identifier})
+        AND u.role::text <> 'super_admin'
         ${tenantFilter}
       ORDER BY
         CASE
           WHEN ${hasRequestedTenant} = TRUE AND u.tenant_id = ${tenantId} THEN 0
-          WHEN u.role::text = 'super_admin' THEN 1
-          ELSE 2
+          ELSE 1
         END,
         u.created_at DESC
       LIMIT 3
     `);
 
-    const nonSuperAdminMatches = modernRows.filter((row) => row.role !== "super_admin");
-    if (!tenantId && nonSuperAdminMatches.length > 1) {
+    if (!tenantId && modernRows.length > 1) {
       throw new EmailRequiresClinicError(await getAvailableTenantsForIdentifier(identifier));
     }
 
@@ -316,9 +334,7 @@ async function resolveUserForLogin(identifierRaw: string, tenantId: string | nul
     }
 
     if (isMissingModernUserColumnError(error)) {
-      const tenantFilter = tenantId
-        ? Prisma.sql`AND (u.tenant_id = ${tenantId} OR u.role::text = 'super_admin')`
-        : Prisma.empty;
+      const tenantFilter = tenantId ? Prisma.sql`AND u.tenant_id = ${tenantId}` : Prisma.empty;
 
       const compatibleRows = await prisma.$queryRaw<Array<{
         id: string;
@@ -340,19 +356,18 @@ async function resolveUserForLogin(identifierRaw: string, tenantId: string | nul
         FROM users u
         LEFT JOIN tenants t ON t.id = u.tenant_id
         WHERE (LOWER(u.email) = ${lowerIdentifier} OR u.name = ${identifier})
+          AND u.role::text <> 'super_admin'
           ${tenantFilter}
         ORDER BY
           CASE
             WHEN ${hasRequestedTenant} = TRUE AND u.tenant_id = ${tenantId} THEN 0
-            WHEN u.role::text = 'super_admin' THEN 1
-            ELSE 2
+            ELSE 1
           END,
           u.created_at DESC
         LIMIT 3
       `);
 
-      const nonSuperAdminMatches = compatibleRows.filter((row) => row.role !== "super_admin");
-      if (!tenantId && nonSuperAdminMatches.length > 1) {
+      if (!tenantId && compatibleRows.length > 1) {
         throw new EmailRequiresClinicError(await getAvailableTenantsForIdentifier(identifier));
       }
 
@@ -493,16 +508,14 @@ export async function POST(request: NextRequest) {
 
     const requestedTenant = parsed.data.tenant ?? parsed.data.tenant_slug ?? parsed.data.clinic_slug;
     const tenantId = requestedTenant ? await resolveTenantId(requestedTenant) : null;
-    const bootstrap = getSuperAdminBootstrapConfig();
     const normalizedIdentifier = parsed.data.identifier.trim().toLowerCase();
-
-    if (normalizedIdentifier === bootstrap.email) {
-      await ensureSuperAdminAccount();
-    }
 
     const user = await resolveUserForLogin(parsed.data.identifier, tenantId);
 
     if (!user) return fail("Usuario no encontrado", 404);
+    if (String(user.role) === "super_admin") {
+      return fail("El acceso super admin solo esta permitido en Panel-SuperAdmin", 403);
+    }
     const canLogin = canLoginWithClinicStatus({
       role: String(user.role),
       userActive: user.active,
@@ -517,9 +530,7 @@ export async function POST(request: NextRequest) {
     const validPassword = await verifyPassword(parsed.data.password, user.passwordHash);
     if (!validPassword) return fail("Credenciales invalidas", 401);
 
-    const sessionTenantId = String(
-      String(user.role) === "super_admin" ? (tenantId ?? user.tenantId ?? DEFAULT_TENANT_ID) : user.tenantId,
-    );
+    const sessionTenantId = String(user.tenantId);
     const { token } = await createSessionToken({ userId: user.id, role: user.role, tenantId: sessionTenantId });
 
     const cookieStore = await cookies();
@@ -569,6 +580,10 @@ export async function POST(request: NextRequest) {
         code: "EMAIL_REQUIRES_CLINIC",
         tenants: error.tenants,
       });
+    }
+
+    if (isDatabaseUnavailableError(error)) {
+      return fail("Base de datos no disponible temporalmente. Intenta nuevamente en unos segundos.", 503);
     }
 
     return fail("No se pudo iniciar sesion", 500, error instanceof Error ? error.message : null);

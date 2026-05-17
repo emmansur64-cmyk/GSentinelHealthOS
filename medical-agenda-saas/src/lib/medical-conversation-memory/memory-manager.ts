@@ -1,6 +1,7 @@
 import { auditMedicalConversationMemory, auditMedicalConversationMemoryError } from "./audit";
 import { getMedicalConversationMemoryConfig } from "./config";
 import { summarizeMedicalConversationMemory } from "./summarizer";
+import { logServer, logServerError } from "@/lib/server-logger";
 import type { MedicalConversationMemory, MedicalConversationMemoryInput } from "./types";
 
 export const MEDICAL_CONVERSATION_MEMORY_INSTRUCTION =
@@ -42,7 +43,20 @@ export async function buildMedicalConversationMemory(
   input: MedicalConversationMemoryInput,
 ): Promise<MedicalConversationMemory | null> {
   const config = getMedicalConversationMemoryConfig();
-  if (!config.enabled) return null;
+  
+  logServer("debug", "medical_conversation_memory.build_start", {
+    enabled: config.enabled,
+    conversation_id: input.conversationId,
+    patient_id: input.patientId ?? "general",
+    input_exchanges_count: input.exchanges.length,
+  });
+  
+  if (!config.enabled) {
+    logServer("info", "medical_conversation_memory.disabled", {
+      conversation_id: input.conversationId,
+    });
+    return null;
+  }
 
   try {
     const now = new Date();
@@ -51,6 +65,12 @@ export async function buildMedicalConversationMemory(
     const scoped = input.exchanges
       .filter((exchange) => new Date(exchange.createdAt).getTime() >= cutoff.getTime())
       .slice(-config.maxExchanges);
+
+    logServer("debug", "medical_conversation_memory.exchanges_filtered", {
+      total_input: input.exchanges.length,
+      after_ttl_filter: scoped.length,
+      ttl_hours: config.ttlHours,
+    });
 
     const compressed = summarizeMedicalConversationMemory(scoped, config);
     const memory: MedicalConversationMemory = {
@@ -77,9 +97,18 @@ export async function buildMedicalConversationMemory(
       errors: [],
     };
 
+    logServer("info", "medical_conversation_memory.build_success", {
+      conversation_id: input.conversationId,
+      summary_length: memory.summary.length,
+      decisions_count: memory.recentDecisions.length,
+      medications_count: memory.medicationMentions.length,
+      active_conversation: memory.activeConversation,
+    });
+
     auditMedicalConversationMemory(memory);
     return memory;
   } catch (error) {
+    logServerError("medical_conversation_memory.build_failed", error);
     auditMedicalConversationMemoryError(error, "memory_builder_failed");
     const fallback = buildEmptyMemory(input, ["memory_builder_failed"]);
     auditMedicalConversationMemory(fallback);

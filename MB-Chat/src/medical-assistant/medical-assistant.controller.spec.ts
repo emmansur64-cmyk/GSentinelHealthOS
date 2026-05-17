@@ -107,7 +107,7 @@ describe('MedicalAssistantController /api/assistant/chat', () => {
       });
   });
 
-  it('doctor sin doctorPatientContext devuelve 400', async () => {
+  it('doctor sin doctorPatientContext responde (chat libre)', async () => {
     await request(app.getHttpServer())
       .post('/api/assistant/chat')
       .send({
@@ -115,9 +115,9 @@ describe('MedicalAssistantController /api/assistant/chat', () => {
         role: MedicalAssistantRole.DOCTOR,
         mode: MedicalAssistantMode.DOCTOR_PROFESSIONAL,
       })
-      .expect(400)
+      .expect(200)
       .expect((res) => {
-        expect(res.body.message).toBe('Invalid chat request payload.');
+        expect(res.body.response.text).toBe('ok');
       });
   });
 

@@ -305,6 +305,9 @@ async def _shutdown() -> None:
     if result_store is not None:
         await result_store.aclose()
 
+    await app.state.service_client.aclose()
+    await app.state.async_bus.aclose()
+
 
 security_settings = load_security_settings()
 if runtime_settings.app_env == "production" and "*" in security_settings.cors_allow_origins:

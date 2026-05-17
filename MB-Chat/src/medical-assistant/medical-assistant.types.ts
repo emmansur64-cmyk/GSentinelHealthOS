@@ -2,9 +2,9 @@ import { MedicalCitation } from '../knowledge/types';
 import { MedicalUserRole } from '../ai/classification.service';
 import { IncidentResult } from '../common/types/brain.types';
 import { MedicalImagingResult } from '../ai/medical-imaging.service';
+import { XaiAuditConsoleReport, XaiExplainabilityMode } from '../diagnosis/diagnosis.types';
 import {
   IsBoolean,
-  IsDefined,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -189,8 +189,7 @@ export class MedicalAssistantChatDto {
   @IsEnum(MedicalAssistantMode)
   mode?: MedicalAssistantMode;
 
-  @ValidateIf((obj) => obj.role === MedicalAssistantRole.DOCTOR)
-  @IsDefined()
+  @IsOptional()
   @ValidateNested()
   @Type(() => DoctorPatientContextDto)
   doctorPatientContext?: DoctorPatientContextDto;
@@ -199,6 +198,10 @@ export class MedicalAssistantChatDto {
   @ValidateNested()
   @Type(() => ActivePatientClinicalHistoryDto)
   activePatientClinicalHistory?: ActivePatientClinicalHistoryDto;
+
+  @IsOptional()
+  @IsEnum(XaiExplainabilityMode)
+  xaiExplainabilityMode?: XaiExplainabilityMode;
 }
 
 export interface MedicalAssistantRequest {
@@ -217,6 +220,7 @@ export interface MedicalAssistantRequest {
   mode?: MedicalAssistantMode;
   doctorPatientContext?: DoctorPatientContext;
   activePatientClinicalHistory?: ActivePatientClinicalHistory;
+  xaiExplainabilityMode?: XaiExplainabilityMode;
 }
 
 export interface MedicalAssistantResponse {
@@ -244,5 +248,25 @@ export interface MedicalAssistantResponse {
     action: string;
     confidence: number;
     mode: 'controlled_dry_run';
+  };
+  transferProtocol?: {
+    activated: boolean;
+    phase: 'icu_critical_transfer';
+    pushAlert: string;
+    sbarReport: string;
+    xaiValidation: {
+      objective: string;
+      supportingGuidelines: Array<{
+        source: string;
+        title: string;
+        url: string;
+      }>;
+      supportingPapers: Array<{
+        title: string;
+        url: string;
+      }>;
+    };
+    xaiAuditConsole?: XaiAuditConsoleReport;
+    nextModule: string;
   };
 }

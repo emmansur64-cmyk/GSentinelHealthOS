@@ -120,6 +120,12 @@ function buildDateLabel(row) {
   return row.specific_date || getDayLabel(Number(row.day_of_week));
 }
 
+function extractDetectedNameFromPlaceholder(doctorId) {
+  const raw = String(doctorId ?? "");
+  if (!raw.startsWith("__detected__")) return "";
+  return raw.replace("__detected__", "").replace(/_/g, " ").trim();
+}
+
 function slugify(input) {
   return String(input || "")
     .normalize("NFD")
@@ -354,11 +360,15 @@ export default function ImportAgenda() {
   };
 
   const addRow = () => {
+    const defaultDoctorId =
+      String(analysisMeta?.matched_doctor_id ?? "").trim()
+      || (analysisMeta?.detected_doctor_name ? `__detected__${analysisMeta.detected_doctor_name.replace(/\s+/g, "_")}` : "");
+
     setPreviewRows((prev) => [
       ...prev,
       {
         id: `preview-${Date.now()}`,
-        doctor_id: "",
+        doctor_id: defaultDoctorId,
         day_of_week: 1,
         specific_date: "",
         start_time: "08:00",
@@ -738,6 +748,14 @@ export default function ImportAgenda() {
           <div className="space-y-3">
             {previewRows.map((row) => {
               const isDuplicate = (duplicateSignatureCounts.get(buildRowSignature(row)) ?? 0) > 1;
+              const isDetectedPlaceholder = String(row.doctor_id || "").startsWith("__detected__");
+              const doctorDisplayName =
+                doctorsById.get(row.doctor_id)
+                || (isDetectedPlaceholder
+                  ? (analysisMeta?.detected_doctor_name || extractDetectedNameFromPlaceholder(row.doctor_id) || "Profesional detectado")
+                  : "")
+                || analysisMeta?.professional_name
+                || "Sin profesional detectado";
 
               return (
                 <div
@@ -746,28 +764,13 @@ export default function ImportAgenda() {
                     isDuplicate ? "border-amber-300 bg-amber-50/60" : "border-slate-200"
                   }`}
                 >
-                  <select
-                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"
-                    value={row.doctor_id}
-                    onChange={(event) => updateRow(row.id, "doctor_id", event.target.value)}
-                  >
-                    <option value="">Seleccionar profesional</option>
-                    {analysisMeta?.detected_doctor_name && !doctors.some((d) => d.user_id === row.doctor_id || row.doctor_id?.startsWith("__detected__")) ? (
-                      <option value={`__detected__${analysisMeta.detected_doctor_name.replace(/\s+/g, "_")}`} style={{ fontWeight: "bold", backgroundColor: "#f0f9ff" }}>
-                        → {analysisMeta.detected_doctor_name} (Detectado - sin registrar)
-                      </option>
-                    ) : null}
-                    {row.doctor_id?.startsWith("__detected__") && analysisMeta?.detected_doctor_name ? (
-                      <option value={row.doctor_id} style={{ fontWeight: "bold", backgroundColor: "#f0f9ff" }}>
-                        → {analysisMeta.detected_doctor_name} (Detectado - sin registrar)
-                      </option>
-                    ) : null}
-                    {doctors.map((doctor) => (
-                      <option key={doctor.user_id} value={doctor.user_id}>
-                        {doctor.user?.name}
-                      </option>
-                    ))}
-                  </select>
+                  <input
+                    type="text"
+                    className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-800"
+                    value={doctorDisplayName}
+                    readOnly
+                    title={doctorDisplayName}
+                  />
 
                   <select
                     className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"
@@ -826,7 +829,7 @@ export default function ImportAgenda() {
                     </div>
                   ) : null}
 
-                  {String(row.doctor_id || "").startsWith("__detected__") ? (
+                  {isDetectedPlaceholder ? (
                     <div className="md:col-span-6 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
                       <label className="flex items-center gap-2 text-sm text-amber-900">
                         <input

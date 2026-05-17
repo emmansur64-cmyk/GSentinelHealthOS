@@ -117,6 +117,7 @@ export class AiService {
   ): Promise<MedicalAnswer> {
     const internetMode = resolveMedicalInternetMode();
     const hasImage = typeof imageBase64 === 'string' && imageBase64.trim().length > 0;
+    const weatherQuery = this.isWeatherQuery(query);
 
     const classification = roleOverride
       ? {
@@ -129,6 +130,16 @@ export class AiService {
           },
         }
       : this.classificationService.classifyMessage(query);
+
+    if (weatherQuery) {
+      const weatherAnswer = this.buildWeatherAnswer(runtimeContext);
+      return {
+        answer: this.normalizeMedicalChatStyle(weatherAnswer),
+        citations: runtimeContext?.officialSources.slice(0, 3) ?? [],
+        role: classification.role,
+        confidence: classification.confidence,
+      };
+    }
 
     if (classification.confidence < 0.7) {
       return {
@@ -153,39 +164,8 @@ export class AiService {
 
     const retrieval = await this.knowledgeRetriever.retrieve(query, topK, country);
 
-    const normalizedQuery = query
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-    const weatherQuery =
-      normalizedQuery.includes('clima')
-      || normalizedQuery.includes('tiempo')
-      || normalizedQuery.includes('temperatura')
-      || normalizedQuery.includes('lluvia')
-      || normalizedQuery.includes('viento');
-
     // Rule: never answer without trusted sources.
     if (retrieval.citations.length === 0) {
-      if (weatherQuery && runtimeContext?.weather) {
-        const weather = runtimeContext.weather;
-        const weatherAnswer = [
-          `Estado del tiempo en vivo para ${weather.location}:`,
-          weather.summary ? `- Resumen: ${weather.summary}` : undefined,
-          typeof weather.temperatureC === 'number' ? `- Temperatura: ${weather.temperatureC} C` : undefined,
-          typeof weather.windKmh === 'number' ? `- Viento: ${weather.windKmh} km/h` : undefined,
-          typeof weather.precipitationMm === 'number' ? `- Precipitacion: ${weather.precipitationMm} mm` : undefined,
-          `- Fuente: ${weather.provider} (${weather.url})`,
-          `- Referencia temporal: ${runtimeContext.currentTimeText}`,
-        ].filter(Boolean).join('\n');
-        return {
-          answer: this.normalizeMedicalChatStyle(weatherAnswer),
-          citations: runtimeContext.officialSources.slice(0, 3),
-          role: classification.role,
-          confidence: classification.confidence,
-          ...(imaging ? { imaging } : {}),
-        };
-      }
-
       if (imaging) {
         const imagingOnlyAnswer = this.buildImagingOnlyAnswer(classification.role, imaging);
         return {
@@ -311,6 +291,41 @@ export class AiService {
       }
       return { answer: raw.trim() };
     }
+  }
+
+  private isWeatherQuery(query: string): boolean {
+    const normalized = query
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    return (
+      normalized.includes('clima')
+      || normalized.includes('tiempo')
+      || normalized.includes('temperatura')
+      || normalized.includes('lluvia')
+      || normalized.includes('viento')
+    );
+  }
+
+  private buildWeatherAnswer(runtimeContext?: MedicalRuntimeToolContext): string {
+    const weather = runtimeContext?.weather;
+    if (!weather) {
+      return [
+        'No tengo datos de clima en tiempo real disponibles en este momento.',
+        'Si quieres, puedo reintentar con una ubicacion especifica para darte temperatura, viento y precipitacion actualizados.',
+      ].join(' ');
+    }
+
+    return [
+      `Estado del tiempo en vivo para ${weather.location}:`,
+      weather.summary ? `- Resumen: ${weather.summary}` : undefined,
+      typeof weather.temperatureC === 'number' ? `- Temperatura: ${weather.temperatureC} C` : undefined,
+      typeof weather.windKmh === 'number' ? `- Viento: ${weather.windKmh} km/h` : undefined,
+      typeof weather.precipitationMm === 'number' ? `- Precipitacion: ${weather.precipitationMm} mm` : undefined,
+      `- Fuente: ${weather.provider} (${weather.url})`,
+      runtimeContext?.currentTimeText ? `- Referencia temporal: ${runtimeContext.currentTimeText}` : undefined,
+    ].filter(Boolean).join('\n');
   }
 
   private buildRuntimeToolPromptBlock(context: MedicalRuntimeToolContext): string {

@@ -4,6 +4,7 @@ import { canAccess, AdminRole } from '@/modules/rbac/roles'
 import { getAuditLogs, createAuditLog } from '@/services/admin-api/admin-api.client'
 import { createRequestId } from '@/lib/request-id'
 import { logger } from '@/lib/logger'
+import { sanitizeAuditMetadata } from '@/lib/security-sanitizer'
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const requestId = createRequestId()
@@ -42,14 +43,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   try {
     const body = await req.json()
+    const action = typeof body.action === 'string' ? body.action.trim() : ''
+    if (!action) {
+      return NextResponse.json({ error: 'action is required' }, { status: 400 })
+    }
+
     await createAuditLog({
       actorId: admin.sub,
       actorEmail: admin.email,
       actorRole: admin.role,
-      action: body.action,
-      resourceType: body.resourceType,
-      resourceId: body.resourceId,
-      metadata: body.metadata,
+      action,
+      resourceType: typeof body.resourceType === 'string' ? body.resourceType : undefined,
+      resourceId: typeof body.resourceId === 'string' ? body.resourceId : undefined,
+      metadata: sanitizeAuditMetadata(body.metadata),
       requestId,
     })
     return NextResponse.json({ success: true })

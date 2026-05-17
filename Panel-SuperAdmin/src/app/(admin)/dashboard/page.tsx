@@ -1,4 +1,4 @@
-import { Activity, Building2, Flag, ScrollText, Zap } from 'lucide-react'
+import { Activity, Building2, Flag, ScrollText, UserPlus, Zap } from 'lucide-react'
 import { ModuleCard } from '@/components/module-card'
 import { getCurrentAdmin } from '@/lib/auth'
 import { ROLE_LABELS } from '@/modules/rbac/roles'
@@ -33,6 +33,12 @@ export default async function DashboardPage() {
             description="List, activate, suspend, and configure tenants across the platform."
             icon={Building2}
             href="/tenants"
+          />
+          <ModuleCard
+            title="Alta Cliente"
+            description="Alta operativa de clínica con credenciales de cliente, secretaria y médicos."
+            icon={UserPlus}
+            href="/client-onboarding"
           />
           <ModuleCard
             title="AI Providers"

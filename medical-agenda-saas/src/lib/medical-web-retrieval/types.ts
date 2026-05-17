@@ -5,7 +5,7 @@ export type MedicalWebSourceType =
   | "mental_health"
   | "medication";
 
-export type MedicalWebRetrievalMode = "allowlist";
+export type MedicalWebRetrievalMode = "allowlist" | "open";
 
 export type MedicalWebRetrievalConfig = {
   enabled: boolean;

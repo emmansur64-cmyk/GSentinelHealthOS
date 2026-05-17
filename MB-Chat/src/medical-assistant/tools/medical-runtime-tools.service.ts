@@ -2,11 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { MedicalRuntimeToolContext } from '../../ai/medical-runtime-context';
 import { MedicalCitation } from '../../knowledge/types';
 import { MedicalChatLearningService } from '../learning/medical-chat-learning.service';
+import { MedicalSearchGateway } from '../adapters/medical-search.gateway';
 
 const DEFAULT_TIMEZONE = 'America/Argentina/Buenos_Aires';
 const DEFAULT_WEATHER_LAT = -34.6037;
 const DEFAULT_WEATHER_LON = -58.3816;
 const DEFAULT_WEATHER_LOCATION = 'Buenos Aires, Argentina';
+const GOOGLE_GEOCODING_BASE_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
 const BLOCKED_WEB_KEYWORDS = [
   'deep web',
   'dark web',
@@ -167,7 +169,10 @@ const OFFICIAL_SOURCE_DIRECTORY: Array<MedicalCitation & {
 export class MedicalRuntimeToolsService {
   private readonly logger = new Logger(MedicalRuntimeToolsService.name);
 
-  constructor(private readonly medicalChatLearningService: MedicalChatLearningService) {}
+  constructor(
+    private readonly medicalChatLearningService: MedicalChatLearningService,
+    private readonly searchGateway: MedicalSearchGateway,
+  ) {}
 
   async buildContext(query: string, country = 'AR'): Promise<MedicalRuntimeToolContext> {
     const timezone = process.env.MEDICAL_CHAT_TIMEZONE?.trim() || DEFAULT_TIMEZONE;
@@ -285,43 +290,13 @@ export class MedicalRuntimeToolsService {
   }
 
   private async discoverOpenInternetSources(query: string, country: string): Promise<MedicalCitation[]> {
-    const sanitized = this.sanitizeQueryForWeb(query);
-    if (!sanitized || this.containsBlockedWebKeyword(sanitized)) {
-      return [];
-    }
-
-    const scopedQuery = `${sanitized} ${country} clinical guideline evidence`;
-    const url = `https://www.google.com/search?q=${encodeURIComponent(scopedQuery)}&hl=es&gl=ar&num=10`;
-
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          accept: 'text/html,application/xhtml+xml',
-          'user-agent': 'MB-Chat-MedicalRuntimeTools/1.0 google-open-internet-clinical-retrieval',
-        },
-      });
-      clearTimeout(timeout);
-      if (!res.ok) return [];
-
-      const html = await res.text();
-      const discovered = this.extractSearchResultUrls(html)
-        .map((candidateUrl): MedicalCitation => ({
-          source: 'guideline',
-          title: `Open clinical source: ${candidateUrl}`,
-          url: candidateUrl,
-          date: 'current',
-        }))
-        .slice(0, 6);
-
-      return discovered;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`[MedicalRuntimeTools:openInternet] ${msg}`);
-      return [];
-    }
+    // SECURITY BOUNDARY: Google Search and uncontrolled internet queries are BLOCKED
+    // Medical Chat can only access whitelisted medical sources via MedicalSearchGateway
+    this.logger.warn(
+      '[SecurityBoundary] Attempted to discover open internet sources (Google Search) - BLOCKED',
+      { query: query.slice(0, 50), country }
+    );
+    return [];
   }
 
   private extractSearchResultUrls(html: string): string[] {
@@ -403,40 +378,16 @@ export class MedicalRuntimeToolsService {
   private async fetchOfficialSourceEvidence(
     sources: MedicalCitation[],
   ): Promise<MedicalRuntimeToolContext['officialSourceEvidence']> {
-    const evidence = await Promise.all(sources.map(async (source) => {
-      if (!this.isAllowedContextUrl(source.url)) return undefined;
-
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3500);
-        const res = await fetch(source.url, {
-          signal: controller.signal,
-          headers: {
-            accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8',
-            'user-agent': 'MB-Chat-MedicalRuntimeTools/1.0 controlled-official-source-reader',
-          },
-        });
-        clearTimeout(timeout);
-
-        if (!res.ok) return undefined;
-        const text = await res.text();
-        const excerpt = this.extractExcerpt(text);
-        if (!excerpt) return undefined;
-
-        return {
-          source: source.source,
-          title: source.title,
-          url: source.url,
-          excerpt,
-        };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.warn(`[MedicalRuntimeTools:officialSource] ${source.url} ${msg}`);
-        return undefined;
-      }
-    }));
-
-    return evidence.filter((item): item is MedicalRuntimeToolContext['officialSourceEvidence'][number] => Boolean(item));
+    // SECURITY BOUNDARY: All HTTP access goes through MedicalSearchGateway
+    // This enforces domain whitelisting, timeout protection, rate limiting
+    try {
+      const evidence = await this.searchGateway.fetchOfficialSourceEvidence(sources);
+      return evidence;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`[MedicalRuntimeTools:gateway] Official source fetch failed: ${msg}`);
+      return [];
+    }
   }
 
   private isAllowedContextUrl(rawUrl: string): boolean {
@@ -504,27 +455,18 @@ export class MedicalRuntimeToolsService {
       || normalizedQuery.includes('viento');
 
     if (weatherIntent) {
-      const locationMatch = normalizedQuery.match(/\b(?:en|de)\s+([a-z0-9\s,.-]{3,80})$/i);
+      const locationMatch = normalizedQuery.match(/\b(?:en|de)\s+([a-z0-9\s,.-]{3,80})(?:\?|$)/i);
       const requestedLocation = locationMatch?.[1]?.trim();
       if (requestedLocation) {
-        const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(requestedLocation)}&count=1&language=es&format=json`;
-        try {
-          const geoRes = await fetch(geocodeUrl);
-          if (geoRes.ok) {
-            const geoJson = await geoRes.json() as {
-              results?: Array<{ latitude?: number; longitude?: number; name?: string; admin1?: string; country?: string }>;
-            };
-            const top = geoJson.results?.[0];
-            if (top && typeof top.latitude === 'number' && typeof top.longitude === 'number') {
-              lat = top.latitude;
-              lon = top.longitude;
-              const locParts = [top.name, top.admin1, top.country].filter((value) => typeof value === 'string' && value.trim().length > 0);
-              location = locParts.join(', ') || requestedLocation;
-            }
-          }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          this.logger.warn(`[MedicalRuntimeTools:weather-geocode] ${msg}`);
+        const resolved = await this.resolveWeatherCoordinates(requestedLocation);
+        if (resolved) {
+          lat = resolved.lat;
+          lon = resolved.lon;
+          location = resolved.location;
+        } else {
+          this.logger.debug(
+            `[MedicalRuntimeTools:weather-geocode] No se pudo resolver "${requestedLocation}"; usando fallback ${fallbackLocation} (${fallbackLat}, ${fallbackLon})`,
+          );
         }
       }
     }
@@ -539,7 +481,8 @@ export class MedicalRuntimeToolsService {
     ].join('');
 
     try {
-      const res = await fetch(url);
+      // SECURITY: Use gateway for all HTTP access
+      const res = await this.searchGateway.fetch(url);
       if (!res.ok) return undefined;
       const json = await res.json() as {
         current?: {
@@ -570,6 +513,109 @@ export class MedicalRuntimeToolsService {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`[MedicalRuntimeTools:weather] ${msg}`);
+      return undefined;
+    }
+  }
+
+  private async resolveWeatherCoordinates(
+    requestedLocation: string,
+  ): Promise<{ lat: number; lon: number; location: string } | undefined> {
+    const googleResolved = await this.resolveCoordinatesWithGoogle(requestedLocation);
+    if (googleResolved) {
+      this.logger.debug(
+        `[MedicalRuntimeTools:weather-geocode] provider=google location="${requestedLocation}" -> "${googleResolved.location}" (${googleResolved.lat}, ${googleResolved.lon})`,
+      );
+      return googleResolved;
+    }
+
+    const openMeteoResolved = await this.resolveCoordinatesWithOpenMeteo(requestedLocation);
+    if (openMeteoResolved) {
+      this.logger.debug(
+        `[MedicalRuntimeTools:weather-geocode] provider=open-meteo location="${requestedLocation}" -> "${openMeteoResolved.location}" (${openMeteoResolved.lat}, ${openMeteoResolved.lon})`,
+      );
+    }
+    return openMeteoResolved;
+  }
+
+  private async resolveCoordinatesWithGoogle(
+    requestedLocation: string,
+  ): Promise<{ lat: number; lon: number; location: string } | undefined> {
+    const googleApiKey =
+      process.env.MEDICAL_CHAT_GOOGLE_GEOCODING_API_KEY?.trim()
+      || process.env.GOOGLE_MAPS_API_KEY?.trim();
+    if (!googleApiKey) {
+      this.logger.debug('[MedicalRuntimeTools:weather-geocode-google] API key no configurada; fallback a Open-Meteo');
+      return undefined;
+    }
+
+    const geocodeUrl = [
+      GOOGLE_GEOCODING_BASE_URL,
+      `?address=${encodeURIComponent(requestedLocation)}`,
+      '&language=es',
+      `&key=${encodeURIComponent(googleApiKey)}`,
+    ].join('');
+
+    try {
+      const geoRes = await this.searchGateway.fetch(geocodeUrl);
+      if (!geoRes.ok) return undefined;
+
+      const geoJson = await geoRes.json() as {
+        status?: string;
+        results?: Array<{
+          formatted_address?: string;
+          geometry?: { location?: { lat?: number; lng?: number } };
+        }>;
+      };
+
+      if (geoJson.status !== 'OK') {
+        return undefined;
+      }
+
+      const top = geoJson.results?.[0];
+      const lat = top?.geometry?.location?.lat;
+      const lon = top?.geometry?.location?.lng;
+      if (typeof lat !== 'number' || typeof lon !== 'number') {
+        return undefined;
+      }
+
+      return {
+        lat,
+        lon,
+        location: top?.formatted_address?.trim() || requestedLocation,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`[MedicalRuntimeTools:weather-geocode-google] ${msg}`);
+      return undefined;
+    }
+  }
+
+  private async resolveCoordinatesWithOpenMeteo(
+    requestedLocation: string,
+  ): Promise<{ lat: number; lon: number; location: string } | undefined> {
+    const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(requestedLocation)}&count=1&language=es&format=json`;
+
+    try {
+      const geoRes = await this.searchGateway.fetch(geocodeUrl);
+      if (!geoRes.ok) return undefined;
+
+      const geoJson = await geoRes.json() as {
+        results?: Array<{ latitude?: number; longitude?: number; name?: string; admin1?: string; country?: string }>;
+      };
+      const top = geoJson.results?.[0];
+      if (!top || typeof top.latitude !== 'number' || typeof top.longitude !== 'number') {
+        return undefined;
+      }
+
+      const locParts = [top.name, top.admin1, top.country].filter((value) => typeof value === 'string' && value.trim().length > 0);
+      return {
+        lat: top.latitude,
+        lon: top.longitude,
+        location: locParts.join(', ') || requestedLocation,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`[MedicalRuntimeTools:weather-geocode-openmeteo] ${msg}`);
       return undefined;
     }
   }

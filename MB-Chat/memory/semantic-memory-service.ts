@@ -142,6 +142,37 @@ export class SemanticMemoryService {
     }
   }
 
+  async trainFromMedicalChat(input: MedicalChatLearningRecord): Promise<boolean> {
+    try {
+      const entry = {
+        id: input.id,
+        tenant_id: "medical-chat",
+        doctor_id: input.role === "DOCTOR" ? input.role : "system",
+        patient_id: input.sessionId,
+        scope: "session",
+        kind: "training-record",
+        content: input.queryHash,
+        sanitized_content: input.explicitTeaching?.sanitizedText || "",
+        source: "medical-chat-learning",
+        confidence: input.decision.confidence,
+        tags: input.concepts,
+        created_at: input.recordedAt,
+        metadata: {
+          modality: input.modality,
+          citations: input.citationCount,
+          outcome: input.outcome,
+          decision: input.decision,
+        },
+      };
+
+      await this.backend.append(entry);
+      return true;
+    } catch (error) {
+      console.error("Failed to train from medical chat record:", error);
+      return false;
+    }
+  }
+
   private async audit(
     action: "remember" | "recall" | "fallback",
     traceId: string,
