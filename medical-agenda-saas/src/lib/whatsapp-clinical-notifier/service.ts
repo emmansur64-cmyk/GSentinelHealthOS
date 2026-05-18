@@ -18,7 +18,6 @@ type ServiceInput = {
   conversationId: string;
   message: string;
   patient: { id: string; name: string; document?: string | null } | null;
-  appointment: { id: string; notes?: string | null } | null;
   clinicalState?: string | null;
   metadata?: Record<string, unknown>;
 };
@@ -42,15 +41,21 @@ async function loadPendingPreview(tenantId: string, conversationId: string): Pro
 }
 
 async function doctorHasPatientAccess(input: { tenantId: string; doctorId: string; patientId: string }): Promise<boolean> {
-  const count = await prisma.appointment.count({
+  const patient = await prisma.patient.findFirst({
     where: {
+      id: input.patientId,
       tenant_id: input.tenantId,
-      doctor_id: input.doctorId,
-      patient_id: input.patientId,
-      deleted_at: null,
     },
+    select: { id: true },
   });
-  return count > 0;
+  const doctor = await prisma.doctorProfile.findFirst({
+    where: {
+      user_id: input.doctorId,
+      tenant_id: input.tenantId,
+    },
+    select: { user_id: true },
+  });
+  return Boolean(patient && doctor);
 }
 
 function extractString(value: unknown): string {
@@ -64,8 +69,8 @@ export async function maybeHandleTransferProtocolNotification(input: ServiceInpu
     const pending = await loadPendingPreview(input.tenantId, input.conversationId);
     if (!pending) {
       return {
-        action: "SEND_TRANSFER_PROTOCOL_WHATSAPP_DENIED",
-        response: "No hay un protocolo pendiente de confirmacion en esta conversacion.",
+        action: "SEND_TRANSFER_PROTOCOL_WHATSAPP_CONFIRMATION_REJECTED",
+        response: "No existe una solicitud pendiente de confirmacion para envio de protocolo.",
         confidence: 0.98,
         source: "RULES",
       };
@@ -138,6 +143,15 @@ export async function maybeHandleTransferProtocolNotification(input: ServiceInpu
     };
   }
 
+  if (intent.isSoftConfirmation) {
+    return {
+      action: "SEND_TRANSFER_PROTOCOL_WHATSAPP_CONFIRMATION_REJECTED",
+      response: "No existe una solicitud pendiente de confirmacion para envio de protocolo.",
+      confidence: 0.98,
+      source: "RULES",
+    };
+  }
+
   if (!intent.isTransferProtocolIntent) return null;
 
   if (!input.patient) {
@@ -186,6 +200,14 @@ export async function maybeHandleTransferProtocolNotification(input: ServiceInpu
   }
 
   if (!intent.destinationPhone || !isValidArMobileE164(intent.destinationPhone)) {
+    if (intent.hasPhoneDigitsHint) {
+      return {
+        action: "SEND_TRANSFER_PROTOCOL_WHATSAPP_INVALID_PHONE",
+        response: "Numero de WhatsApp invalido. Debe incluir formato internacional valido.",
+        confidence: 0.99,
+        source: "RULES",
+      };
+    }
     return {
       action: "SEND_TRANSFER_PROTOCOL_WHATSAPP_DENIED",
       response: "El numero destino es invalido. Debe estar en formato +549...",
@@ -195,7 +217,7 @@ export async function maybeHandleTransferProtocolNotification(input: ServiceInpu
   }
 
   const patientLabel = input.patient.document ? `${input.patient.name} (${input.patient.document})` : input.patient.name;
-  const reason = extractString(input.metadata?.transfer_reason) || extractString(input.appointment?.notes) || "Traslado para continuidad de atencion";
+  const reason = extractString(input.metadata?.transfer_reason) || "Traslado para continuidad de atencion";
   const protocolSummary = extractString(input.metadata?.transfer_protocol_summary) || extractString(input.clinicalState) || "Sin resumen adicional cargado.";
 
   const preview = buildTransferPreview({

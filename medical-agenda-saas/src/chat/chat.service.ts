@@ -1007,12 +1007,6 @@ export async function handleDoctorChat(
           document: resolved.patient.document,
         }
       : null,
-    appointment: resolved.appointment
-      ? {
-          id: resolved.appointment.id,
-          notes: resolved.appointment.notes,
-        }
-      : null,
     clinicalState: resolved.clinicalState,
     metadata: resolved.metadata,
   });

@@ -3,6 +3,8 @@ export type TransferNotificationAction =
   | "SEND_TRANSFER_PROTOCOL_WHATSAPP_PREVIEW"
   | "SEND_TRANSFER_PROTOCOL_WHATSAPP_MISSING_DATA"
   | "SEND_TRANSFER_PROTOCOL_WHATSAPP_CONFIRM_REQUIRED"
+  | "SEND_TRANSFER_PROTOCOL_WHATSAPP_INVALID_PHONE"
+  | "SEND_TRANSFER_PROTOCOL_WHATSAPP_CONFIRMATION_REJECTED"
   | "SEND_TRANSFER_PROTOCOL_WHATSAPP_DISPATCHED"
   | "SEND_TRANSFER_PROTOCOL_WHATSAPP_DRY_RUN"
   | "SEND_TRANSFER_PROTOCOL_WHATSAPP_DENIED";
@@ -11,6 +13,8 @@ export type TransferIntent = {
   destinationPhone: string | null;
   isTransferProtocolIntent: boolean;
   isExplicitConfirmation: boolean;
+  isSoftConfirmation: boolean;
+  hasPhoneDigitsHint: boolean;
 };
 
 export type TransferPreviewPayload = {

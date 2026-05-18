@@ -1,6 +1,12 @@
-import { resolveWhatsAppAccount } from "@/lib/whatsapp/account-resolver";
+import { prisma } from "@/lib/prisma";
+import { decryptText } from "@/lib/security/encryption";
 import { getClinicalNotifierConfig } from "@/lib/whatsapp-clinical-notifier/config";
 import { extractE164 } from "@/lib/whatsapp-clinical-notifier/phone";
+
+type LocalNotifierCredentials = {
+  accessToken: string;
+  phoneNumberId: string;
+};
 
 export type ClinicalNotifierSendInput = {
   tenantId: string;
@@ -16,6 +22,36 @@ export type ClinicalNotifierSendResult = {
   providerResponse: string;
 };
 
+async function resolveLocalCredentials(tenantId: string): Promise<LocalNotifierCredentials> {
+  const cfg = getClinicalNotifierConfig();
+  if (cfg.token && cfg.phoneNumberId) {
+    return { accessToken: cfg.token, phoneNumberId: cfg.phoneNumberId };
+  }
+
+  const account = await prisma.clinicWhatsappAccount.findFirst({
+    where: {
+      tenantId,
+      isActive: true,
+      accessTokenEncrypted: { not: null },
+      phoneNumberId: { not: null },
+    },
+    select: {
+      accessTokenEncrypted: true,
+      phoneNumberId: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!account?.accessTokenEncrypted || !account.phoneNumberId) {
+    throw new Error("WHATSAPP_CLINICAL_NOTIFIER credentials are not configured");
+  }
+
+  return {
+    accessToken: decryptText(account.accessTokenEncrypted),
+    phoneNumberId: account.phoneNumberId,
+  };
+}
+
 export async function sendClinicalWhatsAppNotification(input: ClinicalNotifierSendInput): Promise<ClinicalNotifierSendResult> {
   const cfg = getClinicalNotifierConfig();
 
@@ -29,17 +65,14 @@ export async function sendClinicalWhatsAppNotification(input: ClinicalNotifierSe
     };
   }
 
-  const account = await resolveWhatsAppAccount({
-    tenantId: input.tenantId,
-    phoneNumberId: cfg.phoneNumberId || undefined,
-  });
+  const credentials = await resolveLocalCredentials(input.tenantId);
+  const url = `${cfg.baseUrl}/${cfg.apiVersion}/${credentials.phoneNumberId}/messages`;
 
-  const url = `${cfg.baseUrl}/${cfg.apiVersion}/${cfg.phoneNumberId || account.phoneNumberId}/messages`;
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${cfg.token || account.accessToken}`,
+      Authorization: `Bearer ${credentials.accessToken}`,
     },
     body: JSON.stringify({
       messaging_product: "whatsapp",

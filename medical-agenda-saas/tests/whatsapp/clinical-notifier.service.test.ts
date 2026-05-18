@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockSendClinical = vi.fn();
 const mockAuditLog = vi.fn(async () => undefined);
 const mockFindFirst = vi.fn();
-const mockCount = vi.fn();
+const mockPatientFindFirst = vi.fn();
 const mockDoctorProfileFindFirst = vi.fn();
 const mockCreate = vi.fn();
 
@@ -21,8 +21,8 @@ vi.mock("@/lib/prisma", () => ({
       findFirst: mockFindFirst,
       create: mockCreate,
     },
-    appointment: {
-      count: mockCount,
+    patient: {
+      findFirst: mockPatientFindFirst,
     },
     doctorProfile: {
       findFirst: mockDoctorProfileFindFirst,
@@ -36,7 +36,7 @@ describe("whatsapp clinical notifier service", () => {
     process.env.WHATSAPP_CLINICAL_NOTIFIER_ENABLED = "false";
     process.env.WHATSAPP_CLINICAL_NOTIFIER_DRY_RUN = "true";
 
-    mockCount.mockResolvedValue(1);
+    mockPatientFindFirst.mockResolvedValue({ id: "p1" });
     mockDoctorProfileFindFirst.mockResolvedValue({ matricula: "MP-123", user: { name: "Dra. Ana" } });
     mockFindFirst.mockResolvedValue(null);
     mockSendClinical.mockResolvedValue({
@@ -116,5 +116,46 @@ describe("whatsapp clinical notifier service", () => {
     expect(result?.action).toBe("SEND_TRANSFER_PROTOCOL_WHATSAPP_DRY_RUN");
     expect(mockSendClinical).toHaveBeenCalledTimes(1);
     expect(mockAuditLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("rechaza numero invalido de forma explicita", async () => {
+    const { maybeHandleTransferProtocolNotification } = await import("@/lib/whatsapp-clinical-notifier/service");
+
+    const result = await maybeHandleTransferProtocolNotification({
+      tenantId: "default",
+      actorUserId: "doctor-1",
+      doctorId: "doctor-1",
+      conversationId: "doctor:1:patient:p1:appointment:none",
+      message: "Enviar traslado a 263",
+      patient: { id: "p1", name: "Paciente Uno" },
+      clinicalState: "estable",
+      metadata: {
+        transfer_sender_license: "MP-123",
+        transfer_sender_direct_phone: "+5491122334455",
+      },
+    });
+
+    expect(result?.action).toBe("SEND_TRANSFER_PROTOCOL_WHATSAPP_INVALID_PHONE");
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockSendClinical).not.toHaveBeenCalled();
+  });
+
+  it("rechaza confirmacion sin preview pendiente", async () => {
+    const { maybeHandleTransferProtocolNotification } = await import("@/lib/whatsapp-clinical-notifier/service");
+
+    const result = await maybeHandleTransferProtocolNotification({
+      tenantId: "default",
+      actorUserId: "doctor-1",
+      doctorId: "doctor-1",
+      conversationId: "doctor:1:patient:p1:appointment:none",
+      message: "si, mandalo",
+      patient: { id: "p1", name: "Paciente Uno" },
+      clinicalState: "estable",
+      metadata: {},
+    });
+
+    expect(result?.action).toBe("SEND_TRANSFER_PROTOCOL_WHATSAPP_CONFIRMATION_REJECTED");
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockSendClinical).not.toHaveBeenCalled();
   });
 });
