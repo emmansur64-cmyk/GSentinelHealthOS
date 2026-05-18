@@ -14,6 +14,7 @@ import { buildMedicalSpecialtyProtocolContext } from "@/lib/medical-specialty-pr
 import { buildMedicalRuntimeContext } from "@/lib/medical-runtime-context";
 import { buildMedicalWebRetrievalContext } from "@/lib/medical-web-retrieval";
 import { DOCTOR_CHAT_PARAMS } from "@/chat/doctor-chat-params";
+import { maybeHandleTransferProtocolNotification } from "@/lib/whatsapp-clinical-notifier/service";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -262,7 +263,7 @@ async function resolveClinicalContext(doctorId: string, context?: DoctorChatCont
   const patient = patientId
     ? await prisma.patient.findFirst({
         where: { id: patientId, tenant_id: tenantId },
-        select: { id: true, name: true, phone: true, notes: true },
+        select: { id: true, name: true, phone: true, notes: true, document: true },
       })
     : null;
 
@@ -991,6 +992,49 @@ export async function handleDoctorChat(
       decision.confidence = Math.min(decision.confidence, 0.25);
       decision.source = "RULES";
     }
+  }
+
+  const transferNotificationDecision = await maybeHandleTransferProtocolNotification({
+    tenantId,
+    actorUserId: input.actorUserId ?? input.doctorId,
+    doctorId: input.doctorId,
+    conversationId: resolved.conversationId,
+    message: input.message,
+    patient: resolved.patient
+      ? {
+          id: resolved.patient.id,
+          name: resolved.patient.name,
+          document: resolved.patient.document,
+        }
+      : null,
+    appointment: resolved.appointment
+      ? {
+          id: resolved.appointment.id,
+          notes: resolved.appointment.notes,
+        }
+      : null,
+    clinicalState: resolved.clinicalState,
+    metadata: resolved.metadata,
+  });
+  if (transferNotificationDecision) {
+    await logFunctionalAudit({
+      userId: input.actorUserId ?? input.doctorId,
+      action: DOCTOR_CHAT_PARAMS.exchangeAction,
+      entityId: resolved.conversationId,
+      entityType: DOCTOR_CHAT_PARAMS.auditEntityType,
+      payloadBefore: {
+        request_id: requestId,
+        doctor_id: input.doctorId,
+        message: input.message,
+      },
+      payloadAfter: safeJson(transferNotificationDecision),
+    });
+
+    return {
+      ...transferNotificationDecision,
+      conversation_id: resolved.conversationId,
+      degraded: false,
+    };
   }
 
   if (!isStructuredClinicalAuditQuery(input.message)) {
