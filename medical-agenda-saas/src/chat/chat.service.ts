@@ -954,6 +954,8 @@ export async function handleDoctorChat(
         role: "DOCTOR",
         message: input.message,
         context: sharedContext,
+      }, {
+        temperature: 0.5,
       });
   const groqCandidateResult = groqRawResult
     ? {

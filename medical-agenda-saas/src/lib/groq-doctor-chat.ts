@@ -37,6 +37,10 @@ type GroqDoctorChatConfig = {
   timeoutMs: number;
 };
 
+type CallGroqDoctorChatOptions = {
+  temperature?: number;
+};
+
 function parseBoolean(value: string | undefined, defaultValue: boolean): boolean {
   if (typeof value !== "string") return defaultValue;
   const normalized = value.trim().toLowerCase();
@@ -121,7 +125,7 @@ function buildSystemPrompt(): string {
     "Limitaciones:",
     "Disclaimer clinico:",
     "[CONTENIDO] Redacta cada seccion en formato fluido, conciso, natural y con negritas en terminos clave.",
-    "[LIMITACIONES FIJAS] En la seccion Limitaciones incluye: Hay datos faltantes en la consulta inicial. Existe incertidumbre clinica debido a que faltan datos clave del examen fisico presencial y los signos vitales del paciente para una estratificacion precisa.",
+    "[LIMITACIONES FIJAS] En la seccion Limitaciones incluye: Hay datos faltantes en la consulta o el historial. Existe incertidumbre clinica debido a que faltan datos del examen fisico presencial y los signos vitales actualizados del paciente para una estratificacion de precision.",
     "[DISCLAIMER FIJO] En la seccion Disclaimer clinico incluye: Esta orientacion no reemplaza criterio medico ni evaluacion presencial. No constituye diagnostico definitivo y debe ajustarse a protocolos institucionales.",
     "[SEGURIDAD] No inventes datos clinicos. Si falta evidencia, dilo claramente.",
     "[CONTEXTO] Si el medico pregunta fecha/hora, usa RUNTIME CONTEXT. Si hay evidencia web permitida, prioriza guias y fuentes confiables.",
@@ -498,7 +502,10 @@ export function isGroqDoctorChatConfigured(): boolean {
   return getConfig().enabled;
 }
 
-export async function callGroqDoctorChat(input: MetaBrainDecisionInput): Promise<MetaBrainDecision | null> {
+export async function callGroqDoctorChat(
+  input: MetaBrainDecisionInput,
+  options: CallGroqDoctorChatOptions = {},
+): Promise<MetaBrainDecision | null> {
   const config = getConfig();
   if (!config.enabled) {
     return null;
@@ -516,6 +523,13 @@ export async function callGroqDoctorChat(input: MetaBrainDecisionInput): Promise
   const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
 
   try {
+    const temperature = parseNumber(
+      options.temperature !== undefined ? String(options.temperature) : undefined,
+      config.temperature,
+      0,
+      2,
+    );
+
     const response = await fetch(`${config.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -525,7 +539,7 @@ export async function callGroqDoctorChat(input: MetaBrainDecisionInput): Promise
       body: JSON.stringify({
         model: config.model,
         messages: buildMessages(input),
-        temperature: config.temperature,
+        temperature,
         max_tokens: config.maxTokens,
       }),
       signal: controller.signal,
