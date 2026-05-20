@@ -158,6 +158,13 @@ export const doctorChatFallbackTotal = new Counter({
   registers: [register],
 });
 
+export const doctorChatClinicalSafetyTotal = new Counter({
+  name: "doctor_chat_clinical_safety_total",
+  help: "Clinical safety gate outcomes for doctor chat by risk and evidence confidence",
+  labelNames: ["risk_level", "evidence_confidence", "outcome"] as const,
+  registers: [register],
+});
+
 export async function getPrometheusMetrics(): Promise<string> {
   return register.metrics();
 }
@@ -257,6 +264,21 @@ export function incDoctorChatFetchFailed(endpoint: string, reason: string): void
 
 export function incDoctorChatFallback(reason: string): void {
   doctorChatFallbackTotal.inc({ reason }, 1);
+}
+
+export function incDoctorChatClinicalSafety(
+  riskLevel: "low" | "moderate" | "high" | "critical",
+  evidenceConfidence: "verified_guideline" | "literature_supported" | "weak_evidence" | "unsupported",
+  outcome: "allowed" | "blocked",
+): void {
+  doctorChatClinicalSafetyTotal.inc(
+    {
+      risk_level: riskLevel,
+      evidence_confidence: evidenceConfidence,
+      outcome,
+    },
+    1,
+  );
 }
 
 export type AlertSnapshot = {

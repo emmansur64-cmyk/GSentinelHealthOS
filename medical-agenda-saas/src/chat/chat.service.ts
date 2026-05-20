@@ -6,7 +6,7 @@ import { logFunctionalAudit } from "@/lib/audit-functional";
 import { publishMetaBrainSignal } from "@/lib/metabrain-bridge";
 import { logServer } from "@/lib/server-logger";
 import { getTenantIdFromContext } from "@/lib/tenant-context";
-import { incDoctorChatFallback } from "@/lib/observability/metrics";
+import { incDoctorChatClinicalSafety, incDoctorChatFallback } from "@/lib/observability/metrics";
 import { loadDoctorContext } from "@/lib/doctor-context";
 import { buildMedicalConversationMemory } from "@/lib/medical-conversation-memory";
 import { buildMedicalReasoningContext } from "@/lib/medical-reasoning";
@@ -21,6 +21,7 @@ import {
   evaluateDoctorClinicalContract,
   resolveDoctorClinicalRoute,
 } from "@/chat/doctor-clinical-contract";
+import { evaluateClinicalSafetyGuard } from "@/chat/clinical-evidence-guard";
 import { maybeHandleTransferProtocolNotification } from "@/lib/whatsapp-clinical-notifier/service";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -1066,7 +1067,7 @@ export async function handleDoctorChat(
         reason: fallbackReason,
       });
 
-  const degraded = Boolean(fallbackDecision);
+  let degraded = Boolean(fallbackDecision);
 
   const decision: MetaBrainDecision = forcedDecision
     ? forcedDecision
@@ -1089,6 +1090,38 @@ export async function handleDoctorChat(
       decision.confidence = Math.min(decision.confidence, 0.25);
       decision.source = "RULES";
     }
+  }
+
+  const safetyGuard = evaluateClinicalSafetyGuard({
+    message: input.message,
+    response: decision.response,
+    requiresClinicalContract: routingDecision.requiresClinicalContract,
+    evidenceUrls: medicalWebRetrieval?.sources.map((source) => source.url) ?? [],
+  });
+
+  if (safetyGuard.blocked) {
+    decision.action = "DOCTOR_CHAT_CLINICAL_POLICY_BLOCK";
+    decision.response =
+      "Bloqueo de seguridad clinica activado por riesgo alto/critico sin evidencia suficiente. Recomendacion: evaluacion presencial inmediata, aplicar protocolo institucional y validacion medica humana antes de cualquier conducta terapeutica.";
+    decision.confidence = Math.min(decision.confidence, 0.2);
+    decision.source = "RULES";
+    degraded = true;
+  }
+
+  incDoctorChatClinicalSafety(
+    safetyGuard.riskLevel,
+    safetyGuard.evidenceConfidence,
+    safetyGuard.blocked ? "blocked" : "allowed",
+  );
+
+  if (safetyGuard.blocked) {
+    logServer("warn", "doctor_chat.clinical_policy_block", {
+      doctor_id: input.doctorId,
+      conversation_id: resolved.conversationId,
+      risk_level: safetyGuard.riskLevel,
+      evidence_confidence: safetyGuard.evidenceConfidence,
+      reason: safetyGuard.reason,
+    });
   }
 
   const transferNotificationDecision = await maybeHandleTransferProtocolNotification({
@@ -1184,6 +1217,9 @@ export async function handleDoctorChat(
     source: decision.source,
     action: decision.action,
     degraded,
+    clinical_risk_level: safetyGuard.riskLevel,
+    evidence_confidence: safetyGuard.evidenceConfidence,
+    clinical_policy_blocked: safetyGuard.blocked,
   });
 
   void syncDoctorChatLearningToMbChat({

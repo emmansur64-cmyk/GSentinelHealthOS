@@ -69,3 +69,34 @@ Resultado:
   - degradacion segura sin inventar conducta,
   - aislamiento de metadata.
 - Se recomienda mantener monitoreo de tasas `contract_rejected` y `fallbackReason` en observabilidad para ajustar prompts/modelo sin comprometer seguridad.
+
+## Endurecimiento adicional NO-GO -> GO supervisado (2026-05-20)
+
+1. Clinical Evidence Guard
+- Archivo: `medical-agenda-saas/src/chat/clinical-evidence-guard.ts`
+- Se agrego clasificacion:
+  - `clinical_risk_level`: `low | moderate | high | critical`
+  - `evidence_confidence`: `verified_guideline | literature_supported | weak_evidence | unsupported`
+- Politica implementada:
+  - Bloqueo automatico para riesgo `critical` sin evidencia `verified_guideline`.
+  - Bloqueo automatico para riesgo `high` con evidencia `weak_evidence` o `unsupported`.
+  - Acción de bloqueo: `DOCTOR_CHAT_CLINICAL_POLICY_BLOCK`.
+
+2. Observabilidad clinica reforzada
+- Archivo: `medical-agenda-saas/src/lib/observability/metrics.ts`
+- Nueva metrica:
+  - `doctor_chat_clinical_safety_total{risk_level,evidence_confidence,outcome}`
+- Se registra por cada respuesta si fue permitida o bloqueada por policy guard.
+
+3. Retrieval medico endurecido por defecto
+- Archivo: `.env.example`
+- Cambio de baseline:
+  - `MEDICAL_WEB_RETRIEVAL_MODE=open` -> `MEDICAL_WEB_RETRIEVAL_MODE=allowlist`
+- Objetivo: reducir riesgo de evidencia no confiable en produccion real.
+
+4. Pruebas nuevas del guard clinico
+- Archivo: `medical-agenda-saas/tests/unit/clinical-evidence-guard.test.ts`
+- Casos cubiertos:
+  - bloqueo de riesgo critico sin evidencia verificada,
+  - autorizacion de riesgo critico con evidencia de guideline verificada,
+  - bloqueo de riesgo alto con evidencia debil.
