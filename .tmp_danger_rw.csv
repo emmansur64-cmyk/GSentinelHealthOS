@@ -1,0 +1,3 @@
+"container","source","destination","rw","reason"
+"gs_frontend","E:\GSentinelHealthOS\MB-Chat\data","/app/artifacts/mb-chat-learning","True","RW mount on code/config path"
+"gs_brain","/run/desktop/mnt/host/e/GSentinelHealthOS/MB-Chat/data","/app/artifacts/mb-chat-learning","True","RW mount on code/config path"

@@ -1,0 +1,994 @@
+services:
+  # ============ INFRAESTRUCTURA ============
+  db:
+    image: postgres:16-alpine
+    container_name: gs_db
+    mem_limit: 1g
+    cpus: 1.00
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      POSTGRES_DB: gsentinel
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "127.0.0.1:55433:5432"
+    command: ["postgres", "-c", "max_connections=50", "-c", "shared_buffers=128MB"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init-multiple-dbs.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d gsentinel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-master:
+    image: redis:8.0.2-alpine
+    container_name: gs_redis_master
+    mem_limit: 768m
+    cpus: 0.75
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_master_data:/data
+      - ./broker/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: ["sh", "-c", "redis-server /usr/local/etc/redis/redis.conf --requirepass \"$REDIS_PASSWORD\""]
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -h localhost -p 6379 -a \"$$REDIS_PASSWORD\" ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis-replica:
+    image: redis:8.0.2-alpine
+    container_name: gs_redis_replica
+    mem_limit: 512m
+    cpus: 0.50
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis_replica_data:/data
+      - ./broker/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: ["sh", "-c", "redis-server /usr/local/etc/redis/redis.conf --replicaof redis-master 6379 --masterauth \"$REDIS_PASSWORD\" --requirepass \"$REDIS_PASSWORD\""]
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -h localhost -p 6379 -a \"$$REDIS_PASSWORD\" ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis-sentinel-1:
+    image: redis:8.0.2-alpine
+    container_name: gs_redis_sentinel_1
+    mem_limit: 128m
+    cpus: 0.25
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    volumes:
+      - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
+    command:
+      [
+        "sh",
+        "-c",
+        "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && printf '\nsentinel auth-pass mymaster %s\n' \"$$REDIS_PASSWORD\" >> /tmp/sentinel.conf && redis-server /tmp/sentinel.conf --sentinel",
+      ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -h localhost -p 26379 -a \"$$REDIS_PASSWORD\" ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis-sentinel-2:
+    image: redis:8.0.2-alpine
+    container_name: gs_redis_sentinel_2
+    mem_limit: 128m
+    cpus: 0.25
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    volumes:
+      - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
+    command:
+      [
+        "sh",
+        "-c",
+        "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && printf '\nsentinel auth-pass mymaster %s\n' \"$$REDIS_PASSWORD\" >> /tmp/sentinel.conf && redis-server /tmp/sentinel.conf --sentinel",
+      ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -h localhost -p 26379 -a \"$$REDIS_PASSWORD\" ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis-sentinel-3:
+    image: redis:8.0.2-alpine
+    container_name: gs_redis_sentinel_3
+    mem_limit: 128m
+    cpus: 0.25
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    volumes:
+      - ./broker/sentinel.conf:/usr/local/etc/redis/sentinel.conf:ro
+    command:
+      [
+        "sh",
+        "-c",
+        "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && printf '\nsentinel auth-pass mymaster %s\n' \"$$REDIS_PASSWORD\" >> /tmp/sentinel.conf && redis-server /tmp/sentinel.conf --sentinel",
+      ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -h localhost -p 26379 -a \"$$REDIS_PASSWORD\" ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ============ APLICACIONES ============
+  migrate-api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_migrate_api
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-c", "sleep 5 && alembic upgrade heads"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+    networks:
+      - gs_prod
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_api
+    mem_limit: 768m
+    cpus: 1.00
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate-api:
+        condition: service_completed_successfully
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
+      REDIS_SENTINEL_MASTER: ${REDIS_SENTINEL_MASTER:-mymaster}
+      REDIS_SENTINELS: ${REDIS_SENTINELS:-redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379}
+      REDIS_SENTINEL_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_QUEUE_PREFIX: ${REDIS_QUEUE_PREFIX:-queue:}
+      REDIS_STATE_PREFIX: ${REDIS_STATE_PREFIX:-state:}
+      REDIS_CACHE_PREFIX: ${REDIS_CACHE_PREFIX:-cache:}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER:-gsentinel-api}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-gsentinel-clients}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-200}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v21.0}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+      META_APP_ID: ${META_APP_ID}
+      META_APP_SECRET: ${META_APP_SECRET}
+      META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v21.0}
+      META_OAUTH_REDIRECT_URI: ${META_OAUTH_REDIRECT_URI}
+      META_EMBEDDED_SIGNUP_CONFIGURATION_ID: ${META_EMBEDDED_SIGNUP_CONFIGURATION_ID}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes:
+      - uploads_data:/data/uploads
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/liveness')\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  brain:
+    build:
+      context: .
+      dockerfile: docker/brain.Dockerfile
+    container_name: gs_brain
+    mem_limit: 1g
+    cpus: 1.50
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
+      REDIS_SENTINEL_MASTER: ${REDIS_SENTINEL_MASTER:-mymaster}
+      REDIS_SENTINELS: ${REDIS_SENTINELS:-redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379}
+      REDIS_SENTINEL_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_QUEUE_PREFIX: ${REDIS_QUEUE_PREFIX:-queue:}
+      REDIS_STATE_PREFIX: ${REDIS_STATE_PREFIX:-state:}
+      REDIS_CACHE_PREFIX: ${REDIS_CACHE_PREFIX:-cache:}
+      API_BASE_URL: ${API_BASE_URL:-http://api:8000}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      BRAIN_STATE_TTL_SECONDS: ${BRAIN_STATE_TTL_SECONDS:-86400}
+      BRAIN_MODE: ${BRAIN_MODE:-http}
+      BRAIN_HOST: ${BRAIN_HOST:-0.0.0.0}
+      BRAIN_PORT: ${BRAIN_PORT:-8001}
+      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY}
+      DIALOGUE_ENGINE_URL: ${DIALOGUE_ENGINE_URL:-http://dialogue-engine:8010}
+      INFERENCE_SERVICE_URL: ${INFERENCE_SERVICE_URL:-http://inference-service:8011}
+      DECISION_SERVICE_URL: ${DECISION_SERVICE_URL:-http://decision-service:8012}
+      NLG_SERVICE_URL: ${NLG_SERVICE_URL:-http://nlg-service:8013}
+      BRAIN_ALLOWED_ORIGINS: http://localhost:3000,http://frontend:3000
+      ENABLE_BRAIN_REDIS_WORKER: ${ENABLE_BRAIN_REDIS_WORKER:-true}
+      MEDICAL_CHAT_LEARNING_PATH: /app/artifacts/mb-chat-learning/medical-chat-learning.jsonl
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    ports:
+      - "127.0.0.1:${BRAIN_PORT:-8001}:8001"
+    volumes:
+      - uploads_data:/data/uploads
+      - ./MB-Chat/data:/app/artifacts/mb-chat-learning
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/gateway.Dockerfile
+    container_name: gs_gateway
+    mem_limit: 512m
+    cpus: 0.75
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
+      REDIS_SENTINELS: ${GATEWAY_REDIS_SENTINELS:-}
+      REDIS_SENTINEL_MASTER: ${GATEWAY_REDIS_SENTINEL_MASTER:-}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID}
+      WHATSAPP_BUSINESS_ACCOUNT_ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v21.0}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+      ENABLE_WHATSAPP_GATEWAY: ${ENABLE_WHATSAPP_GATEWAY:-true}
+      GATEWAY_HOST: ${GATEWAY_HOST:-0.0.0.0}
+      GATEWAY_PORT: ${GATEWAY_PORT:-8002}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8002}:8002"
+    volumes:
+      - uploads_data:/data/uploads
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  frontend:
+    build:
+      context: ./medical-agenda-saas
+      dockerfile: Dockerfile
+    container_name: gs_frontend
+    mem_limit: 512m
+    cpus: 1.00
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate-frontend:
+        condition: service_completed_successfully
+      redis-master:
+        condition: service_healthy
+      brain:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${FRONTEND_DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN_HOURS: ${JWT_EXPIRES_IN_HOURS:-24}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-${SECRET_ENCRYPTION_KEY}}
+      NEXT_TELEMETRY_DISABLED: "1"
+      BRAIN_API_URL: ${BRAIN_API_URL:-http://brain:8001}
+      BRAIN_API_KEY: ${INTERNAL_SERVICES_KEY:-${BRAIN_API_KEY}}
+      PANEL_ADMIN_API_KEY: ${PANEL_ADMIN_API_KEY}
+      BRAIN_TIMEOUT_MS: ${BRAIN_TIMEOUT_MS:-5000}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
+      WHATSAPP_AUTO_BOOT_WORKERS: ${WHATSAPP_AUTO_BOOT_WORKERS:-true}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v21.0}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      GROQ_API_KEY_CHAT: ${GROQ_API_KEY_CHAT}
+      GROQ_MODEL_CHAT: ${GROQ_MODEL_CHAT}
+      GROQ_API_KEY_SECRETARIA: ${GROQ_API_KEY_SECRETARIA}
+      GROQ_MODEL_SECRETARIA: ${GROQ_MODEL_SECRETARIA}
+      GROQ_IMAGE_ANALYSIS_API_KEY: ${GROQ_IMAGE_ANALYSIS_API_KEY:-${GROQ_API_KEY}}
+      DOCUMENT_AI_ENABLED: ${DOCUMENT_AI_ENABLED:-false}
+      DOCUMENT_AI_PROVIDER: ${DOCUMENT_AI_PROVIDER:-groq}
+      DOCUMENT_AI_API_KEY: ${DOCUMENT_AI_API_KEY:-${GROQ_API_KEY}}
+      DOCUMENT_AI_BASE_URL: ${DOCUMENT_AI_BASE_URL:-https://api.groq.com/openai/v1}
+      MEDICAL_WEB_RETRIEVAL_ENABLED: ${MEDICAL_WEB_RETRIEVAL_ENABLED:-true}
+      MEDICAL_CHAT_INTERNET_MODE: ${MEDICAL_CHAT_INTERNET_MODE:-open}
+      MEDICAL_RUNTIME_CONTEXT_ENABLED: ${MEDICAL_RUNTIME_CONTEXT_ENABLED:-true}
+      MEDICAL_RUNTIME_CONTEXT_WEATHER_ENABLED: ${MEDICAL_RUNTIME_CONTEXT_WEATHER_ENABLED:-true}
+      MEDICAL_RUNTIME_CONTEXT_ALERTS_ENABLED: ${MEDICAL_RUNTIME_CONTEXT_ALERTS_ENABLED:-true}
+      MEDICAL_RUNTIME_CONTEXT_CACHE_TTL_SECONDS: ${MEDICAL_RUNTIME_CONTEXT_CACHE_TTL_SECONDS:-900}
+      MEDICAL_RUNTIME_CONTEXT_TIMEOUT_MS: ${MEDICAL_RUNTIME_CONTEXT_TIMEOUT_MS:-5000}
+      MEDICAL_RUNTIME_CONTEXT_TIMEZONE: ${MEDICAL_RUNTIME_CONTEXT_TIMEZONE:-America/Argentina/Buenos_Aires}
+      MEDICAL_RUNTIME_CONTEXT_REGION: ${MEDICAL_RUNTIME_CONTEXT_REGION:-}
+      MEDICAL_RUNTIME_CONTEXT_LATITUDE: ${MEDICAL_RUNTIME_CONTEXT_LATITUDE:-}
+      MEDICAL_RUNTIME_CONTEXT_LONGITUDE: ${MEDICAL_RUNTIME_CONTEXT_LONGITUDE:-}
+      MEDICAL_CHAT_LEARNING_PATH: /app/artifacts/mb-chat-learning/medical-chat-learning.jsonl
+      ENV: ${ENV:-production}
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:3000"
+    networks:
+      - gs_prod
+    volumes:
+      - ./MB-Chat/data:/app/artifacts/mb-chat-learning
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  panel-admin:
+    build:
+      context: ./Panel-SuperAdmin
+      dockerfile: Dockerfile
+    container_name: gs_panel_admin
+    mem_limit: 256m
+    cpus: 0.50
+    security_opt:
+      - no-new-privileges:true
+    profiles:
+      - panel
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      SUPER_ADMIN_COOKIE_SECURE: "false"
+      SUPER_ADMIN_JWT_SECRET: ${SUPER_ADMIN_JWT_SECRET}
+      SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
+      SUPER_ADMIN_PASSWORD_HASH: ${SUPER_ADMIN_PASSWORD_HASH}
+      ADMIN_API_INTERNAL_KEY: ${PANEL_ADMIN_API_KEY}
+      AGENDA_API_INTERNAL_URL: http://api:8000
+      MBCHAT_INTERNAL_URL: http://frontend:3000
+      MBSECRETARIA_INTERNAL_URL: http://frontend:3000
+      MBWHATSAPP_INTERNAL_URL: http://frontend:3000
+      BRAIN_INTERNAL_URL: http://brain:8001
+      MEDICAL_AGENDA_CREATE_CLINIC_URL: http://frontend:3000/api/internal/client-onboarding
+      HEALTH_CHECK_TIMEOUT_MS: "5000"
+      NEXT_PUBLIC_APP_VERSION: "0.2.0"
+    ports:
+      - "127.0.0.1:${PANEL_ADMIN_PORT:-3010}:3010"
+    volumes:
+      - panel_admin_runtime:/app/.runtime
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3010/api/auth/me').then(()=>process.exit(0)).catch(()=>process.exit(0))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  migrate-frontend:
+    build:
+      context: ./medical-agenda-saas
+      dockerfile: Dockerfile
+      target: bootstrap
+    container_name: gs_migrate_frontend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["npx", "prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"]
+    environment:
+      DATABASE_URL: ${FRONTEND_DATABASE_URL}
+    networks:
+      - gs_prod
+    restart: "no"
+
+  # ============ WORKERS ============
+  booking_worker_0:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_booking_worker_0
+    mem_limit: 512m
+    cpus: 0.75
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
+      REDIS_SENTINEL_MASTER: ${REDIS_SENTINEL_MASTER:-mymaster}
+      REDIS_SENTINELS: ${REDIS_SENTINELS:-redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379}
+      REDIS_SENTINEL_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_QUEUE_PREFIX: ${REDIS_QUEUE_PREFIX:-queue:}
+      REDIS_STATE_PREFIX: ${REDIS_STATE_PREFIX:-state:}
+      REDIS_CACHE_PREFIX: ${REDIS_CACHE_PREFIX:-cache:}
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      BOOKING_QUEUE_SHARDS: ${BOOKING_QUEUE_SHARDS_PROD:-2}
+      BOOKING_WORKER_SHARD: 0
+      BOOKING_QUEUE_RESULT_TTL_SECONDS: ${BOOKING_QUEUE_RESULT_TTL_SECONDS:-86400}
+      BOOKING_QUEUE_LOCK_TTL_MS: ${BOOKING_QUEUE_LOCK_TTL_MS:-15000}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    command: python -m api.app.booking_queue_worker_main
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; socket.create_connection(('db', 5432), 2).close(); socket.create_connection(('redis-master', 6379), 2).close()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - gs_prod
+    restart: unless-stopped
+
+  booking_worker_1:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_booking_worker_1
+    mem_limit: 512m
+    cpus: 0.75
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
+      REDIS_SENTINEL_MASTER: ${REDIS_SENTINEL_MASTER:-mymaster}
+      REDIS_SENTINELS: ${REDIS_SENTINELS:-redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379}
+      REDIS_SENTINEL_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_QUEUE_PREFIX: ${REDIS_QUEUE_PREFIX:-queue:}
+      REDIS_STATE_PREFIX: ${REDIS_STATE_PREFIX:-state:}
+      REDIS_CACHE_PREFIX: ${REDIS_CACHE_PREFIX:-cache:}
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      BOOKING_QUEUE_SHARDS: ${BOOKING_QUEUE_SHARDS_PROD:-2}
+      BOOKING_WORKER_SHARD: 1
+      BOOKING_QUEUE_RESULT_TTL_SECONDS: ${BOOKING_QUEUE_RESULT_TTL_SECONDS:-86400}
+      BOOKING_QUEUE_LOCK_TTL_MS: ${BOOKING_QUEUE_LOCK_TTL_MS:-15000}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    command: python -m api.app.booking_queue_worker_main
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; socket.create_connection(('db', 5432), 2).close(); socket.create_connection(('redis-master', 6379), 2).close()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - gs_prod
+    restart: unless-stopped
+
+  outbox_scheduler:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    container_name: gs_outbox_scheduler
+    mem_limit: 512m
+    cpus: 0.75
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${DB_USER}:${DB_PASSWORD}@db:5432/gsentinel}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
+      REDIS_SENTINEL_MASTER: ${REDIS_SENTINEL_MASTER:-mymaster}
+      REDIS_SENTINELS: ${REDIS_SENTINELS:-redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379}
+      REDIS_SENTINEL_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_QUEUE_PREFIX: ${REDIS_QUEUE_PREFIX:-queue:}
+      REDIS_STATE_PREFIX: ${REDIS_STATE_PREFIX:-state:}
+      REDIS_CACHE_PREFIX: ${REDIS_CACHE_PREFIX:-cache:}
+      JWT_SECRET: ${JWT_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      BRAIN_API_KEY: ${BRAIN_API_KEY}
+      OUTBOX_PROCESS_LIMIT: ${OUTBOX_PROCESS_LIMIT:-200}
+      OUTBOX_SCHEDULER_INTERVAL_SECONDS: ${OUTBOX_SCHEDULER_INTERVAL_SECONDS:-15}
+      GOOGLE_CALENDAR_ENABLED: ${GOOGLE_CALENDAR_ENABLED:-false}
+      GOOGLE_CALENDAR_AUTH_MODE: ${GOOGLE_CALENDAR_AUTH_MODE:-service_account}
+      GOOGLE_CALENDAR_ID: ${GOOGLE_CALENDAR_ID:-primary}
+      GOOGLE_CALENDAR_TIMEZONE: ${GOOGLE_CALENDAR_TIMEZONE:-UTC}
+      GOOGLE_SERVICE_ACCOUNT_FILE: ${GOOGLE_SERVICE_ACCOUNT_FILE:-}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+      GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${GOOGLE_SERVICE_ACCOUNT_JSON_BASE64:-}
+      GOOGLE_OAUTH_CLIENT_SECRET_FILE: ${GOOGLE_OAUTH_CLIENT_SECRET_FILE:-}
+      GOOGLE_OAUTH_TOKEN_FILE: ${GOOGLE_OAUTH_TOKEN_FILE:-}
+      GOOGLE_CALENDAR_WEBHOOK_TOKEN: ${GOOGLE_CALENDAR_WEBHOOK_TOKEN:-}
+      GOOGLE_CALENDAR_WEBHOOK_CALLBACK_URL: ${GOOGLE_CALENDAR_WEBHOOK_CALLBACK_URL:-}
+      GOOGLE_CALENDAR_WATCH_TTL_SECONDS: ${GOOGLE_CALENDAR_WATCH_TTL_SECONDS:-86400}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    command: python scripts/run_outbox_scheduler.py
+    volumes:
+      - ./scripts:/app/scripts:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; socket.create_connection(('db', 5432), 2).close(); socket.create_connection(('redis-master', 6379), 2).close()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - gs_prod
+    restart: unless-stopped
+
+  # ============ AI MICROSERVICIOS ============
+  dialogue-engine:
+    build:
+      context: .
+      dockerfile: docker/dialogue-engine.Dockerfile
+    container_name: gs_dialogue_engine
+    mem_limit: 512m
+    cpus: 0.75
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
+      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    ports:
+      - "127.0.0.1:${DIALOGUE_ENGINE_PORT:-8010}:8010"
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8010/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  inference-service:
+    build:
+      context: .
+      dockerfile: docker/inference-service.Dockerfile
+    container_name: gs_inference_service
+    mem_limit: 512m
+    cpus: 0.75
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
+      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    ports:
+      - "127.0.0.1:${INFERENCE_SERVICE_PORT:-8011}:8011"
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8011/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  decision-service:
+    build:
+      context: .
+      dockerfile: docker/decision-service.Dockerfile
+    container_name: gs_decision_service
+    mem_limit: 512m
+    cpus: 0.75
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
+      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    ports:
+      - "127.0.0.1:${DECISION_SERVICE_PORT:-8012}:8012"
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8012/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nlg-service:
+    build:
+      context: .
+      dockerfile: docker/nlg-service.Dockerfile
+    container_name: gs_nlg_service
+    mem_limit: 512m
+    cpus: 0.75
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis-master:6379}
+      INTERNAL_SERVICES_KEY: ${INTERNAL_SERVICES_KEY}
+      ENV: ${ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+    ports:
+      - "127.0.0.1:${NLG_SERVICE_PORT:-8013}:8013"
+    networks:
+      - gs_prod
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8013/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============ OBSERVABILIDAD (perfil: observability) ============
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: gs_prometheus
+    profiles:
+      - observability
+    mem_limit: 512m
+    cpus: 0.50
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    networks:
+      - gs_prod
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: gs_grafana
+    profiles:
+      - observability
+    mem_limit: 256m
+    cpus: 0.50
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_DOMAIN: ${GRAFANA_DOMAIN:-localhost}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_LOG_LEVEL: warn
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - gs_prod
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3020}:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: gs_loki
+    profiles:
+      - observability
+    mem_limit: 512m
+    cpus: 0.50
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/loki-config.yml
+    networks:
+      - gs_prod
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: gs_promtail
+    profiles:
+      - observability
+    mem_limit: 128m
+    cpus: 0.25
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    depends_on:
+      loki:
+        condition: service_healthy
+    volumes:
+      - ./observability/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/promtail-config.yml
+    networks:
+      - gs_prod
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_master_data:
+  redis_replica_data:
+  uploads_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  panel_admin_runtime:
+
+networks:
+  gs_prod:
+    driver: bridge
+
+

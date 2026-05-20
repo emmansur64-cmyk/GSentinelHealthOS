@@ -60,10 +60,12 @@ async function tryProbe(name: ServiceName, healthUrl: string, checkedAt: string)
     const latencyMs = Date.now() - start
 
     if (!response.ok) {
+      // 404 means the endpoint doesn't exist — treat as DOWN so the next candidate is tried.
+      const status = response.status === 404 ? 'DOWN' : 'DEGRADED'
       return {
         name,
         url: healthUrl,
-        status: 'DEGRADED',
+        status,
         latencyMs,
         checkedAt,
         error: `HTTP ${response.status}`,
