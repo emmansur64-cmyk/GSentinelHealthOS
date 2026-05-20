@@ -52,6 +52,10 @@ type BrainDecidePayload = {
   };
 };
 
+type CallBrainDecideOptions = {
+  allowLegacyFallback?: boolean;
+};
+
 const BRAIN_API_URL = (process.env.BRAIN_API_URL ?? "http://localhost:8001").replace(/\/$/, "");
 const BRAIN_API_KEY = (process.env.BRAIN_API_KEY ?? process.env.INTERNAL_SERVICES_KEY ?? "").trim();
 const BRAIN_TIMEOUT_MS = Number(process.env.BRAIN_TIMEOUT_MS ?? "10000");
@@ -244,6 +248,7 @@ function buildSessionId(payload: BrainDecidePayload): string | null {
  */
 export async function callBrainDecide(
   payload: BrainDecidePayload,
+  options: CallBrainDecideOptions = {},
 ): Promise<BrainDecideResponse | null> {
   if (isPlaceholderBrainApiKey(BRAIN_API_KEY)) {
     logServer("error", "brain.auth.misconfigured", {
@@ -264,6 +269,9 @@ export async function callBrainDecide(
   const timeoutId = setTimeout(() => controller.abort(), BRAIN_TIMEOUT_MS);
 
   try {
+    const allowLegacyFallback =
+      (options.allowLegacyFallback ?? true) && payload.assistant_mode !== "doctor_professional";
+
     const orchestrateUrl = `${BRAIN_API_URL}/orchestrate`;
     // 1) Camino principal: orquestador central (respuesta natural y contextual).
     const orchestrateRes = await fetchWithRetry("orchestrate", orchestrateUrl, {
@@ -312,6 +320,16 @@ export async function callBrainDecide(
       targetUrl: orchestrateUrl,
       timeoutMs: BRAIN_TIMEOUT_MS,
     });
+
+    if (!allowLegacyFallback) {
+      logServer("warn", "brain.legacy_fallback_blocked", {
+        assistant_mode: payload.assistant_mode ?? "generic_non_clinical",
+        actor_role: payload.actor_role ?? "system",
+        orchestrate_status: orchestrateRes.status,
+        target_url: orchestrateUrl,
+      });
+      return null;
+    }
 
     // 2) Fallback de compatibilidad: endpoint legacy /api/v1/brain/decide.
     const legacyUrl = `${BRAIN_API_URL}/api/v1/brain/decide`;

@@ -14,6 +14,13 @@ import { buildMedicalSpecialtyProtocolContext } from "@/lib/medical-specialty-pr
 import { buildMedicalRuntimeContext } from "@/lib/medical-runtime-context";
 import { buildMedicalWebRetrievalContext } from "@/lib/medical-web-retrieval";
 import { DOCTOR_CHAT_PARAMS } from "@/chat/doctor-chat-params";
+import {
+  buildDoctorClinicalFallbackDecision,
+  buildDoctorClinicalIsolatedMetadata,
+  ensureDoctorClinicalDisclaimer,
+  evaluateDoctorClinicalContract,
+  resolveDoctorClinicalRoute,
+} from "@/chat/doctor-clinical-contract";
 import { maybeHandleTransferProtocolNotification } from "@/lib/whatsapp-clinical-notifier/service";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -767,20 +774,9 @@ export async function handleDoctorChat(
   const tenantId = getTenantIdFromContext() ?? "default";
   const resolved = await resolveClinicalContext(input.doctorId, input.context);
   const requestId = normalizeChatRequestId(resolved.metadata?.chat_request_id);
-  const normalizedMessage = String(input.message ?? "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const hasHora = /\bhora\b/.test(normalizedMessage);
-  const hasFecha = /\bfecha\b/.test(normalizedMessage) || /\bdia\b/.test(normalizedMessage);
-  const isWeatherQuery = /\b(clima|tiempo|temperatura|lluvia|viento|humedad)\b/.test(normalizedMessage);
-  const isDateTimeQuery =
-    (hasHora && hasFecha) ||
-    (normalizedMessage.length <= 40 && (hasHora || hasFecha)) ||
-    /\b(que|cual)\s+(fecha|hora)\s+es\b/.test(normalizedMessage);
+  const routingDecision = resolveDoctorClinicalRoute(input.message);
+  const isWeatherQuery = routingDecision.route === "weather_runtime";
+  const isDateTimeQuery = routingDecision.route === "datetime_runtime";
 
   if (requestId) {
     const existingDecision = await findCompletedDoctorChatByRequestId({
@@ -852,6 +848,7 @@ export async function handleDoctorChat(
     hasRetrievalEvidence: Boolean(medicalWebRetrieval?.sources.length),
     hasRuntimeContext: Boolean(medicalRuntimeContext),
   });
+  const isolatedMetadata = buildDoctorClinicalIsolatedMetadata(resolved.metadata);
 
   const sharedContext = {
     doctor_id: input.doctorId,
@@ -868,7 +865,7 @@ export async function handleDoctorChat(
     conversation_history: resolved.conversationHistory,
     clinical_state: resolved.clinicalState,
     metadata: safeJson({
-      ...resolved.metadata,
+      ...isolatedMetadata,
       conversation_id: resolved.conversationId,
       ...(medicalConversationMemory ? { medical_conversation_memory: medicalConversationMemory } : {}),
       ...(medicalRuntimeContext ? { medical_runtime_context: medicalRuntimeContext } : {}),
@@ -943,16 +940,50 @@ export async function handleDoctorChat(
   })();
 
   const forcedDecision = forcedDateTimeDecision ?? forcedWeatherDecision;
+  const contractConfig = {
+    message: input.message,
+    requiredSections: medicalReasoning?.requiredSections,
+    forceClinicalContract: routingDecision.requiresClinicalContract,
+  };
+  const isAuditCase = isStructuredClinicalAuditQuery(input.message);
 
-  const groqResult = forcedDecision
+  const groqRawResult = forcedDecision
     ? null
     : await callGroqDoctorChat({
         role: "DOCTOR",
         message: input.message,
         context: sharedContext,
       });
+  const groqCandidateResult = groqRawResult
+    ? {
+        ...groqRawResult,
+        response: ensureDoctorClinicalDisclaimer(groqRawResult.response, routingDecision.requiresClinicalContract),
+      }
+    : null;
+  const groqContractResult = groqRawResult
+    ? evaluateDoctorClinicalContract({
+        ...contractConfig,
+        response: groqCandidateResult?.response ?? "",
+      })
+    : null;
+  const groqGrounded = groqRawResult
+    ? !isAuditCase || isClinicallyGroundedResponse(input.message, groqCandidateResult?.response ?? "")
+    : false;
+  const groqResult = groqCandidateResult && groqContractResult?.valid && groqGrounded ? groqCandidateResult : null;
+  const groqFailureReason: "groq_unavailable" | "groq_contract_rejected" | null =
+    forcedDecision ? null : groqRawResult ? (groqResult ? null : "groq_contract_rejected") : "groq_unavailable";
 
-  const brainResult = forcedDecision || groqResult
+  if (groqRawResult && !groqResult) {
+    logServer("warn", "doctor_chat.contract_rejected", {
+      provider: "groq",
+      route: routingDecision.route,
+      requires_clinical_contract: routingDecision.requiresClinicalContract,
+      grounded: groqGrounded,
+      reasons: groqContractResult?.reasons ?? [],
+    });
+  }
+
+  const brainRawResult = forcedDecision || groqResult
     ? null
     : await callBrainDecide({
         role: "DOCTOR",
@@ -962,22 +993,88 @@ export async function handleDoctorChat(
         assistant_mode: "doctor_professional",
         actor_role: "doctor",
         context: sharedContext,
+      }, {
+        allowLegacyFallback: false,
       });
 
-  const degraded = !forcedDateTimeDecision && !groqResult && !brainResult;
+  const brainCandidateDecision: MetaBrainDecision | null = brainRawResult
+    ? {
+        action: brainRawResult.action,
+        response: ensureDoctorClinicalDisclaimer(brainRawResult.response, routingDecision.requiresClinicalContract),
+        confidence: brainRawResult.confidence,
+        source: normalizeMetaBrainSource(brainRawResult.source),
+      }
+    : null;
+
+  const brainContractResult = brainCandidateDecision
+    ? evaluateDoctorClinicalContract({
+        ...contractConfig,
+        response: brainCandidateDecision.response,
+      })
+    : null;
+  const brainGrounded = brainCandidateDecision
+    ? !isAuditCase || isClinicallyGroundedResponse(input.message, brainCandidateDecision.response)
+    : false;
+  const brainResult = brainCandidateDecision && brainContractResult?.valid && brainGrounded ? brainCandidateDecision : null;
+  const brainFailureReason: "brain_unavailable" | "brain_contract_rejected" | null =
+    forcedDecision || groqResult
+      ? null
+      : brainRawResult
+      ? (brainResult ? null : "brain_contract_rejected")
+      : "brain_unavailable";
+
+  if (brainCandidateDecision && !brainResult) {
+    logServer("warn", "doctor_chat.contract_rejected", {
+      provider: "brain_orchestrate",
+      route: routingDecision.route,
+      requires_clinical_contract: routingDecision.requiresClinicalContract,
+      grounded: brainGrounded,
+      reasons: brainContractResult?.reasons ?? [],
+    });
+  }
+
+  let fallbackReason:
+    | "groq_unavailable"
+    | "groq_contract_rejected"
+    | "brain_unavailable"
+    | "brain_contract_rejected"
+    | "providers_unavailable"
+    | "providers_rejected" = "providers_unavailable";
+
+  if (groqFailureReason === "groq_contract_rejected" && brainFailureReason === "brain_contract_rejected") {
+    fallbackReason = "providers_rejected";
+  } else if (groqFailureReason === "groq_unavailable" && brainFailureReason === "brain_unavailable") {
+    fallbackReason = "providers_unavailable";
+  } else if (brainFailureReason) {
+    fallbackReason = brainFailureReason;
+  } else if (groqFailureReason) {
+    fallbackReason = groqFailureReason;
+  }
+
+  const fallbackDecision = forcedDecision || groqResult || brainResult
+    ? null
+    : buildDoctorClinicalFallbackDecision({
+        message: input.message,
+        clinicalState: resolved.clinicalState,
+        patientName: resolved.patient?.name ?? null,
+        doctorSpecialty: doctorProfileContext.doctor.specialty,
+        protocolLabel: medicalSpecialtyProtocol?.label ?? null,
+        protocolRedFlags: medicalSpecialtyProtocol?.redFlags,
+        requiredSections: medicalReasoning?.requiredSections,
+        hasExternalEvidence: Boolean(medicalWebRetrieval?.sources.length),
+        requiresClinicalContract: routingDecision.requiresClinicalContract,
+        reason: fallbackReason,
+      });
+
+  const degraded = Boolean(fallbackDecision);
 
   const decision: MetaBrainDecision = forcedDecision
     ? forcedDecision
     : groqResult
     ? groqResult
     : brainResult
-    ? {
-        action: brainResult.action,
-        response: brainResult.response,
-        confidence: brainResult.confidence,
-        source: normalizeMetaBrainSource(brainResult.source),
-      }
-    : {
+    ? brainResult
+    : fallbackDecision ?? {
         action: "DOCTOR_CHAT_SAFE_BLOCK",
         response: "No puedo generar una respuesta clinica segura con los datos y servicios disponibles en este momento. Reintentar en unos segundos o escalar para revision clinica manual.",
         confidence: 0.2,
@@ -1046,7 +1143,7 @@ export async function handleDoctorChat(
   decision.response = sanitizeDoctorChatResponse(decision.response);
 
   if (degraded) {
-    incDoctorChatFallback("brain_unavailable");
+    incDoctorChatFallback(fallbackReason);
   }
 
   await logFunctionalAudit({
