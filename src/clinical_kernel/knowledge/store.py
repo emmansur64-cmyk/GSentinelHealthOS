@@ -1,18 +1,24 @@
 """Durable activation and rollback under Kernel-owned governance."""
 
-from datetime import date, datetime, timezone
 import json
-from pathlib import Path
 import sqlite3
+from datetime import UTC, date, datetime
+from pathlib import Path
 from threading import RLock
 from typing import Protocol
 
 from clinical_kernel.canonical import canonical_json
 from clinical_kernel.contracts import Capability
 from clinical_kernel.errors import ClinicalKernelError, KernelErrorCode, KernelErrorDetail
+
 from .contracts import (
-    ClinicalKnowledgeRelease, ClinicalKnowledgeRule, KnowledgeConflict,
-    KnowledgeConflictStatus, KnowledgeEffect, KnowledgeSource, KnowledgeVerificationStatus,
+    ClinicalKnowledgeRelease,
+    ClinicalKnowledgeRule,
+    KnowledgeConflict,
+    KnowledgeConflictStatus,
+    KnowledgeEffect,
+    KnowledgeSource,
+    KnowledgeVerificationStatus,
 )
 
 
@@ -226,7 +232,7 @@ class SQLiteKnowledgeStore:
                  release: ClinicalKnowledgeRelease) -> None:
         connection.execute(
             "INSERT INTO activation_receipts(action,from_release_id,to_release_id,manifest_hash,occurred_at) VALUES (?,?,?,?,?)",
-            (action, previous, release.release_id, release.manifest_hash, datetime.now(timezone.utc).isoformat()),
+            (action, previous, release.release_id, release.manifest_hash, datetime.now(UTC).isoformat()),
         )
 
     def active(self) -> ClinicalKnowledgeRelease:

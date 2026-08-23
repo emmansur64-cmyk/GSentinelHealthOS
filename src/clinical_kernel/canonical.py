@@ -1,7 +1,7 @@
 """Canonical serialization used by integrity-sensitive fingerprints."""
 
-from hashlib import sha256
 import json
+from hashlib import sha256
 from typing import Any
 
 

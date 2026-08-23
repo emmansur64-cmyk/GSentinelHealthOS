@@ -4,12 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from math import isfinite
-from typing import TypeAlias
 
 from clinical_kernel.canonical import canonical_sha256
 
-
-FactValue: TypeAlias = str | int | float | bool
+type FactValue = str | int | float | bool
 
 
 class FactKind(StrEnum):

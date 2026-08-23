@@ -1,3 +1,4 @@
-from .contracts import CDRInput, CDROutput
+from .contracts import CDRInput
 from .engine import CDREngine
-__all__ = ["CDREngine", "CDRInput", "CDROutput"]
+
+__all__ = ["CDREngine", "CDRInput"]

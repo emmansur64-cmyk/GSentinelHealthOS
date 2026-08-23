@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -25,8 +25,7 @@ from clinical_kernel.knowledge import (
     KnowledgeVerificationStatus,
 )
 
-
-NOW = datetime(2026, 8, 23, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 23, tzinfo=UTC)
 
 
 class SignatureVerifier:

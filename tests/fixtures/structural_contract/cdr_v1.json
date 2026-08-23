@@ -1,0 +1,9 @@
+{
+  "fixture_class": "STRUCTURAL_CONTRACT_ONLY",
+  "clinical_validation": "NOT_PERFORMED",
+  "external_clinical_review": "NOT_PERFORMED",
+  "fixture_id": "cdr-contract-v1",
+  "knowledge_release_id": "knowledge-structural-v1",
+  "expected_status": "SUCCEEDED",
+  "expected_statement_code": "RANKED_GOVERNED_CANDIDATE"
+}

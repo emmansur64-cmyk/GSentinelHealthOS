@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -22,8 +22,7 @@ from clinical_kernel.facts import (
 )
 from clinical_kernel.knowledge import ClinicalKnowledgeRelease, InMemoryKnowledgeStore
 
-
-NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
 
 
 def _terminology() -> GovernedTerminologyRegistry:

@@ -1,17 +1,22 @@
 """Scoped Phase-1 state and idempotency contracts."""
 
+import json
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
-import json
 from pathlib import Path
-import sqlite3
 from threading import RLock
 from typing import Protocol
 
 from .errors import ClinicalKernelError, KernelErrorCode, KernelErrorDetail
 from .facts.contracts import (
-    ClinicalFact, ClinicalFactSet, FactKind, FactPolarity, FactProvenance,
-    FactTemporalStatus, ProvenanceKind,
+    ClinicalFact,
+    ClinicalFactSet,
+    FactKind,
+    FactPolarity,
+    FactProvenance,
+    FactTemporalStatus,
+    ProvenanceKind,
 )
 
 

@@ -1,9 +1,9 @@
 """Phase-0 contracts. These carry no medical rules or free-form authority."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Mapping
 
 
 class RequestKind(StrEnum):

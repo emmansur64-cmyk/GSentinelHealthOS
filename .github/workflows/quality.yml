@@ -1,0 +1,30 @@
+name: quality
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install project and verification tools
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+      - name: Ruff
+        run: ruff check src tests tools
+      - name: Strict mypy on governed boundaries
+        run: mypy --strict src/clinical_kernel/facts src/clinical_kernel/knowledge src/clinical_kernel/state.py src/clinical_kernel/MOTORES
+      - name: Engine isolation
+        run: python tools/check_engine_isolation.py
+      - name: Tests and module coverage
+        run: pytest --cov=clinical_kernel --cov-branch --cov-report=term-missing
+      - name: Dependency vulnerability audit
+        run: pip-audit

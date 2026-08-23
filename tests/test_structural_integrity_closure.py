@@ -1,9 +1,11 @@
 import base64
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
-from datetime import datetime, timezone
-from decimal import Decimal
+import os
 import sqlite3
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import replace
+from datetime import UTC, datetime
+from decimal import Decimal
+from hashlib import sha256
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -12,22 +14,37 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from clinical_kernel.canonical import canonical_sha256
 from clinical_kernel.errors import ClinicalKernelError, KernelErrorCode
 from clinical_kernel.facts import (
-    ClinicalFact, ClinicalFactSet, ClinicalIntakeService, FactKind, FactPolarity,
-    FactProvenance, FactTemporalStatus, FactValueType, GovernedTerminologyRegistry,
-    GovernedUnitRegistry, ProvenanceKind, StructuredCaseInput, TerminologyConcept,
-    UnitPolicy, UnitRule,
+    ClinicalFact,
+    ClinicalFactSet,
+    ClinicalIntakeService,
+    FactKind,
+    FactPolarity,
+    FactProvenance,
+    FactTemporalStatus,
+    FactValueType,
+    GovernedTerminologyRegistry,
+    GovernedUnitRegistry,
+    ProvenanceKind,
+    StructuredCaseInput,
+    TerminologyConcept,
+    UnitPolicy,
+    UnitRule,
 )
 from clinical_kernel.knowledge import (
-    ClinicalKnowledgeRelease, Ed25519KnowledgeVerifier, SIGNATURE_DOMAIN,
+    SIGNATURE_DOMAIN,
+    ClinicalKnowledgeRelease,
+    Ed25519KnowledgeVerifier,
     SQLiteKnowledgeStore,
 )
 from clinical_kernel.state import (
-    CaseScope, IdempotencyRecord, InMemoryClinicalStateStore,
-    SQLiteClinicalStateStore, StoredCaseRevision,
+    CaseScope,
+    IdempotencyRecord,
+    InMemoryClinicalStateStore,
+    SQLiteClinicalStateStore,
+    StoredCaseRevision,
 )
 
-
-NOW = datetime(2026, 8, 23, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 23, tzinfo=UTC)
 SCOPE = CaseScope("tenant", "clinician", "conversation", "case")
 
 
@@ -60,25 +77,46 @@ def test_state_stores_reject_same_revision_with_changed_governance(tmp_path, sto
     assert store.idempotency("r2") is None
 
 
-def test_sqlite_serializes_competing_writers_and_commits_exactly_one(tmp_path) -> None:
-    database = tmp_path / "concurrent.sqlite3"
-    first = SQLiteClinicalStateStore(database)
-    second = SQLiteClinicalStateStore(database)
-
-    def attempt(store, candidate, request_id):
+def _multiprocess_commit_batch(arguments: tuple[str, bool, int, int]) -> tuple[int, int, int, int]:
+    database, value, start, count = arguments
+    store = SQLiteClinicalStateStore(database)
+    committed = conflicts = unexpected = 0
+    candidate = stored(value=value)
+    for index in range(start, start + count):
+        request_id = f"worker:{value}:{index}"
         try:
             store.commit(candidate, IdempotencyRecord(request_id, request_id, request_id))
-            return "committed"
+            committed += 1
         except ClinicalKernelError as exc:
-            return exc.detail.code
+            if exc.detail.code is KernelErrorCode.REVISION_CONFLICT:
+                conflicts += 1
+            else:
+                unexpected += 1
+    return os.getpid(), committed, conflicts, unexpected
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        outcomes = list(pool.map(
-            lambda args: attempt(*args),
-            ((first, stored(value=True), "r1"), (second, stored(value=False), "r2")),
-        ))
-    assert outcomes.count("committed") == 1
-    assert outcomes.count(KernelErrorCode.REVISION_CONFLICT) == 1
+
+def test_sqlite_serializes_ten_thousand_multiprocess_writes(tmp_path) -> None:
+    database = tmp_path / "concurrent.sqlite3"
+    SQLiteClinicalStateStore(database)
+    batches = tuple((str(database), bool(worker % 2), worker * 1250, 1250) for worker in range(8))
+
+    with ProcessPoolExecutor(max_workers=8) as pool:
+        outcomes = list(pool.map(_multiprocess_commit_batch, batches))
+
+    assert len({item[0] for item in outcomes}) >= 2
+    assert sum(item[1] for item in outcomes) == 5000
+    assert sum(item[2] for item in outcomes) == 5000
+    assert sum(item[3] for item in outcomes) == 0
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM case_revisions").fetchone()[0] == 1
+        assert connection.execute("SELECT COUNT(*) FROM idempotency_records").fetchone()[0] == 5000
+        fact_json = connection.execute("SELECT fact_set_json FROM case_revisions").fetchone()[0]
+        stored_value = '"value":true' in fact_json
+        committed_prefix = f"worker:{stored_value}:"
+        assert connection.execute(
+            "SELECT COUNT(*) FROM idempotency_records WHERE request_id NOT LIKE ?",
+            (committed_prefix + "%",),
+        ).fetchone()[0] == 0
 
 
 def test_canonical_fingerprints_are_structured_and_delimiter_safe() -> None:
@@ -115,10 +153,21 @@ def signed_release(private_key: Ed25519PrivateKey, release_id: str) -> ClinicalK
 
 def verifier(tmp_path, private_key: Ed25519PrivateKey) -> Ed25519KnowledgeVerifier:
     public_path = tmp_path / "external-public-key.pem"
+    pem = private_key.public_key().public_bytes(
+        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    public_path.write_bytes(pem)
+    return Ed25519KnowledgeVerifier(public_path, expected_public_key_sha256=sha256(pem).hexdigest())
+
+
+def test_public_key_integrity_is_checked_at_startup(tmp_path) -> None:
+    private_key = Ed25519PrivateKey.generate()
+    public_path = tmp_path / "external-public-key.pem"
     public_path.write_bytes(private_key.public_key().public_bytes(
         serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo,
     ))
-    return Ed25519KnowledgeVerifier(public_path)
+    with pytest.raises(ValueError, match="fingerprint mismatch"):
+        Ed25519KnowledgeVerifier(public_path, expected_public_key_sha256="0" * 64)
 
 
 def test_ed25519_and_durable_knowledge_survive_restart_with_receipts(tmp_path) -> None:

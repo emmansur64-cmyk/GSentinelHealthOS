@@ -1,9 +1,9 @@
 """Versioned allow-list of clinical concepts; it contains no inferred medicine."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Mapping
 
 from clinical_kernel.errors import ClinicalKernelError, KernelErrorCode, KernelErrorDetail
 

@@ -6,8 +6,8 @@ from .contracts import (
     EvidenceDocument,
     EvidenceNeed,
     EvidenceNeedLevel,
-    EvidenceVerdict,
     EvidenceRetrievalStatus,
+    EvidenceVerdict,
 )
 from .gateway import EvidenceGateway, EvidenceProvider, EvidenceRetrievalPolicy
 from .planner import EvidencePlanner

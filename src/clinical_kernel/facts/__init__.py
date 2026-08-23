@@ -11,8 +11,8 @@ from .contracts import (
 )
 from .intake import ClinicalIntakeService, StructuredCaseInput
 from .revisions import ClinicalFactDelta, apply_delta
-from .terminology import FactValueType, GovernedTerminologyRegistry, TerminologyConcept, UnitPolicy
 from .temporal import FactTemporalState
+from .terminology import FactValueType, GovernedTerminologyRegistry, TerminologyConcept, UnitPolicy
 from .units import GovernedUnitRegistry, UnitRule
 
 __all__ = [

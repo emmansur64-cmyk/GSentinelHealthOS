@@ -7,7 +7,16 @@ name = "external-clinical-kernel"
 version = "0.0.0"
 description = "ClinicalKernel externo - fase 0 de arquitectura"
 requires-python = ">=3.12"
-dependencies = ["cryptography>=45,<47"]
+dependencies = ["cryptography>=50,<51"]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.17,<2",
+    "pip-audit>=2.9,<3",
+    "pytest>=8.4,<10",
+    "pytest-cov>=6.2,<8",
+    "ruff>=0.12,<1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -16,3 +25,27 @@ where = ["src"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.coverage.run]
+branch = true
+source = ["clinical_kernel"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 75
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 140
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]

@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -21,11 +21,10 @@ from clinical_kernel.facts import (
     UnitPolicy,
     apply_delta,
 )
-from clinical_kernel.state import CaseScope, InMemoryClinicalStateStore, SQLiteClinicalStateStore
 from clinical_kernel.knowledge import ClinicalKnowledgeRelease, InMemoryKnowledgeStore
+from clinical_kernel.state import CaseScope, InMemoryClinicalStateStore, SQLiteClinicalStateStore
 
-
-NOW = datetime(2026, 8, 23, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 23, tzinfo=UTC)
 
 
 def fact(fact_id: str, concept_id: str = "obs") -> ClinicalFact:

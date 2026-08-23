@@ -1,10 +1,10 @@
 """Immutable knowledge artifacts separated from patient facts."""
 
+import json
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 from hashlib import sha256
-import json
 
 from clinical_kernel.contracts import Capability
 

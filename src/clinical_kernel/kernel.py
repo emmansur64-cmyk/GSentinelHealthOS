@@ -2,15 +2,15 @@
 
 from dataclasses import dataclass
 
+from .canonical import canonical_sha256
 from .contracts import ExecutionPlan, KernelRequest, RequestKind
+from .errors import ClinicalKernelError, KernelErrorCode, KernelErrorDetail
 from .facts.intake import AcceptedClinicalIntake, ClinicalIntakeService, StructuredCaseInput
 from .facts.terminology import GovernedTerminologyRegistry
 from .facts.units import GovernedUnitRegistry
-from .canonical import canonical_sha256
+from .knowledge.store import KnowledgeStore
 from .orchestrator import KernelOrchestrator
 from .policy import DEFAULT_PHASE1_POLICY, KernelPolicy
-from .knowledge.store import KnowledgeStore
-from .errors import ClinicalKernelError, KernelErrorCode, KernelErrorDetail
 from .state import CaseScope, ClinicalStateStore, IdempotencyRecord, InMemoryClinicalStateStore, StoredCaseRevision
 
 

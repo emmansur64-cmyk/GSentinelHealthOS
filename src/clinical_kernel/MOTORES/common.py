@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha256
+from typing import Protocol, TypeVar
 
 from clinical_kernel.contracts import Capability, CaseEnvelope
 from clinical_kernel.evidence import EvidenceAssessment
@@ -41,18 +42,18 @@ class EngineError:
 class ConclusionProvenance:
     engine_id: str
     engine_version: str
-    fact_ids: tuple[str, ...] = ()
+    knowledge_release_id: str
+    fact_ids: tuple[str, ...]
     rule_ids: tuple[str, ...] = ()
     evidence_need_ids: tuple[str, ...] = ()
     evidence_document_ids: tuple[str, ...] = ()
     upstream_conclusion_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if not self.engine_id.strip() or not self.engine_version.strip():
+        if not self.engine_id.strip() or not self.engine_version.strip() or not self.knowledge_release_id.strip():
             raise ValueError("conclusion provenance requires engine identity")
-        if not any((self.fact_ids, self.rule_ids, self.evidence_need_ids,
-                    self.evidence_document_ids, self.upstream_conclusion_ids)):
-            raise ValueError("a clinical conclusion requires traceable provenance")
+        if not self.fact_ids:
+            raise ValueError("a clinical conclusion requires source fact IDs")
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +75,7 @@ class EngineConclusion:
 class EngineResult:
     engine_id: str
     engine_version: str
+    capability: Capability
     status: EngineStatus
     conclusions: tuple[EngineConclusion, ...] = ()
     errors: tuple[EngineError, ...] = ()
@@ -123,32 +125,55 @@ class EngineInput:
         engine_ids = [item.engine_id for item in self.upstream_results]
         if len(engine_ids) != len(set(engine_ids)):
             raise ValueError("upstream engine results must be unique")
+        known_fact_ids = {fact.fact_id for fact in self.fact_set.facts}
+        for result in self.upstream_results:
+            for conclusion in result.conclusions:
+                provenance = conclusion.provenance
+                if provenance.knowledge_release_id != self.knowledge_release_id:
+                    raise ValueError("upstream conclusion references another knowledge release")
+                if not set(provenance.fact_ids).issubset(known_fact_ids):
+                    raise ValueError("upstream conclusion references an unknown source fact")
+                if provenance.evidence_need_ids and not provenance.evidence_document_ids:
+                    raise ValueError("adjudicated evidence provenance requires document IDs")
+
+
+InputT = TypeVar("InputT", bound=EngineInput, contravariant=True)
+
+
+class ClinicalEngine(Protocol[InputT]):
+    """Single execution contract implemented by every isolated engine."""
+
+    engine_id: str
+    version: str
+    capability: Capability
+
+    def run(self, value: InputT) -> EngineResult: ...
 
 
 def validate_engine_input(
     value: EngineInput,
     *,
     capability: Capability,
-    allowed_upstream: frozenset[str],
+    allowed_upstream_capabilities: frozenset[Capability],
 ) -> None:
     if any(rule.owner_capability is not capability for rule in value.knowledge_rules):
         raise ValueError("engine received knowledge owned by another capability")
-    actual = {item.engine_id for item in value.upstream_results}
-    if not actual.issubset(allowed_upstream):
+    actual = {item.capability for item in value.upstream_results}
+    if not actual.issubset(allowed_upstream_capabilities):
         raise ValueError("engine received an undeclared upstream result")
 
 
 def abstained(engine_id: str, version: str, code: EngineErrorCode, message: str,
-              *, insufficient: bool = False) -> EngineResult:
+              *, capability: Capability, insufficient: bool = False) -> EngineResult:
     return EngineResult(
-        engine_id, version,
+        engine_id, version, capability,
         EngineStatus.INSUFFICIENT_INPUT if insufficient else EngineStatus.ABSTAINED,
         errors=(EngineError(code, message),),
     )
 
 
 def rule_conclusions(value: EngineInput, *, engine_id: str, version: str,
-                     conclusion_type: str) -> EngineResult:
+                     capability: Capability, conclusion_type: str) -> EngineResult:
     fact_ids_by_concept = {
         concept_id: tuple(f.fact_id for f in value.fact_set.facts if f.concept_id == concept_id)
         for concept_id in {f.concept_id for f in value.fact_set.facts}
@@ -163,40 +188,58 @@ def rule_conclusions(value: EngineInput, *, engine_id: str, version: str,
         conclusions.append(EngineConclusion(
             f"{engine_id.lower()}:{sha256(seed.encode()).hexdigest()[:20]}",
             conclusion_type, f"{conclusion_type}:{rule.effect.value}",
-            ConclusionProvenance(engine_id, version, fact_ids=fact_ids, rule_ids=(rule.rule_id,)),
+            ConclusionProvenance(engine_id, version, value.knowledge_release_id, fact_ids, rule_ids=(rule.rule_id,)),
         ))
     if not conclusions:
-        return abstained(engine_id, version, EngineErrorCode.NO_APPLICABLE_KNOWLEDGE,
-                         "no governed rule applies to the supplied facts")
-    return EngineResult(engine_id, version, EngineStatus.SUCCEEDED, tuple(conclusions))
+        return abstained(
+            engine_id, version, EngineErrorCode.NO_APPLICABLE_KNOWLEDGE,
+            "no governed rule applies to the supplied facts", capability=capability,
+        )
+    return EngineResult(engine_id, version, capability, EngineStatus.SUCCEEDED, tuple(conclusions))
 
 
 def upstream_conclusions(value: EngineInput, *, engine_id: str, version: str,
-                         conclusion_type: str, statement_code: str) -> EngineResult:
+                         capability: Capability, conclusion_type: str, statement_code: str) -> EngineResult:
     source = tuple(c for result in value.upstream_results if result.status is EngineStatus.SUCCEEDED
                    for c in result.conclusions)
     if not source:
-        return abstained(engine_id, version, EngineErrorCode.UPSTREAM_NOT_SUCCESSFUL,
-                         "no successful upstream conclusions are available", insufficient=True)
+        return abstained(
+            engine_id, version, EngineErrorCode.UPSTREAM_NOT_SUCCESSFUL,
+            "no successful upstream conclusions are available", capability=capability, insufficient=True,
+        )
     conclusions = tuple(EngineConclusion(
         f"{engine_id.lower()}:{index:04d}", conclusion_type, statement_code,
-        ConclusionProvenance(engine_id, version, upstream_conclusion_ids=(item.conclusion_id,)),
+        ConclusionProvenance(
+            engine_id, version, value.knowledge_release_id,
+            tuple(sorted(item.provenance.fact_ids)),
+            rule_ids=tuple(sorted(item.provenance.rule_ids)),
+            evidence_need_ids=tuple(sorted(item.provenance.evidence_need_ids)),
+            evidence_document_ids=tuple(sorted(item.provenance.evidence_document_ids)),
+            upstream_conclusion_ids=(item.conclusion_id,),
+        ),
         rank=index,
     ) for index, item in enumerate(source, start=1))
-    return EngineResult(engine_id, version, EngineStatus.SUCCEEDED, conclusions)
+    return EngineResult(engine_id, version, capability, EngineStatus.SUCCEEDED, conclusions)
 
 
 def evidence_conclusions(value: EngineInput, *, engine_id: str, version: str,
-                         conclusion_type: str) -> EngineResult:
+                         capability: Capability, conclusion_type: str) -> EngineResult:
     if not value.evidence_assessments:
-        return abstained(engine_id, version, EngineErrorCode.NO_ADJUDICATED_EVIDENCE,
-                         "no governed evidence assessment is available", insufficient=True)
+        return abstained(
+            engine_id, version, EngineErrorCode.NO_ADJUDICATED_EVIDENCE,
+            "no governed evidence assessment is available", capability=capability, insufficient=True,
+        )
+    facts_by_rule = {
+        rule.rule_id: tuple(sorted(f.fact_id for f in value.fact_set.facts if f.concept_id in rule.concept_ids))
+        for rule in value.knowledge_rules
+    }
     conclusions = tuple(EngineConclusion(
         f"{engine_id.lower()}:{sha256((item.need_id + '|' + item.rule_id).encode()).hexdigest()[:20]}",
         conclusion_type, f"{conclusion_type}:{item.verdict.value}",
         ConclusionProvenance(
-            engine_id, version, rule_ids=(item.rule_id,), evidence_need_ids=(item.need_id,),
+            engine_id, version, value.knowledge_release_id, facts_by_rule[item.rule_id],
+            rule_ids=(item.rule_id,), evidence_need_ids=(item.need_id,),
             evidence_document_ids=tuple(sorted(item.document_ids)),
         ),
     ) for item in sorted(value.evidence_assessments, key=lambda item: (item.rule_id, item.need_id)))
-    return EngineResult(engine_id, version, EngineStatus.SUCCEEDED, conclusions)
+    return EngineResult(engine_id, version, capability, EngineStatus.SUCCEEDED, conclusions)

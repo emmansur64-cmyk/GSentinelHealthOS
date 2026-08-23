@@ -1,13 +1,17 @@
 """Code-governed, one-round evidence retrieval boundary."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from types import MappingProxyType
-from typing import Mapping, Protocol
+from typing import Protocol
 from urllib.parse import urlparse
 
 from .contracts import (
-    EvidenceBundle, EvidenceDocument, EvidenceNeed, EvidenceRetrievalStatus,
+    EvidenceBundle,
+    EvidenceDocument,
+    EvidenceNeed,
+    EvidenceRetrievalStatus,
 )
 
 

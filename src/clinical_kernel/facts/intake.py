@@ -53,6 +53,8 @@ class ClinicalIntakeService:
             if fact.unit is not None:
                 if self._units is None:
                     raise ValueError("unit-bearing facts require a governed unit registry")
+                if isinstance(fact.value, bool) or not isinstance(fact.value, (int, float)):
+                    raise ValueError("unit-bearing facts require a numeric value")
                 value, unit, rule_id = self._units.normalize(fact.value, fact.unit)
                 fact = replace(fact, value=value, unit=unit, unit_rule_id=rule_id)
             self._terminology.validate(fact)

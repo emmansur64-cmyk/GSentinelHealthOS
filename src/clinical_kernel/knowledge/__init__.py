@@ -3,13 +3,13 @@
 from .contracts import (
     ClinicalKnowledgeRelease,
     ClinicalKnowledgeRule,
-    KnowledgeEffect,
     KnowledgeConflict,
     KnowledgeConflictStatus,
+    KnowledgeEffect,
     KnowledgeSource,
     KnowledgeVerificationStatus,
 )
-from .crypto import Ed25519KnowledgeVerifier, SIGNATURE_DOMAIN
+from .crypto import SIGNATURE_DOMAIN, Ed25519KnowledgeVerifier
 from .store import InMemoryKnowledgeStore, KnowledgeIntegrityVerifier, SQLiteKnowledgeStore
 
 __all__ = [

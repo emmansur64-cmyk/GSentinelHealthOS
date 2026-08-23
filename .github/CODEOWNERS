@@ -1,0 +1,5 @@
+# Replace this owner only through a reviewed governance change.
+* @emmansur64-cmyk
+/src/clinical_kernel/ @emmansur64-cmyk
+/.github/ @emmansur64-cmyk
+/docs/adr/ @emmansur64-cmyk
